@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import re
+from typing import Any
 
-from pypdf import PdfReader
+import pdfplumber
+from pdfplumber.page import Page
 
 from polio_ingest.models import ParsedChunkPayload, ParsedDocumentPayload
 
@@ -42,6 +45,56 @@ def _apply_neis_masking(text: str) -> str:
     return text
 
 
+def _extract_tables_as_markdown(page: Page) -> str:
+    """
+    pdfplumber의 page 객체에서 표 데이터를 추출해 마크다운 형식으로 변환합니다.
+    표 안의 줄바꿈은 <br> 태그로 치환해 마크다운 테이블이 깨지지 않게 방어합니다.
+    """
+    try:
+        tables = page.extract_tables()
+    except Exception as e:
+        logging.warning(f"Table extraction failed on page {page.page_number}: {e}")
+        return ""
+        
+    if not tables:
+        return ""
+        
+    md_tables: list[str] = []
+    
+    for table in tables:
+        if not table:
+            continue
+            
+        cleaned_table: list[list[str]] = []
+        for row in table:
+            cleaned_row: list[str] = []
+            for cell in row:
+                if cell is None:
+                    cleaned_row.append("")
+                else:
+                    # 마크다운 표 안에서 줄바꿈이 일어나면 구조가 파괴되므로 <br>로 치환
+                    cleaned_cell = str(cell).replace("\r\n", "<br>").replace("\n", "<br>").strip()
+                    cleaned_row.append(cleaned_cell)
+            if cleaned_row:
+                cleaned_table.append(cleaned_row)
+                
+        if not cleaned_table:
+            continue
+            
+        # 첫 번째 행을 헤더로 처리
+        headers = cleaned_table[0]
+        md_table_str = "| " + " | ".join(headers) + " |\n"
+        md_table_str += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+        
+        for row in cleaned_table[1:]:
+            padded_row = row + [""] * (len(headers) - len(row))
+            md_table_str += "| " + " | ".join(padded_row[:len(headers)]) + " |\n"
+            
+        md_tables.append(md_table_str)
+        
+    return "\n\n".join(md_tables)
+
+
 def parse_uploaded_document(
     file_path: Path,
     *,
@@ -70,55 +123,75 @@ def parse_pdf_document(
     chunk_size_chars: int,
     overlap_chars: int,
 ) -> ParsedDocumentPayload:
-    reader = PdfReader(str(file_path))
     markdown_sections: list[str] = []
     full_text_parts: list[str] = []
     chunks: list[ParsedChunkPayload] = []
     chunk_index = 0
 
-    for page_number, page in enumerate(reader.pages, start=1):
-        raw_text = page.extract_text() or ""
-        
-        # [핵심 로직 투입] 텍스트를 추출하자마자 정규화 전에 마스킹부터 씌웁니다.
-        masked_text = _apply_neis_masking(raw_text)
-        page_text = _normalize_text(masked_text)
-        
-        if not page_text:
-            continue
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            page_count = len(pdf.pages)
+            raw_metadata = pdf.metadata or {}
+            
+            for page_number, page in enumerate(pdf.pages, start=1):
+                try:
+                    basic_text = page.extract_text(layout=True) or ""
+                except Exception as e:
+                    logging.warning(f"Text extraction failed on page {page_number}: {e}")
+                    basic_text = ""
+                
+                table_md = _extract_tables_as_markdown(page)
+                
+                # 하이브리드 추출 로직: 일반 텍스트 + 마크다운 테이블 병합
+                raw_text = basic_text
+                if table_md:
+                    raw_text += "\n\n" + table_md
+                    
+                # PII 마스킹을 최우선으로 적용 (절대 유지 규칙)
+                masked_text = _apply_neis_masking(raw_text)
+                
+                # 하위 호환성을 보장하기 위해 기존 정규화 및 청킹 사용
+                page_text = _normalize_text(masked_text)
+                
+                if not page_text:
+                    continue
 
-        markdown_sections.append(f"## Page {page_number}\n\n{page_text}")
-        full_text_parts.append(f"[Page {page_number}]\n{page_text}")
+                markdown_sections.append(f"## Page {page_number}\n\n{page_text}")
+                full_text_parts.append(f"[Page {page_number}]\n{page_text}")
 
-        for content, char_start, char_end in _slice_text(page_text, chunk_size_chars, overlap_chars):
-            chunks.append(
-                ParsedChunkPayload(
-                    chunk_index=chunk_index,
-                    page_number=page_number,
-                    char_start=char_start,
-                    char_end=char_end,
-                    token_estimate=_estimate_tokens(content),
-                    content_text=content,
-                )
-            )
-            chunk_index += 1
+                for content, char_start, char_end in _slice_text(page_text, chunk_size_chars, overlap_chars):
+                    chunks.append(
+                        ParsedChunkPayload(
+                            chunk_index=chunk_index,
+                            page_number=page_number,
+                            char_start=char_start,
+                            char_end=char_end,
+                            token_estimate=_estimate_tokens(content),
+                            content_text=content,
+                        )
+                    )
+                    chunk_index += 1
+    except Exception as e:
+        raise RuntimeError(f"Error parsing PDF with pdfplumber: {e}")
 
     content_text = "\n\n".join(full_text_parts).strip()
     content_markdown = f"# {file_path.stem}\n\n" + ("\n\n".join(markdown_sections) or "No text extracted.")
+    
     metadata = _clean_metadata(
         {
             "filename": file_path.name,
-            "title": getattr(reader.metadata, "title", None),
-            "author": getattr(reader.metadata, "author", None),
-            "subject": getattr(reader.metadata, "subject", None),
-            "creator": getattr(reader.metadata, "creator", None),
-            "producer": getattr(reader.metadata, "producer", None),
+            "title": raw_metadata.get("Title"),
+            "author": raw_metadata.get("Author"),
+            "subject": raw_metadata.get("Subject"),
+            "creator": raw_metadata.get("Creator"),
+            "producer": raw_metadata.get("Producer"),
         }
     )
 
     return ParsedDocumentPayload(
-        parser_name="pypdf",
+        parser_name="pdfplumber",
         source_extension=".pdf",
-        page_count=len(reader.pages),
+        page_count=page_count,
         word_count=len(content_text.split()),
         content_text=content_text,
         content_markdown=content_markdown.strip(),
@@ -205,5 +278,5 @@ def _estimate_tokens(value: str) -> int:
     return max(1, round(len(value) / 4))
 
 
-def _clean_metadata(metadata: dict[str, object]) -> dict[str, object]:
+def _clean_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in metadata.items() if value not in (None, "", [])}

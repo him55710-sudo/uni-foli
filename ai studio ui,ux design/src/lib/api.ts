@@ -1,41 +1,35 @@
+import axios, { AxiosHeaders, type AxiosRequestConfig } from 'axios';
 import { auth } from './firebase';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const client = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+});
+
+client.interceptors.request.use(
+  async (config) => {
+    if (auth.currentUser) {
+      const token = await auth.currentUser.getIdToken();
+      const headers = AxiosHeaders.from(config.headers);
+      headers.set('Authorization', `Bearer ${token}`);
+      config.headers = headers;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
+
+async function request<T = any>(config: AxiosRequestConfig): Promise<T> {
+  const response = await client.request<T>(config);
+  return response.data;
+}
 
 export const api = {
-  async get(endpoint: string) {
-    return fetchWithAuth(endpoint, { method: 'GET' });
+  get<T = any>(url: string, config?: AxiosRequestConfig) {
+    return request<T>({ ...config, method: 'GET', url });
   },
-
-  async post(endpoint: string, data: any) {
-    return fetchWithAuth(endpoint, {
-      method: 'POST',
-      body: JSON.stringify(data),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+  post<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    return request<T>({ ...config, method: 'POST', url, data });
   },
 };
 
-async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
-  // Wait for auth to initialize or get current token
-  await new Promise(resolve => setTimeout(resolve, 50)); // Tiny delay to ensure auth is ready if calling immediately on mount (fallback)
-  const token = await auth.currentUser?.getIdToken();
-  const headers = new Headers(options.headers || {});
-  
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
-
-  if (!response.ok) {
-    throw new Error(`API Request failed: ${response.statusText}`);
-  }
-
-  return response.json();
-}
+export default api;
