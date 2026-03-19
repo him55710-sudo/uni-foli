@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user profile information and preferences.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "photoURL": {
+          "type": "string",
+          "format": "uri"
+        },
+        "grade": {
+          "type": "number",
+          "description": "High school grade (1, 2, 3)"
+        },
+        "targetMajor": {
+          "type": "string",
+          "description": "Target university major"
+        },
+        "poliPersonality": {
+          "type": "number",
+          "description": "0 to 100, T vs F"
+        },
+        "poliIntervention": {
+          "type": "number",
+          "description": "0 to 100, Intervention level"
+        },
+        "subscriptionPlan": {
+          "type": "string",
+          "enum": ["free", "pro"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "A portfolio document or report created by the user.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner UID"
+        },
+        "title": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["탐구보고서", "발표자료", "에세이", "소논문", "기타"]
+        },
+        "content": {
+          "type": "string",
+          "description": "Markdown content of the document"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "title", "type", "createdAt"]
+    },
+    "ChatSession": {
+      "title": "Chat Session",
+      "description": "A workshop chat session with Poli.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "role": { "type": "string", "enum": ["user", "poli"] },
+              "content": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            },
+            "required": ["id", "role", "content", "timestamp"]
+          }
+        },
+        "documentId": {
+          "type": "string",
+          "description": "Associated document ID"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "User profiles, keyed by Firebase Auth UID."
+    },
+    "/documents/{documentId}": {
+      "schema": {
+        "$ref": "#/entities/Document"
+      },
+      "description": "User portfolio documents."
+    },
+    "/chatSessions/{sessionId}": {
+      "schema": {
+        "$ref": "#/entities/ChatSession"
+      },
+      "description": "Workshop chat sessions."
+    }
+  }
+}

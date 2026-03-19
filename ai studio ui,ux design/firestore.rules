@@ -1,0 +1,172 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches request.auth.uid)
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (required, valid email)
+    //   - displayName: string (optional, max 50)
+    //   - photoURL: string (optional, valid URL)
+    //   - grade: number (optional, 1-3)
+    //   - targetMajor: string (optional, max 50)
+    //   - poliPersonality: number (optional, 0-100)
+    //   - poliIntervention: number (optional, 0-100)
+    //   - subscriptionPlan: string (optional, 'free' or 'pro')
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (optional)
+    //
+    // Collection: documents
+    // Document ID: {documentId}
+    // Fields:
+    //   - id: string (required)
+    //   - userId: string (required, immutable, matches request.auth.uid)
+    //   - title: string (required, max 100)
+    //   - subject: string (optional, max 50)
+    //   - type: string (required, enum)
+    //   - content: string (optional, max 100000)
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (optional)
+    //
+    // Collection: chatSessions
+    // Document ID: {sessionId}
+    // Fields:
+    //   - id: string (required)
+    //   - userId: string (required, immutable, matches request.auth.uid)
+    //   - title: string (optional, max 100)
+    //   - messages: list (optional, max 1000 items)
+    //   - documentId: string (optional)
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+       return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+       return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+       return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    
+    function uidUnchanged() {
+       return !('userId' in request.resource.data) ||
+         request.resource.data.userId == request.auth.uid;
+    }
+    
+    function uidNotModified() {
+       return !('userId' in request.resource.data) ||
+         request.resource.data.userId == resource.data.userId;
+    }
+    
+    function hasRequiredFields(fields) {
+       return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function validStringLength(field, minLen, maxLen) {
+       return request.resource.data[field] is string &&
+         request.resource.data[field].size() >= minLen &&
+         request.resource.data[field].size() <= maxLen;
+    }
+    
+    function isValidUrl(url) {
+       return url is string &&
+         (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+    
+    function isValidEmail(email) {
+       return email is string &&
+         email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+    
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.createdAt is timestamp &&
+             isValidOptionalString('displayName', 0, 50) &&
+             (!( 'photoURL' in data ) || isValidUrl(data.photoURL)) &&
+             (!( 'grade' in data ) || (data.grade is number && data.grade >= 1 && data.grade <= 3)) &&
+             isValidOptionalString('targetMajor', 0, 50) &&
+             (!( 'poliPersonality' in data ) || (data.poliPersonality is number && data.poliPersonality >= 0 && data.poliPersonality <= 100)) &&
+             (!( 'poliIntervention' in data ) || (data.poliIntervention is number && data.poliIntervention >= 0 && data.poliIntervention <= 100)) &&
+             (!( 'subscriptionPlan' in data ) || (data.subscriptionPlan in ['free', 'pro'])) &&
+             (!( 'updatedAt' in data ) || data.updatedAt is timestamp);
+    }
+
+    function isValidDocument(data) {
+      return hasRequiredFields(['id', 'userId', 'title', 'type', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             validStringLength('title', 1, 100) &&
+             data.type in ['탐구보고서', '발표자료', '에세이', '소논문', '기타'] &&
+             data.createdAt is timestamp &&
+             isValidOptionalString('subject', 0, 50) &&
+             isValidOptionalString('content', 0, 100000) &&
+             (!( 'updatedAt' in data ) || data.updatedAt is timestamp);
+    }
+
+    function isValidChatSession(data) {
+      return hasRequiredFields(['id', 'userId', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.createdAt is timestamp &&
+             isValidOptionalString('title', 0, 100) &&
+             isValidOptionalString('documentId', 0, 100) &&
+             (!( 'messages' in data ) || (data.messages is list && data.messages.size() <= 1000)) &&
+             (!( 'updatedAt' in data ) || data.updatedAt is timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && areImmutableFieldsUnchanged(['uid', 'createdAt']);
+      allow delete: if isOwner(userId);
+    }
+
+    match /documents/{documentId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidDocument(request.resource.data) && uidUnchanged();
+      allow update: if isDocOwner() && isValidDocument(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+      allow delete: if isDocOwner();
+    }
+
+    match /chatSessions/{sessionId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidChatSession(request.resource.data) && uidUnchanged();
+      allow update: if isDocOwner() && isValidChatSession(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+      allow delete: if isDocOwner();
+    }
+  }
+}

@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.2-pg17-trixie
+    container_name: polio-postgres
+    environment:
+      POSTGRES_DB: polio
+      POSTGRES_USER: polio
+      POSTGRES_PASSWORD: polio
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polio -d polio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: polio-valkey
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
