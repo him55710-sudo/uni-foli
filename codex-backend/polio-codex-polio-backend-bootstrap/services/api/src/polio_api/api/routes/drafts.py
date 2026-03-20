@@ -72,6 +72,10 @@ def _build_system_instruction(target_major: str | None, reference_materials: lis
         "2. 친절하지만 핵심 위주로 간결하게 답변한다.\n"
         "3. 보고서 문단(예: 서론/결론/분석 파트) 제안을 줄 때는 반드시 [CONTENT]...[/CONTENT] 태그로 감싼다.\n"
         "4. 참고 문헌 데이터가 없는 경우에만 일반 지식 기반으로 답변하되, 추측은 명확히 추측이라고 밝혀라.\n"
+        "5. 학생이 통계, 추이 분석, 데이터 시각화를 요구하거나 제공된 📌참고 문헌에 중요한 수치 데이터가 있다면, 분석 결과를 텍스트로 설명한 뒤 반드시 아래 포맷의 JSON 데이터를 생성해라.\n"
+        "[CHART]\n"
+        '{ "title": "그래프 제목", "type": "bar", "data": [{"name": "항목1", "value": 10}, {"name": "항목2", "value": 20}] }\n'
+        "[/CHART]\n"
     )
 
     if reference_context:

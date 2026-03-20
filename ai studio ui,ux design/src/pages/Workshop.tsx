@@ -20,6 +20,7 @@ import confetti from 'canvas-confetti';
 import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
 import { saveArchiveItem } from '../lib/archiveStore';
+import { ChartComponent } from '../components/ChartComponent';
 
 interface Message {
   id: string;
@@ -130,6 +131,34 @@ function summarizeAbstract(abstract: string | null, maxLength = 200): string {
   if (!normalized) return '초록 정보가 제공되지 않은 논문입니다.';
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, maxLength)}...`;
+}
+
+function renderMessageContent(content: string) {
+  if (!content) return <ReactMarkdown>...</ReactMarkdown>;
+
+  const chartRegex = /\[CHART\]([\s\S]*?)\[\/CHART\]/ig;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = chartRegex.exec(content)) !== null) {
+    const textBefore = content.substring(lastIndex, match.index);
+    if (textBefore) {
+      parts.push(<ReactMarkdown key={`text-${lastIndex}`}>{textBefore}</ReactMarkdown>);
+    }
+
+    const chartJson = match[1];
+    parts.push(<ChartComponent key={`chart-${match.index}`} jsonString={chartJson} />);
+
+    lastIndex = chartRegex.lastIndex;
+  }
+
+  const textAfter = content.substring(lastIndex);
+  if (textAfter) {
+    parts.push(<ReactMarkdown key={`text-end`}>{textAfter}</ReactMarkdown>);
+  }
+
+  return <>{parts.length > 0 ? parts : <ReactMarkdown>{content}</ReactMarkdown>}</>;
 }
 
 export function Workshop() {
@@ -406,7 +435,7 @@ export function Workshop() {
                   }`}
                 >
                   <div className="prose prose-sm max-w-none font-medium prose-p:m-0 prose-p:leading-relaxed">
-                    <ReactMarkdown>{message.content || '...'}</ReactMarkdown>
+                    {renderMessageContent(message.content)}
                   </div>
 
                   {message.role === 'poli' && message.suggestedContent ? (
