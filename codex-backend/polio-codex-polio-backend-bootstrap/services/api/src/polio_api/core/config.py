@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     upload_chunk_size_chars: int = 1200
     upload_chunk_overlap_chars: int = 180
     vector_dimensions: int = 1536
+    semantic_scholar_search_url: str = "https://api.semanticscholar.org/graph/v1/paper/search"
+    semantic_scholar_timeout_seconds: float = 10.0
+    semantic_scholar_api_key: str | None = None
+    semantic_scholar_max_limit: int = 10
     
     # Social Auth
     kakao_client_id: str = "DUMMY_KAKAO_ID"

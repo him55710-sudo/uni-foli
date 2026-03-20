@@ -1,6 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Lock, Download, Sparkles, Bot, User } from 'lucide-react';
+import {
+  Send,
+  Lock,
+  Download,
+  Sparkles,
+  Bot,
+  User,
+  Search,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -14,6 +26,21 @@ interface Message {
   role: 'user' | 'poli';
   content: string;
   suggestedContent?: string;
+}
+
+interface ScholarPaper {
+  title: string;
+  abstract: string | null;
+  authors: string[];
+  year: number | null;
+  citationCount: number;
+  url: string | null;
+}
+
+interface ScholarSearchResponse {
+  query: string;
+  total: number;
+  papers: ScholarPaper[];
 }
 
 function extractSuggestedContent(raw: string): { clean: string; suggestion?: string } {
@@ -44,7 +71,7 @@ function localFallbackReply(input: string): string {
   ].join('\n');
 }
 
-async function streamPoliReply(projectId: string, message: string): Promise<string> {
+async function streamPoliReply(projectId: string, message: string, reference_materials: ScholarPaper[] = []): Promise<string> {
   const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
   const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/chat/stream`, {
@@ -53,7 +80,7 @@ async function streamPoliReply(projectId: string, message: string): Promise<stri
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, reference_materials }),
   });
 
   if (!response.ok || !response.body) {
@@ -97,6 +124,14 @@ async function streamPoliReply(projectId: string, message: string): Promise<stri
   return full.trim();
 }
 
+function summarizeAbstract(abstract: string | null, maxLength = 200): string {
+  if (!abstract) return '초록 정보가 제공되지 않은 논문입니다.';
+  const normalized = abstract.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '초록 정보가 제공되지 않은 논문입니다.';
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}...`;
+}
+
 export function Workshop() {
   const { projectId } = useParams();
   const [searchParams] = useSearchParams();
@@ -113,6 +148,13 @@ export function Workshop() {
   const [isTyping, setIsTyping] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [flyingBlock, setFlyingBlock] = useState<{ id: string; content: string } | null>(null);
+  const [paperQuery, setPaperQuery] = useState(initialMajor);
+  const [papers, setPapers] = useState<ScholarPaper[]>([]);
+  const [selectedPapers, setSelectedPapers] = useState<ScholarPaper[]>([]);
+  const [paperSearchError, setPaperSearchError] = useState<string | null>(null);
+  const [isSearchingPapers, setIsSearchingPapers] = useState(false);
+  const [expandedPapers, setExpandedPapers] = useState<Record<string, boolean>>({});
+  const [lastPaperQuery, setLastPaperQuery] = useState('');
   const [documentContent, setDocumentContent] = useState<string>(
     [
       `# ${initialMajor} 탐구 보고서`,
@@ -165,7 +207,7 @@ export function Workshop() {
 
     try {
       const rawReply = projectId
-        ? await streamPoliReply(projectId, userText)
+        ? await streamPoliReply(projectId, userText, selectedPapers)
         : localFallbackReply(userText);
       const parsed = extractSuggestedContent(rawReply || localFallbackReply(userText));
 
@@ -256,6 +298,68 @@ export function Workshop() {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handlePaperSearch = async (rawQuery?: string) => {
+    const keyword = (rawQuery ?? paperQuery).trim();
+    if (keyword.length < 2 || isSearchingPapers) {
+      if (keyword.length < 2) {
+        toast('논문 검색어를 2글자 이상 입력해주세요.', { icon: 'ℹ️' });
+      }
+      return;
+    }
+
+    setIsSearchingPapers(true);
+    setPaperSearchError(null);
+
+    try {
+      const response = await api.get<ScholarSearchResponse>('/api/v1/research/papers', {
+        params: { query: keyword, limit: 6 },
+      });
+      setPapers(response.papers);
+      setLastPaperQuery(response.query);
+      setExpandedPapers({});
+
+      if (!response.papers.length) {
+        toast('검색 결과가 없습니다. 다른 키워드로 시도해보세요.', { icon: '🔎' });
+      }
+    } catch (error) {
+      console.error('Paper search error:', error);
+      setPapers([]);
+
+      const normalized = error as {
+        response?: {
+          status?: number;
+          data?: { detail?: string };
+        };
+      };
+
+      const status = normalized.response?.status;
+      const detail = normalized.response?.data?.detail;
+      let message = '논문 검색 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+
+      if (status === 429) {
+        message = '검색 요청이 많습니다. 잠시 후 다시 시도해주세요.';
+      } else if (status === 504) {
+        message = '학술 검색 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.';
+      } else if (status === 503) {
+        message = '학술 검색 서버가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.';
+      } else if (typeof detail === 'string' && detail.trim()) {
+        message = detail;
+      }
+
+      setPaperSearchError(message);
+      toast.error(message);
+    } finally {
+      setIsSearchingPapers(false);
+    }
+  };
+
+  const togglePaperAbstract = (paperKey: string) => {
+    setExpandedPapers((prev) => ({
+      ...prev,
+      [paperKey]: !prev[paperKey],
+    }));
   };
 
   return (
@@ -371,28 +475,170 @@ export function Workshop() {
           <div className="w-16" />
         </div>
 
-        <div className="hide-scrollbar relative flex flex-1 justify-center overflow-y-auto p-4 sm:p-8">
-          <div className="relative z-0 min-h-[297mm] w-full max-w-[210mm] rounded-sm bg-white p-8 font-serif text-slate-800 shadow-2xl sm:p-12 md:p-16">
-            <div className="prose prose-sm max-w-none prose-headings:font-extrabold prose-headings:text-slate-900 prose-p:leading-loose prose-p:text-slate-700 sm:prose-base">
-              <ReactMarkdown>{documentContent}</ReactMarkdown>
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          <div className="hide-scrollbar relative flex min-h-0 flex-1 justify-center overflow-y-auto p-4 sm:p-8">
+            <div className="relative z-0 min-h-[297mm] w-full max-w-[210mm] rounded-sm bg-white p-8 font-serif text-slate-800 shadow-2xl sm:p-12 md:p-16">
+              <div className="prose prose-sm max-w-none prose-headings:font-extrabold prose-headings:text-slate-900 prose-p:leading-loose prose-p:text-slate-700 sm:prose-base">
+                <ReactMarkdown>{documentContent}</ReactMarkdown>
+              </div>
             </div>
+
+            <AnimatePresence>
+              {flyingBlock ? (
+                <motion.div
+                  initial={{ opacity: 0, x: -300, y: 100, scale: 0.5 }}
+                  animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.1 }}
+                  transition={{ duration: 0.8, type: 'spring', bounce: 0.4 }}
+                  className="absolute z-50 max-w-xs rounded-2xl border-2 border-blue-200 bg-blue-50/95 p-5 text-[15px] font-extrabold text-blue-700 shadow-2xl backdrop-blur-md"
+                  style={{ top: '30%', left: '20%' }}
+                >
+                  <Sparkles size={20} className="mb-1 mr-2 inline text-blue-500" />
+                  문서에 제안 내용을 반영하고 있어요!
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
 
-          <AnimatePresence>
-            {flyingBlock ? (
-              <motion.div
-                initial={{ opacity: 0, x: -300, y: 100, scale: 0.5 }}
-                animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.1 }}
-                transition={{ duration: 0.8, type: 'spring', bounce: 0.4 }}
-                className="absolute z-50 max-w-xs rounded-2xl border-2 border-blue-200 bg-blue-50/95 p-5 text-[15px] font-extrabold text-blue-700 shadow-2xl backdrop-blur-md"
-                style={{ top: '30%', left: '20%' }}
+          <aside className="flex h-[320px] min-h-0 flex-col border-t border-slate-700/80 bg-slate-900/40 p-4 sm:h-[360px] sm:p-5 lg:h-auto lg:w-[360px] lg:border-l lg:border-t-0 lg:p-6">
+            <div className="mb-3">
+              <h3 className="text-sm font-extrabold text-white sm:text-base">논문/선행연구 검색</h3>
+              <p className="mt-1 text-xs font-medium text-slate-300">
+                Semantic Scholar 기반으로 실제 학술 논문을 찾아보세요.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/80 p-2 shadow-inner">
+              <input
+                type="text"
+                value={paperQuery}
+                onChange={(event) => setPaperQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    handlePaperSearch();
+                  }
+                }}
+                placeholder='예: "미세플라스틱 해양생태계"'
+                className="flex-1 bg-transparent px-2 text-sm font-medium text-slate-100 placeholder:text-slate-400 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => handlePaperSearch()}
+                disabled={isSearchingPapers}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                <Sparkles size={20} className="mb-1 mr-2 inline text-blue-500" />
-                문서에 제안 내용을 반영하고 있어요!
-              </motion.div>
+                {isSearchingPapers ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              </button>
+            </div>
+
+            {paperSearchError ? (
+              <p className="mt-3 rounded-xl border border-red-200/50 bg-red-500/15 px-3 py-2 text-xs font-bold text-red-100">
+                {paperSearchError}
+              </p>
             ) : null}
-          </AnimatePresence>
+
+            <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 hide-scrollbar">
+              {lastPaperQuery ? (
+                <p className="text-xs font-bold text-slate-300">
+                  검색어: <span className="text-white">{lastPaperQuery}</span> · 결과 {papers.length}건
+                </p>
+              ) : (
+                <p className="text-xs font-medium text-slate-400">검색어를 입력하고 돋보기 버튼을 눌러주세요.</p>
+              )}
+
+              {papers.map((paper, index) => {
+                const paperKey = `${paper.title}-${paper.year ?? 'na'}-${index}`;
+                const isExpanded = Boolean(expandedPapers[paperKey]);
+                const preview = summarizeAbstract(paper.abstract);
+                const fullAbstract = paper.abstract?.replace(/\s+/g, ' ').trim() || preview;
+
+                return (
+                  <div key={paperKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm clay-card">
+                    <a
+                      href={paper.url || '#'}
+                      target={paper.url ? '_blank' : undefined}
+                      rel={paper.url ? 'noreferrer noopener' : undefined}
+                      onClick={(event) => {
+                        if (!paper.url) {
+                          event.preventDefault();
+                          toast('원문 링크가 제공되지 않은 논문입니다.', { icon: 'ℹ️' });
+                        }
+                      }}
+                      className="group block"
+                    >
+                      <h4 className="line-clamp-2 text-sm font-extrabold leading-snug text-slate-800 transition-colors group-hover:text-blue-600">
+                        {paper.title}
+                      </h4>
+                      <div className="mt-2 flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                        {paper.url ? (
+                          <>
+                            원문 링크 <ExternalLink size={12} />
+                          </>
+                        ) : (
+                          <span>원문 링크 없음</span>
+                        )}
+                      </div>
+                    </a>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-600">
+                      <span className="rounded-lg bg-slate-100 px-2 py-1">
+                        저자: {paper.authors.length ? paper.authors.slice(0, 2).join(', ') : '정보 없음'}
+                      </span>
+                      <span className="rounded-lg bg-slate-100 px-2 py-1">발행: {paper.year ?? 'N/A'}</span>
+                      <span className="rounded-lg bg-slate-100 px-2 py-1">Citation: {paper.citationCount}</span>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                      <p className="text-xs font-medium leading-relaxed text-slate-700">
+                        {isExpanded ? fullAbstract : preview}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => togglePaperAbstract(paperKey)}
+                        className="mt-2 inline-flex items-center gap-1 text-[11px] font-extrabold text-blue-600 transition-colors hover:text-blue-700"
+                      >
+                        {isExpanded ? (
+                          <>
+                            초록 접기 <ChevronUp size={12} />
+                          </>
+                        ) : (
+                          <>
+                            초록 펼치기 <ChevronDown size={12} />
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isSelected = selectedPapers.some((p) => p.title === paper.title);
+                          if (isSelected) {
+                            setSelectedPapers((prev) => prev.filter((p) => p.title !== paper.title));
+                          } else {
+                            if (selectedPapers.length >= 3) {
+                              toast.error('참고 문헌은 최대 3개까지만 선택할 수 있어요.');
+                              return;
+                            }
+                            setSelectedPapers((prev) => [...prev, paper]);
+                            toast.success('참고 문헌이 추가되었습니다.');
+                          }
+                        }}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
+                          selectedPapers.some((p) => p.title === paper.title)
+                            ? 'bg-blue-100 border-blue-200 text-blue-700'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {selectedPapers.some((p) => p.title === paper.title) ? '[추가됨 ✔️]' : '[참고 문헌으로 추가 📌]'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
         </div>
 
         <div className="absolute bottom-6 right-6 z-20">
