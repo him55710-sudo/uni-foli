@@ -15,16 +15,14 @@ pip install -e .[dev]
 You can also run:
 
 ```powershell
-.\scripts\setup-local.ps1
+.\scripts\setup-local.cmd
 ```
 
 ## 2. Choose your database mode
 
 ### Easiest: SQLite
 
-```powershell
-Copy-Item .env.sqlite.example .env
-```
+`.\scripts\setup-local.cmd` uses SQLite by default, so you can skip extra env setup.
 
 This stores everything in:
 
@@ -33,9 +31,9 @@ This stores everything in:
 ### Recommended: PostgreSQL + pgvector
 
 ```powershell
-Copy-Item .env.example .env
-.\scripts\start-infra.ps1
-.\scripts\migrate.ps1
+.\scripts\setup-local.cmd postgres
+.\scripts\start-infra.cmd
+.\scripts\migrate.cmd
 ```
 
 This path needs Docker installed on your computer.
@@ -43,7 +41,7 @@ This path needs Docker installed on your computer.
 ## 3. Start the API
 
 ```powershell
-.\scripts\start-api.ps1
+.\scripts\start-api.cmd
 ```
 
 Then open:
@@ -63,7 +61,7 @@ Then open:
 ## 5. Start the worker
 
 ```powershell
-.\scripts\start-worker.ps1
+.\scripts\start-worker.cmd
 ```
 
 The worker processes queued render jobs and saves files into:

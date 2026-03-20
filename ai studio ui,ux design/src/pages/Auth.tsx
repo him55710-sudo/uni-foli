@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { FirebaseError } from 'firebase/app';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
+import { Sparkles, ArrowRight, AlertCircle, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import poliDuoMascot from '../assets/poli-duo.png';
 
@@ -12,6 +12,8 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth/network-request-failed': 'Network error. Check your internet connection.',
   'auth/unauthorized-domain': 'This domain is not allowed in Firebase Auth.',
   'auth/configuration-not-found': 'Google provider is not enabled in Firebase Auth.',
+  'auth/operation-not-allowed': 'Guest login is not enabled in Firebase Auth settings.',
+  'auth/admin-restricted-operation': 'Guest login is blocked by Firebase project settings.',
 };
 
 function toAuthMessage(error: unknown): string {
@@ -22,11 +24,11 @@ function toAuthMessage(error: unknown): string {
 }
 
 export function Auth() {
-  const { user, signInWithGoogle } = useAuth();
+  const { user, isGuestSession, signInWithGoogle, signInAsGuest } = useAuth();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState<'google' | 'guest' | null>(null);
 
-  if (user) {
+  if (user || isGuestSession) {
     return <Navigate to="/" replace />;
   }
 
@@ -36,17 +38,32 @@ export function Auth() {
   };
 
   const onGoogleLogin = async () => {
-    if (isSigningIn) {
+    if (isSigningIn !== null) {
       return;
     }
 
-    setIsSigningIn(true);
+    setIsSigningIn('google');
     try {
       await signInWithGoogle();
     } catch (error) {
       showToast(toAuthMessage(error));
     } finally {
-      setIsSigningIn(false);
+      setIsSigningIn(null);
+    }
+  };
+
+  const onGuestLogin = async () => {
+    if (isSigningIn !== null) {
+      return;
+    }
+
+    setIsSigningIn('guest');
+    try {
+      await signInAsGuest();
+    } catch (error) {
+      showToast(toAuthMessage(error));
+    } finally {
+      setIsSigningIn(null);
     }
   };
 
@@ -128,22 +145,37 @@ export function Auth() {
             </div>
             <h2 className="mb-4 text-3xl font-extrabold text-slate-800 sm:text-4xl">Welcome back</h2>
             <p className="text-lg font-medium text-slate-500">
-              Google sign-in is currently the only available login method.
+              Continue with Google or start immediately as a guest.
             </p>
           </div>
 
-          <button
-            onClick={onGoogleLogin}
-            disabled={isSigningIn}
-            className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-100 bg-white px-6 py-4 text-lg font-bold text-slate-700 shadow-sm transition-all hover:border-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <img src="https://www.google.com/favicon.ico" alt="Google" className="h-6 w-6" />
-            {isSigningIn ? 'Signing in...' : 'Continue with Google'}
-            <ArrowRight
-              size={20}
-              className="absolute right-6 text-slate-400 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100"
-            />
-          </button>
+          <div className="space-y-3">
+            <button
+              onClick={onGoogleLogin}
+              disabled={isSigningIn !== null}
+              className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-100 bg-white px-6 py-4 text-lg font-bold text-slate-700 shadow-sm transition-all hover:border-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <img src="https://www.google.com/favicon.ico" alt="Google" className="h-6 w-6" />
+              {isSigningIn === 'google' ? 'Signing in...' : 'Continue with Google'}
+              <ArrowRight
+                size={20}
+                className="absolute right-6 text-slate-400 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100"
+              />
+            </button>
+
+            <button
+              onClick={onGuestLogin}
+              disabled={isSigningIn !== null}
+              className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-blue-100 bg-blue-50 px-6 py-4 text-lg font-bold text-blue-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-100/70 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <User size={20} className="text-blue-600" />
+              {isSigningIn === 'guest' ? '게스트 로그인 중...' : '게스트로 시작하기'}
+              <ArrowRight
+                size={20}
+                className="absolute right-6 text-blue-400 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100"
+              />
+            </button>
+          </div>
 
           <p className="mt-6 text-center text-sm font-medium text-slate-400">
             Kakao and Naver login are temporarily disabled.

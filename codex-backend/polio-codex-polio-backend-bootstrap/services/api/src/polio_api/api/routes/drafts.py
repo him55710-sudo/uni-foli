@@ -51,19 +51,32 @@ def get_draft_route(project_id: str, draft_id: str, db: Session = Depends(get_db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found.")
     return DraftRead.model_validate(draft)
 
-@router.post("/chat/stream")
+@router.post("/{project_id}/chat/stream")
 async def handle_chat_stream_route(
+    project_id: str,
     payload: ChatRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: User = Depends(get_current_user) # Changed from dict to User to match deps.py
 ) -> StreamingResponse:
     import json
     import asyncio
     
+    project = get_project(db, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    # Contextual instruction based on the student's target major
+    major_context = f"The student is targeting the {project.target_major} major." if project.target_major else ""
+    
     system_instruction = (
-        "You are Poli, a friendly and encouraging AI mentor for Korean high school students "
-        "preparing their university admission portfolio (생기부). "
-        "The student is writing a report. Keep responses short, empathetic, and use emojis. "
+        "You are Poli (폴리오), a friendly and encouraging AI research mentor for Korean high school students. "
+        "Your goal is to help students write high-quality research reports (탐구보고서) for their school records (생기부). "
+        f"{major_context} "
+        "Response Rules: "
+        "1. Write in Korean. Use friendly and supportive tone. "
+        "2. Keep responses concise and use emojis. "
+        "3. When suggesting a specific section for the report (like 'Introduction' or 'Conclusion'), "
+        "wrap the suggested text inside [CONTENT]...[/CONTENT] tags so the system can extract it. "
     )
     
     model = genai.GenerativeModel(
@@ -71,21 +84,17 @@ async def handle_chat_stream_route(
         system_instruction=system_instruction
     )
 
-    # Note: Using Depends(get_db) creates a session bound to the request. 
-    # To safely insert async *after* stream completes without Session Closed errors, 
-    # we simulate an asynchronous background save operation.
-    async def save_chat_to_db(user_message: str, ai_response: str, user_info: dict):
+    async def save_chat_to_db(user_message: str, ai_response: str, user: User):
         try:
-            # Here you would typically instantiate a new session maker to write to DB
-            # like: with SessionLocal() as async_db:
-            #          async_db.add(ChatSession(...))
-            print(f"[DB Save] User: {user_info.get('uid')} | Message: {user_message[:10]}... | AI length: {len(ai_response)}")
+            # Sync to DB logic here in the future
+            print(f"[DB Save] User: {user.id} | Message: {user_message[:20]}... | AI Response: {ai_response[:20]}...")
         except Exception as e:
-            print(f"[DB Save Error] Failed to save chat history: {e}")
+            print(f"[DB Save Error] {e}")
 
     async def event_stream():
         full_response = ""
         try:
+            # Use Async SDK to generate stream
             response_stream = await model.generate_content_async(
                 contents=f"Student says: {payload.message}",
                 stream=True,
@@ -93,24 +102,20 @@ async def handle_chat_stream_route(
             )
             
             async for chunk in response_stream:
-                text = chunk.text
-                if text:
-                    full_response += text
-                    # Yield data payload in SSE format
-                    sse_data = json.dumps({"text": text}, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                    
-            # 스트리밍이 정상적으로 완료된 후, 대화 내역 전체를 비동기로 저장 (Timeout 없는 백그라운드 태스크)
-            asyncio.create_task(save_chat_to_db(payload.message, full_response, current_user))
+                if chunk.text:
+                    token = chunk.text
+                    full_response += token
+                    # Yield JSON payload in SSE format
+                    yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
             
-            # SSE End indicator
+            # Finalize
+            asyncio.create_task(save_chat_to_db(payload.message, full_response, current_user))
             yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"
             
         except Exception as e:
-            # API 제한 도달, Timeout 예외 방어
-            error_msg = f"앗! AI 생성 중 서버 오류가 발생했어요: {str(e)} 🤕"
-            error_data = json.dumps({"error": error_msg}, ensure_ascii=False)
+            error_data = json.dumps({"error": f"AI 생성 도중 오류가 발생했습니다: {str(e)}"}, ensure_ascii=False)
             yield f"data: {error_data}\n\n"
             
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
 

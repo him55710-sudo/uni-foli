@@ -1,56 +1,158 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Download, Filter, FileText } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  downloadArchiveAsText,
+  listArchiveItems,
+  type ArchiveItem as StoredArchiveItem,
+} from '../lib/archiveStore';
 
-const archives = [
-  { id: 1, title: '생명과학 II - 유전자 가위 기술의 윤리적 쟁점', subject: '생명과학', date: '2023.11.15', emoji: '🧬', color: 'bg-emerald-100' },
-  { id: 2, title: '확률과 통계 - 빅데이터를 활용한 전염병 예측 모델', subject: '수학', date: '2023.10.20', emoji: '📊', color: 'bg-blue-100' },
-  { id: 3, title: '영어 독해와 작문 - AI 번역기의 한계와 인간의 역할', subject: '영어', date: '2023.09.05', emoji: '📚', color: 'bg-rose-100' },
-  { id: 4, title: '한국사 - 조선 후기 실학사상의 현대적 의의', subject: '역사', date: '2023.07.12', emoji: '📜', color: 'bg-amber-100' },
-  { id: 5, title: '물리학 I - 양자역학의 기본 개념과 응용', subject: '물리', date: '2023.06.28', emoji: '⚛️', color: 'bg-violet-100' },
+interface ArchiveCardItem {
+  id: string;
+  title: string;
+  subject: string;
+  createdAt: string;
+  emoji: string;
+  color: string;
+  contentMarkdown: string;
+  projectId: string | null;
+}
+
+const defaultArchives: ArchiveCardItem[] = [
+  {
+    id: 'seed-1',
+    title: '생명과학 II - 유전자 편집 기술의 윤리적 쟁점',
+    subject: '생명과학',
+    createdAt: '2026-03-01T09:00:00.000Z',
+    emoji: '🧬',
+    color: 'bg-emerald-100',
+    contentMarkdown: '# 생명과학 II 보고서\n\n유전자 편집 기술의 윤리적 한계를 정리한 초안입니다.',
+    projectId: null,
+  },
+  {
+    id: 'seed-2',
+    title: '수학과 통계 - 데이터 기반 소비 패턴 모델',
+    subject: '수학',
+    createdAt: '2026-02-20T09:00:00.000Z',
+    emoji: '📊',
+    color: 'bg-blue-100',
+    contentMarkdown: '# 수학/통계 보고서\n\n회귀 분석 기반 소비 패턴 모델 초안입니다.',
+    projectId: null,
+  },
+  {
+    id: 'seed-3',
+    title: '영어 심화 - AI 번역기의 한계와 가능성',
+    subject: '영어',
+    createdAt: '2026-02-11T09:00:00.000Z',
+    emoji: '🌍',
+    color: 'bg-rose-100',
+    contentMarkdown: '# 영어 심화 보고서\n\nAI 번역기의 구조적 한계 분석 초안입니다.',
+    projectId: null,
+  },
 ];
 
+function mapStoredItemToCard(item: StoredArchiveItem): ArchiveCardItem {
+  const colorPalette = ['bg-violet-100', 'bg-amber-100', 'bg-cyan-100', 'bg-lime-100'];
+  const emojis = ['📝', '🚀', '🧠', '📚'];
+  const index = Math.abs(item.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) % emojis.length;
+  return {
+    id: item.id,
+    title: item.title,
+    subject: item.subject || '탐구',
+    createdAt: item.createdAt,
+    emoji: emojis[index],
+    color: colorPalette[index],
+    contentMarkdown: item.contentMarkdown,
+    projectId: item.projectId,
+  };
+}
+
 export function Archive() {
-  const { user } = useAuth();
+  const { user, isGuestSession } = useAuth();
+  const [sortMode, setSortMode] = useState<'latest' | 'oldest'>('latest');
+
+  const items = useMemo(() => {
+    const fromStorage = listArchiveItems().map(mapStoredItemToCard);
+    const merged = [...fromStorage, ...defaultArchives].reduce<ArchiveCardItem[]>((acc, current) => {
+      if (acc.some((item) => item.id === current.id)) return acc;
+      return [...acc, current];
+    }, []);
+
+    return merged.sort((a, b) =>
+      sortMode === 'latest'
+        ? Number(new Date(b.createdAt)) - Number(new Date(a.createdAt))
+        : Number(new Date(a.createdAt)) - Number(new Date(b.createdAt)),
+    );
+  }, [sortMode]);
+
+  const handleDownload = (item: ArchiveCardItem, format: 'hwpx' | 'pdf') => {
+    downloadArchiveAsText(
+      {
+        id: item.id,
+        projectId: item.projectId,
+        title: item.title,
+        subject: item.subject,
+        createdAt: item.createdAt,
+        contentMarkdown: item.contentMarkdown,
+      },
+      format,
+    );
+    toast.success(`${format.toUpperCase()} 파일을 내려받았습니다.`);
+  };
 
   return (
-    <div className="max-w-7xl mx-auto pb-24 px-4 sm:px-6 lg:px-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+    <div className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
+      <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800">{user?.displayName || '학생'}님의 탐구 포트폴리오</h1>
-          <p className="text-slate-500 font-medium mt-2">지금까지 완성한 보고서들을 한눈에 확인하세요.</p>
+          <h1 className="text-3xl font-extrabold text-slate-800">
+            {user?.displayName || (isGuestSession ? '게스트' : '사용자')}님의 탐구 아카이브
+          </h1>
+          <p className="mt-2 font-medium text-slate-500">저장된 보고서 초안을 다시 열고 다운로드할 수 있습니다.</p>
         </div>
-        
-        <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 font-bold hover:bg-slate-50 transition-colors shadow-sm self-start sm:self-auto">
-          <Filter size={18} />
-          <span>최신순</span>
+
+        <button
+          onClick={() => setSortMode((prev) => (prev === 'latest' ? 'oldest' : 'latest'))}
+          className="self-start rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-600 shadow-sm transition-colors hover:bg-slate-50 sm:self-auto"
+        >
+          <span className="flex items-center gap-2">
+            <Filter size={18} />
+            {sortMode === 'latest' ? '최신순' : '오래된순'}
+          </span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {archives.map((item) => (
-          <div key={item.id} className="clay-card group relative overflow-hidden flex flex-col cursor-pointer">
-            {/* Thumbnail */}
-            <div className={`relative w-full pt-[75%] overflow-hidden rounded-t-3xl ${item.color} flex items-center justify-center`}>
-              <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay" />
-              <span className="text-7xl drop-shadow-xl group-hover:scale-110 transition-transform duration-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">{item.emoji}</span>
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((item) => (
+          <div key={item.id} className="group relative flex flex-col overflow-hidden clay-card">
+            <div className={`relative w-full overflow-hidden rounded-t-3xl pt-[75%] ${item.color}`}>
+              <div className="absolute inset-0 opacity-20 mix-blend-overlay bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
+              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-7xl drop-shadow-xl transition-transform duration-500 group-hover:scale-110">
+                {item.emoji}
+              </span>
             </div>
 
-            {/* Info */}
-            <div className="p-6 flex-1 flex flex-col bg-white">
-              <div className="flex items-center justify-between mb-3">
-                <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-extrabold rounded-lg">{item.subject}</span>
-                <span className="text-xs font-bold text-slate-400">{item.date}</span>
+            <div className="flex flex-1 flex-col bg-white p-6">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-600">{item.subject}</span>
+                <span className="text-xs font-bold text-slate-400">
+                  {new Date(item.createdAt).toLocaleDateString()}
+                </span>
               </div>
-              <h3 className="text-lg font-extrabold text-slate-800 leading-snug line-clamp-2 mb-4">{item.title}</h3>
+              <h3 className="mb-4 line-clamp-2 text-lg font-extrabold leading-snug text-slate-800">{item.title}</h3>
             </div>
 
-            {/* Hover Slide Up Buttons */}
-            <div className="absolute bottom-0 left-0 w-full p-4 bg-white/90 backdrop-blur-md border-t border-slate-100 translate-y-full group-hover:translate-y-0 transition-transform duration-300 flex gap-2">
-              <button className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-colors shadow-sm">
+            <div className="absolute bottom-0 left-0 flex w-full translate-y-full gap-2 border-t border-slate-100 bg-white/90 p-4 backdrop-blur-md transition-transform duration-300 group-hover:translate-y-0">
+              <button
+                onClick={() => handleDownload(item, 'hwpx')}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-500 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-600"
+              >
                 <FileText size={16} /> HWPX
               </button>
-              <button className="flex-1 bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-colors shadow-sm">
+              <button
+                onClick={() => handleDownload(item, 'pdf')}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-800 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900"
+              >
                 <Download size={16} /> PDF
               </button>
             </div>

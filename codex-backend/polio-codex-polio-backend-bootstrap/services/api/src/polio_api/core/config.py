@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import re
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from polio_shared.paths import find_project_root
 
 
@@ -18,12 +20,21 @@ class Settings(BaseSettings):
     database_echo: bool = False
     database_auto_create_tables: bool = True
     postgres_enable_pgvector: bool = True
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"])
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3001"]
+    )
     allow_inline_render: bool = True
     auto_ingest_uploads: bool = True
     upload_chunk_size_chars: int = 1200
     upload_chunk_overlap_chars: int = 180
     vector_dimensions: int = 1536
+    
+    # Social Auth
+    kakao_client_id: str = "DUMMY_KAKAO_ID"
+    kakao_redirect_uri: str = "http://localhost:3001/auth/callback/kakao"
+    naver_client_id: str = "DUMMY_NAVER_ID"
+    naver_client_secret: str = "DUMMY_NAVER_SECRET"
+    naver_redirect_uri: str = "http://localhost:3001/auth/callback/naver"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -35,7 +46,8 @@ class Settings(BaseSettings):
     @classmethod
     def split_cors_origins(cls, value: object) -> object:
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            # Accept comma, semicolon, or whitespace separated origin lists.
+            return [item.strip() for item in re.split(r"[,\s;]+", value) if item.strip()]
         return value
 
     @field_validator("database_url", mode="after")

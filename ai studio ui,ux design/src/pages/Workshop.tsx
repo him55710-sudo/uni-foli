@@ -1,189 +1,356 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Lock, Download, Sparkles, Bot, User } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { useParams, useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import confetti from 'canvas-confetti';
+import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
+import { saveArchiveItem } from '../lib/archiveStore';
 
 interface Message {
   id: string;
   role: 'user' | 'poli';
   content: string;
-  isConfirmed?: boolean;
+  suggestedContent?: string;
+}
+
+function extractSuggestedContent(raw: string): { clean: string; suggestion?: string } {
+  const match = raw.match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
+  if (!match) {
+    return { clean: raw.trim() };
+  }
+
+  const clean = raw.replace(match[0], '').trim();
+  return {
+    clean: clean || '문서에 넣을 내용을 준비했어요.',
+    suggestion: match[1].trim(),
+  };
+}
+
+function localFallbackReply(input: string): string {
+  return [
+    '좋아요. 지금 요청을 바탕으로 보고서 문장 초안을 정리했어요.',
+    '',
+    '[CONTENT]',
+    `- 주제: ${input}`,
+    '- 탐구 동기: 사회적 맥락과 개인적 문제의식을 연결해 서술',
+    '- 탐구 과정: 자료 수집 -> 분석 기준 설계 -> 결과 해석 순서로 구조화',
+    '- 배운 점: 전공 연계 역량(문제정의, 근거기반 추론, 표현력) 강조',
+    '[/CONTENT]',
+    '',
+    '위 문장을 문서에 바로 적용해볼까요?',
+  ].join('\n');
+}
+
+async function streamPoliReply(projectId: string, message: string): Promise<string> {
+  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message }),
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Chat stream failed with status ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let full = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop() ?? '';
+
+    for (const event of events) {
+      const line = event
+        .split('\n')
+        .find((entry) => entry.trim().startsWith('data:'));
+      if (!line) continue;
+
+      const payload = line.replace(/^data:\s*/, '');
+      try {
+        const parsed = JSON.parse(payload) as { token?: string; status?: string; error?: string };
+        if (parsed.error) {
+          throw new Error(parsed.error);
+        }
+        if (parsed.token) {
+          full += parsed.token;
+        }
+      } catch {
+        // Ignore malformed chunks and continue streaming.
+      }
+    }
+  }
+
+  return full.trim();
 }
 
 export function Workshop() {
+  const { projectId } = useParams();
+  const [searchParams] = useSearchParams();
+  const initialMajor = searchParams.get('major') || '희망 전공';
+
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: '1',
+      id: 'welcome',
       role: 'poli',
-      content: '안녕! 오늘 어떤 과목의 세특을 작성해볼까? 주제나 키워드를 알려주면 내가 뼈대를 잡아줄게. ✨',
+      content: `${initialMajor} 중심으로 세특/탐구 보고서 초안을 같이 만들어볼까요? 키워드나 상황을 한 줄로 알려주세요.`,
     },
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [documentContent, setDocumentContent] = useState<string>('# 생명과학 II 탐구 보고서\n\n## 1. 탐구 동기\n\n(여기에 내용이 채워집니다)');
+  const [isExporting, setIsExporting] = useState(false);
   const [flyingBlock, setFlyingBlock] = useState<{ id: string; content: string } | null>(null);
-  
+  const [documentContent, setDocumentContent] = useState<string>(
+    [
+      `# ${initialMajor} 탐구 보고서`,
+      '',
+      '## 1. 탐구 동기',
+      '',
+      '(여기에 내용이 채워집니다)',
+    ].join('\n'),
+  );
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const fileName = useMemo(() => {
+    const safeMajor = initialMajor.replace(/[^\w\-\uAC00-\uD7A3]+/g, '_');
+    return `${safeMajor || 'polio'}_보고서.hwpx`;
+  }, [initialMajor]);
 
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  const applyContentToDocument = (content: string) => {
+    setFlyingBlock({ id: crypto.randomUUID(), content });
+    setTimeout(() => {
+      setDocumentContent((prev) => {
+        if (prev.includes('(여기에 내용이 채워집니다)')) {
+          return prev.replace('(여기에 내용이 채워집니다)', `${content}\n\n(여기에 내용이 채워집니다)`);
+        }
+        return `${prev}\n\n${content}`;
+      });
+      setFlyingBlock(null);
+    }, 900);
+  };
+
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isTyping) return;
 
+    const userText = input.trim();
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       role: 'user',
-      content: input,
+      content: userText,
     };
-
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsTyping(true);
 
+    const draftId = crypto.randomUUID();
+    setMessages((prev) => [...prev, { id: draftId, role: 'poli', content: '' }]);
+
     try {
-      // Call Backend API instead of direct Gemini call
-      const response = await api.post('/api/v1/drafts/chat', { 
-        message: input 
-      });
+      const rawReply = projectId
+        ? await streamPoliReply(projectId, userText)
+        : localFallbackReply(userText);
+      const parsed = extractSuggestedContent(rawReply || localFallbackReply(userText));
 
-      const poliMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'poli',
-        content: response.response || '오류가 발생했어요. 다시 시도해볼까요?',
-        isConfirmed: input.includes('추가') || input.includes('넣어줘') || input.includes('좋아'), // Simple heuristic
-      };
-
-      setMessages((prev) => [...prev, poliMessage]);
-
-      // Trigger flying animation if content is confirmed
-      if (poliMessage.isConfirmed) {
-        triggerFlyingBlock(poliMessage.id, input);
-      }
-
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === draftId
+            ? {
+                ...message,
+                content: parsed.clean,
+                suggestedContent: parsed.suggestion,
+              }
+            : message,
+        ),
+      );
     } catch (error) {
-      console.error('Gemini API Error:', error);
-      setMessages((prev) => [...prev, {
-        id: Date.now().toString(),
-        role: 'poli',
-        content: '앗! 서버에 잠깐 과부하가 걸렸나 봐요. Poli가 얼른 고치고 올게요! 🤕',
-      }]);
+      console.error('Chat error:', error);
+      const parsed = extractSuggestedContent(localFallbackReply(userText));
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === draftId
+            ? {
+                ...message,
+                content: parsed.clean,
+                suggestedContent: parsed.suggestion,
+              }
+            : message,
+        ),
+      );
+      toast('서버 연결이 불안정해서 임시 초안으로 이어서 도와드릴게요.', {
+        icon: '⚠️',
+      });
     } finally {
       setIsTyping(false);
     }
   };
 
-  const triggerFlyingBlock = (id: string, content: string) => {
-    setFlyingBlock({ id, content });
-    
-    // Update document after animation
-    setTimeout(() => {
-      setDocumentContent((prev) => prev.replace('(여기에 내용이 채워집니다)', content + '\n\n(여기에 내용이 채워집니다)'));
-      setFlyingBlock(null);
-    }, 1000);
+  const handleExport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    const loadingId = toast.loading('문서를 내보내는 중입니다...');
+
+    try {
+      if (projectId) {
+        const blob = await api.post<Blob>(
+          `/api/v1/projects/${projectId}/export`,
+          { content_markdown: documentContent },
+          { responseType: 'blob' },
+        );
+        const url = window.URL.createObjectURL(new Blob([blob]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } else {
+        const fallbackBlob = new Blob([documentContent], { type: 'text/plain;charset=utf-8' });
+        const url = window.URL.createObjectURL(fallbackBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      }
+
+      saveArchiveItem({
+        id: crypto.randomUUID(),
+        projectId: projectId ?? null,
+        title: fileName.replace('.hwpx', ''),
+        subject: initialMajor,
+        createdAt: new Date().toISOString(),
+        contentMarkdown: documentContent,
+      });
+
+      toast.success('내보내기 완료! 아카이브에서도 다시 받을 수 있어요.', { id: loadingId });
+      confetti({
+        particleCount: 140,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('내보내기에 실패했습니다. 잠시 후 다시 시도해주세요.', { id: loadingId });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-8rem)] gap-6 overflow-hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
-      {/* Left Panel: Chat (40%) */}
-      <div className="w-full lg:w-2/5 flex flex-col bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden relative z-10 h-[50vh] lg:h-full">
-        {/* Chat Header */}
-        <div className="h-16 border-b border-slate-100 flex items-center px-6 bg-white/80 backdrop-blur-sm z-10 sticky top-0">
+    <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-7xl flex-col gap-6 overflow-hidden px-4 pb-8 sm:px-6 lg:flex-row lg:px-8">
+      <div className="relative z-10 flex h-[50vh] w-full flex-col overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm lg:h-full lg:w-2/5">
+        <div className="sticky top-0 z-10 flex h-16 items-center border-b border-slate-100 bg-white/80 px-6 backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-500 shadow-sm border border-blue-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-500 shadow-sm">
               <Bot size={20} />
             </div>
             <div>
-              <h2 className="font-extrabold text-slate-800 text-base">Poli와 대화 중</h2>
-              <p className="text-xs text-slate-500 font-medium">언제든 편하게 물어보세요!</p>
+              <h2 className="text-base font-extrabold text-slate-800">Poli와 작성 중</h2>
+              <p className="text-xs font-medium text-slate-500">
+                {projectId ? '프로젝트 기반 초안 작성' : '게스트 모드 초안 작성'}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-slate-50/50 hide-scrollbar">
+        <div className="hide-scrollbar flex-1 space-y-6 overflow-y-auto bg-slate-50/50 p-4 sm:p-6">
           <AnimatePresence>
-            {messages.map((msg) => (
+            {messages.map((message) => (
               <motion.div
-                key={msg.id}
+                key={message.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+                className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
               >
-                {/* Avatar */}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm ${
-                  msg.role === 'user' ? 'bg-white border border-slate-200 text-slate-400' : 'bg-blue-500 text-white shadow-blue-500/20'
-                }`}>
-                  {msg.role === 'user' ? <User size={20} /> : <span className="font-extrabold text-lg">P</span>}
+                <div
+                  className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl shadow-sm ${
+                    message.role === 'user'
+                      ? 'border border-slate-200 bg-white text-slate-400'
+                      : 'bg-blue-500 text-white shadow-blue-500/20'
+                  }`}
+                >
+                  {message.role === 'user' ? <User size={20} /> : <span className="text-lg font-extrabold">P</span>}
                 </div>
 
-                {/* Bubble */}
-                <div className={`max-w-[80%] sm:max-w-[75%] rounded-2xl p-4 sm:p-5 text-[15px] leading-relaxed shadow-sm ${
-                  msg.role === 'user' 
-                    ? 'bg-slate-800 text-white rounded-tr-sm' 
-                    : 'bg-white text-slate-700 border border-slate-100 rounded-tl-sm'
-                }`}>
-                <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-p:m-0 font-medium">
-                  <ReactMarkdown>
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
-                  
-                  {/* Action Button for Poli's suggestions */}
-                  {msg.role === 'poli' && msg.isConfirmed && (
-                    <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end">
-                      <button 
-                        onClick={() => triggerFlyingBlock(msg.id, "추가된 내용입니다.")}
-                        className="text-xs font-extrabold text-blue-600 flex items-center gap-1.5 hover:text-blue-700 transition-colors bg-blue-50 px-3 py-2 rounded-xl border border-blue-100"
+                <div
+                  className={`max-w-[80%] rounded-2xl p-4 text-[15px] leading-relaxed shadow-sm sm:max-w-[75%] sm:p-5 ${
+                    message.role === 'user'
+                      ? 'rounded-tr-sm bg-slate-800 text-white'
+                      : 'rounded-tl-sm border border-slate-100 bg-white text-slate-700'
+                  }`}
+                >
+                  <div className="prose prose-sm max-w-none font-medium prose-p:m-0 prose-p:leading-relaxed">
+                    <ReactMarkdown>{message.content || '...'}</ReactMarkdown>
+                  </div>
+
+                  {message.role === 'poli' && message.suggestedContent ? (
+                    <div className="mt-4 flex justify-end border-t border-slate-100 pt-4">
+                      <button
+                        onClick={() => applyContentToDocument(message.suggestedContent!)}
+                        className="flex items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-extrabold text-blue-600 transition-colors hover:text-blue-700"
                       >
-                        <Sparkles size={14} /> 문서에 바로 적용하기
+                        <Sparkles size={14} /> 문서에 적용하기
                       </button>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </motion.div>
             ))}
           </AnimatePresence>
-          
-          {isTyping && (
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className="flex gap-3"
-            >
-              <div className="w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/20">
-                <span className="font-extrabold text-lg">P</span>
+
+          {isTyping ? (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white shadow-sm shadow-blue-500/20">
+                <span className="text-lg font-extrabold">P</span>
               </div>
-              <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-sm p-5 shadow-sm flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-blue-200 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2.5 h-2.5 bg-blue-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-slate-100 bg-white p-5 shadow-sm">
+                <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-blue-200" />
+                <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-blue-300 [animation-delay:150ms]" />
+                <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-blue-400 [animation-delay:300ms]" />
               </div>
             </motion.div>
-          )}
+          ) : null}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
-        <div className="p-4 bg-white border-t border-slate-100">
+        <div className="border-t border-slate-100 bg-white p-4">
           <div className="relative flex items-center">
             <input
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleSend();
+              }}
               placeholder="Poli에게 메시지 보내기..."
-              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 pl-5 pr-14 text-[15px] font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+              className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50 py-3.5 pl-5 pr-14 text-[15px] font-medium text-slate-700 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100"
             />
-            <button 
+            <button
               onClick={handleSend}
               disabled={!input.trim() || isTyping}
-              className="absolute right-2 w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 transition-all hover:bg-blue-600 shadow-sm shadow-blue-500/20"
+              className="absolute right-2 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white shadow-sm shadow-blue-500/20 transition-all hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-50"
             >
               <Send size={18} className="ml-0.5" />
             </button>
@@ -191,58 +358,57 @@ export function Workshop() {
         </div>
       </div>
 
-      {/* Right Panel: Live Document (60%) */}
-      <div className="w-full lg:w-3/5 bg-slate-800 rounded-3xl overflow-hidden relative flex flex-col h-[50vh] lg:h-full shadow-sm border border-slate-700">
-        {/* Toolbar */}
-        <div className="h-14 bg-slate-900 border-b border-slate-700 flex items-center justify-between px-6">
+      <div className="relative flex h-[50vh] w-full flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 shadow-sm lg:h-full lg:w-3/5">
+        <div className="flex h-14 items-center justify-between border-b border-slate-700 bg-slate-900 px-6">
           <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-red-400 shadow-sm" />
-            <div className="w-3.5 h-3.5 rounded-full bg-amber-400 shadow-sm" />
-            <div className="w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-sm" />
+            <div className="h-3.5 w-3.5 rounded-full bg-red-400 shadow-sm" />
+            <div className="h-3.5 w-3.5 rounded-full bg-amber-400 shadow-sm" />
+            <div className="h-3.5 w-3.5 rounded-full bg-emerald-400 shadow-sm" />
           </div>
-          <div className="text-slate-300 text-xs font-bold bg-slate-800 px-4 py-1.5 rounded-xl border border-slate-700 shadow-inner">
-            생명과학_탐구보고서_최종.hwpx
+          <div className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-1.5 text-xs font-bold text-slate-300 shadow-inner">
+            {fileName}
           </div>
-          <div className="w-16" /> {/* Spacer */}
+          <div className="w-16" />
         </div>
 
-        {/* Canvas Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center relative hide-scrollbar">
-          {/* The A4 Paper */}
-          <div className="w-full max-w-[210mm] min-h-[297mm] bg-white shadow-2xl p-8 sm:p-12 md:p-16 text-slate-800 font-serif relative z-0 rounded-sm">
-            <div className="prose prose-sm sm:prose-base max-w-none prose-headings:font-extrabold prose-headings:text-slate-900 prose-p:text-slate-700 prose-p:leading-loose">
-              <ReactMarkdown>
-                {documentContent}
-              </ReactMarkdown>
+        <div className="hide-scrollbar relative flex flex-1 justify-center overflow-y-auto p-4 sm:p-8">
+          <div className="relative z-0 min-h-[297mm] w-full max-w-[210mm] rounded-sm bg-white p-8 font-serif text-slate-800 shadow-2xl sm:p-12 md:p-16">
+            <div className="prose prose-sm max-w-none prose-headings:font-extrabold prose-headings:text-slate-900 prose-p:leading-loose prose-p:text-slate-700 sm:prose-base">
+              <ReactMarkdown>{documentContent}</ReactMarkdown>
             </div>
           </div>
 
-          {/* Flying Block Animation */}
           <AnimatePresence>
-            {flyingBlock && (
+            {flyingBlock ? (
               <motion.div
                 initial={{ opacity: 0, x: -300, y: 100, scale: 0.5 }}
                 animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 1.1 }}
                 transition={{ duration: 0.8, type: 'spring', bounce: 0.4 }}
-                className="absolute z-50 bg-blue-50/95 backdrop-blur-md border-2 border-blue-200 text-blue-700 p-5 rounded-2xl shadow-2xl max-w-xs text-[15px] font-extrabold"
+                className="absolute z-50 max-w-xs rounded-2xl border-2 border-blue-200 bg-blue-50/95 p-5 text-[15px] font-extrabold text-blue-700 shadow-2xl backdrop-blur-md"
                 style={{ top: '30%', left: '20%' }}
               >
-                <Sparkles size={20} className="inline mr-2 mb-1 text-blue-500" />
-                문서에 내용이 추가되고 있어요!
+                <Sparkles size={20} className="mb-1 mr-2 inline text-blue-500" />
+                문서에 제안 내용을 반영하고 있어요!
               </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
         </div>
 
-        {/* Floating Download Button */}
         <div className="absolute bottom-6 right-6 z-20">
-          <button className="bg-white text-slate-800 px-5 sm:px-6 py-3.5 sm:py-4 rounded-2xl font-extrabold shadow-xl hover:bg-slate-50 transition-all flex items-center gap-3 group border-2 border-slate-100 hover:border-slate-200 hover:scale-105 active:scale-95">
-            <Download size={20} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
-            <span className="hidden sm:inline">선생님 제출용 HWPX 다운로드</span>
-            <span className="sm:hidden">다운로드</span>
-            <div className="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center ml-1 sm:ml-2 group-hover:bg-blue-50 transition-colors">
-              <Lock size={14} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className={`group flex items-center gap-3 rounded-2xl border-2 border-slate-100 bg-white px-5 py-3.5 font-extrabold text-slate-800 shadow-xl transition-all hover:scale-105 hover:border-slate-200 hover:bg-slate-50 active:scale-95 sm:px-6 sm:py-4 ${isExporting ? 'cursor-not-allowed opacity-70' : ''}`}
+          >
+            <Download
+              size={20}
+              className={`${isExporting ? 'animate-bounce' : 'text-slate-400 group-hover:text-blue-500'} transition-colors`}
+            />
+            <span className="hidden sm:inline">{isExporting ? '문서 내보내는 중...' : '제출용 HWPX 다운로드'}</span>
+            <span className="sm:hidden">{isExporting ? '내보내는 중' : '다운로드'}</span>
+            <div className="ml-1 flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover:bg-blue-50 sm:ml-2">
+              <Lock size={14} className="text-slate-400 transition-colors group-hover:text-blue-500" />
             </div>
           </button>
         </div>

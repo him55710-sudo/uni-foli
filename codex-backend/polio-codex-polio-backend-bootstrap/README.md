@@ -5,8 +5,8 @@ This workspace turns the Gemini planning thread into a backend that a beginner c
 ## Start Here
 
 1. Read `BEGINNER_GUIDE.md`
-2. Run `.\scripts\setup-local.ps1`
-3. Run `.\scripts\start-api.ps1`
+2. Run `.\scripts\setup-local.cmd`
+3. Run `.\scripts\start-api.cmd`
 4. Open `http://127.0.0.1:8000/docs`
 
 ## What Works Now
@@ -55,13 +55,13 @@ You have two practical ways to run this project.
 
 ### Easy local mode
 
-- copy `.env.sqlite.example` to `.env`
+- run `.\scripts\setup-local.cmd` (defaults to SQLite)
 - run the API
 - use SQLite in `storage/runtime/polio.db`
 
 ### Recommended dev mode
 
-- copy `.env.example` to `.env`
+- run `.\scripts\setup-local.cmd postgres`
 - start Postgres + Valkey
 - run Alembic migrations
 - use PostgreSQL + pgvector

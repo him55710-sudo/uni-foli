@@ -30,7 +30,7 @@ const navItems = [
 ];
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, isGuestSession, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   return (
@@ -116,7 +116,9 @@ export function Layout() {
             />
             {isSidebarOpen && (
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-extrabold text-slate-800 truncate">{user?.displayName || '학생'}</p>
+                <p className="text-sm font-extrabold text-slate-800 truncate">
+                  {user?.displayName || (isGuestSession ? '게스트' : '사용자')}
+                </p>
                 <button onClick={logout} className="text-xs text-slate-500 hover:text-red-500 flex items-center gap-1 mt-0.5 transition-colors font-medium">
                   <LogOut size={12} /> 로그아웃
                 </button>
