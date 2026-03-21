@@ -5,6 +5,7 @@ __pycache__/
 .mypy_cache/
 tmp/
 .env
+output/
 *.pyc
 *.pyo
 *.pyd
@@ -13,8 +14,11 @@ tmp/
 storage/runtime/*
 storage/uploads/*
 storage/exports/*
+storage/object-store/**
 !storage/runtime/.gitkeep
 !storage/uploads/.gitkeep
 !storage/exports/.gitkeep
+!storage/object-store/
+!storage/object-store/.gitkeep
 references/open-source/*
 !references/open-source/README.md

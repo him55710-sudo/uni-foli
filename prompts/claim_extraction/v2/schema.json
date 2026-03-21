@@ -1,0 +1,66 @@
+{
+  "type": "object",
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim_text": {"type": "string"},
+          "normalized_claim_text": {"type": "string"},
+          "claim_type": {
+            "type": "string",
+            "enum": [
+              "evaluation_criterion",
+              "document_rule",
+              "policy_statement",
+              "interpretation_note",
+              "admissions_emphasis",
+              "eligibility_condition",
+              "caution_rule"
+            ]
+          },
+          "source_tier": {
+            "type": "string",
+            "enum": [
+              "tier_1_official",
+              "tier_2_public_support",
+              "tier_3_controlled_secondary",
+              "tier_4_excluded"
+            ]
+          },
+          "target_evaluation_dimension": {
+            "type": ["string", "null"],
+            "enum": [
+              "academic_competence",
+              "self_directed_growth",
+              "career_exploration",
+              "major_fit",
+              "community_contribution",
+              "evidence_quality",
+              "authenticity",
+              null
+            ]
+          },
+          "applicable_from_year": {"type": ["integer", "null"]},
+          "applicable_to_year": {"type": ["integer", "null"]},
+          "applicable_cycle_label": {"type": ["string", "null"]},
+          "confidence_score": {"type": "number"},
+          "evidence_quote": {"type": "string"},
+          "evidence_page_number": {"type": ["integer", "null"]},
+          "evidence_chunk_index": {"type": ["integer", "null"]},
+          "rationale": {"type": ["string", "null"]}
+        },
+        "required": [
+          "claim_text",
+          "normalized_claim_text",
+          "claim_type",
+          "source_tier",
+          "confidence_score",
+          "evidence_quote"
+        ]
+      }
+    }
+  },
+  "required": ["claims"]
+}

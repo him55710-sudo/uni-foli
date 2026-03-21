@@ -1,0 +1,79 @@
+[
+  {
+    "name": "서울대학교 입학본부",
+    "organization_name": "서울대학교",
+    "base_url": "https://admission.snu.ac.kr",
+    "source_tier": "tier_1_official",
+    "source_category": "university",
+    "is_official": true,
+    "allow_crawl": true,
+    "freshness_days": 21,
+    "crawl_policy": {
+      "allowed_paths": [
+        "/materials/downloads",
+        "/webdata/admission/files"
+      ],
+      "document_types": [
+        "guidebook",
+        "evaluation_guide",
+        "announcement"
+      ]
+    },
+    "seeds": [
+      {
+        "seed_type": "guidebook_index",
+        "label": "서울대 자료실",
+        "seed_url": "https://admission.snu.ac.kr/materials/downloads/others",
+        "allowed_domains": [
+          "admission.snu.ac.kr"
+        ],
+        "allowed_path_prefixes": [
+          "/materials/downloads",
+          "/webdata/admission/files"
+        ],
+        "denied_path_prefixes": [],
+        "max_depth": 1,
+        "current_cycle_year_hint": 2027,
+        "allow_binary_assets": true,
+        "respect_robots_txt": true
+      }
+    ]
+  },
+  {
+    "name": "교육부 학교생활기록부 종합지원포털",
+    "organization_name": "교육부",
+    "base_url": "https://star.moe.go.kr",
+    "source_tier": "tier_1_official",
+    "source_category": "ministry",
+    "is_official": true,
+    "allow_crawl": true,
+    "freshness_days": 14,
+    "crawl_policy": {
+      "allowed_paths": [
+        "/web/contents"
+      ],
+      "document_types": [
+        "policy",
+        "school_record_guide"
+      ]
+    },
+    "seeds": [
+      {
+        "seed_type": "html_index",
+        "label": "학생부 공식 안내",
+        "seed_url": "https://star.moe.go.kr/web/contents/m20900.do",
+        "allowed_domains": [
+          "star.moe.go.kr"
+        ],
+        "allowed_path_prefixes": [
+          "/web/contents"
+        ],
+        "denied_path_prefixes": [],
+        "max_depth": 1,
+        "current_cycle_year_hint": 2026,
+        "allow_binary_assets": true,
+        "respect_robots_txt": true
+      }
+    ]
+  }
+]

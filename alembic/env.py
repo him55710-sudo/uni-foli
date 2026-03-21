@@ -8,21 +8,14 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_PATHS = [
-    PROJECT_ROOT / "services" / "api" / "src",
-    PROJECT_ROOT / "services" / "worker" / "src",
-    PROJECT_ROOT / "services" / "render" / "src",
-    PROJECT_ROOT / "services" / "ingest" / "src",
-    PROJECT_ROOT / "packages" / "domain" / "src",
-    PROJECT_ROOT / "packages" / "shared" / "src",
-]
+PACKAGE_PATHS = [PROJECT_ROOT]
 
 for package_path in PACKAGE_PATHS:
     sys.path.insert(0, str(package_path))
 
-from polio_api.core.config import get_settings  # noqa: E402
-from polio_api.core.database import Base  # noqa: E402
-from polio_api.db.models import document_chunk, draft, parsed_document, project, render_job, upload_asset  # noqa: F401, E402
+from app.core.config import get_settings  # noqa: E402
+from db.base import Base as AdmissionsBase  # noqa: E402
+from db import models  # noqa: F401, E402
 
 config = context.config
 if config.config_file_name is not None:
@@ -30,7 +23,7 @@ if config.config_file_name is not None:
 
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
-target_metadata = Base.metadata
+target_metadata = AdmissionsBase.metadata
 
 
 def run_migrations_offline() -> None:
