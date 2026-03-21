@@ -76,16 +76,29 @@ function localFallbackReply(input: string): string {
   ].join('\n');
 }
 
-async function streamPoliReply(projectId: string, message: string, reference_materials: ScholarPaper[] = []): Promise<string> {
+async function streamPoliReply(
+  projectId: string | undefined,
+  message: string,
+  referenceMaterials: ScholarPaper[] = [],
+): Promise<string> {
   const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-  const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/chat/stream`, {
+  const response = await fetch(`${baseUrl}/api/v1/drafts/chat/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ message, reference_materials }),
+    body: JSON.stringify({
+      project_id: projectId,
+      message,
+      reference_materials: referenceMaterials.map((paper) => ({
+        title: paper.title,
+        authors: paper.authors,
+        abstract: paper.abstract,
+        year: paper.year,
+      })),
+    }),
   });
 
   if (!response.ok || !response.body) {
@@ -250,9 +263,7 @@ export function Workshop() {
     setMessages((prev) => [...prev, { id: draftId, role: 'poli', content: '' }]);
 
     try {
-      const rawReply = projectId
-        ? await streamPoliReply(projectId, userText, selectedPapers)
-        : localFallbackReply(userText);
+      const rawReply = await streamPoliReply(projectId, userText, selectedPapers);
       const parsed = extractSuggestedContent(rawReply || localFallbackReply(userText));
 
       setMessages((prev) =>
@@ -618,6 +629,25 @@ export function Workshop() {
               </p>
             ) : null}
 
+            {selectedPapers.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedPapers.map((paper) => (
+                  <button
+                    key={`${paper.title}-${paper.year ?? 'na'}-pin`}
+                    type="button"
+                    onClick={() =>
+                      setSelectedPapers((prev) =>
+                        prev.filter((entry) => !(entry.title === paper.title && entry.year === paper.year)),
+                      )
+                    }
+                    className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-extrabold text-blue-700"
+                  >
+                    📌 {paper.title.length > 20 ? `${paper.title.slice(0, 20)}...` : paper.title}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 hide-scrollbar">
               {lastPaperQuery ? (
                 <p className="text-xs font-bold text-slate-300">
@@ -694,9 +724,13 @@ export function Workshop() {
                       <button
                         type="button"
                         onClick={() => {
-                          const isSelected = selectedPapers.some((p) => p.title === paper.title);
+                          const isSelected = selectedPapers.some(
+                            (p) => p.title === paper.title && p.year === paper.year,
+                          );
                           if (isSelected) {
-                            setSelectedPapers((prev) => prev.filter((p) => p.title !== paper.title));
+                            setSelectedPapers((prev) =>
+                              prev.filter((p) => !(p.title === paper.title && p.year === paper.year)),
+                            );
                           } else {
                             if (selectedPapers.length >= 3) {
                               toast.error('참고 문헌은 최대 3개까지만 선택할 수 있어요.');
@@ -707,12 +741,14 @@ export function Workshop() {
                           }
                         }}
                         className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                          selectedPapers.some((p) => p.title === paper.title)
+                          selectedPapers.some((p) => p.title === paper.title && p.year === paper.year)
                             ? 'bg-blue-100 border-blue-200 text-blue-700'
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                         }`}
                       >
-                        {selectedPapers.some((p) => p.title === paper.title) ? '[추가됨 ✔️]' : '[참고 문헌으로 추가 📌]'}
+                        {selectedPapers.some((p) => p.title === paper.title && p.year === paper.year)
+                          ? '[참고 문헌 해제]'
+                          : '[참고 문헌으로 추가 📌]'}
                       </button>
                     </div>
                   </div>

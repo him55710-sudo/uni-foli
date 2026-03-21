@@ -30,6 +30,9 @@ export const api = {
   post<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig) {
     return request<T>({ ...config, method: 'POST', url, data });
   },
+  patch<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    return request<T>({ ...config, method: 'PATCH', url, data });
+  },
 };
 
 export default api;

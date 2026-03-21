@@ -55,14 +55,14 @@ class HwpxRenderer(BaseRenderer):
         return find_project_root() / "services" / "render" / "templates" / "hwpx-skeleton.hwpx"
 
     def _build_preview_text(self, context: RenderBuildContext) -> str:
-        return "\n".join(self._build_paragraph_lines(context))
+        return "\n".join(text for text, _ in self._build_paragraph_lines(context))
 
     def _build_section_xml(self, template_xml: str, context: RenderBuildContext) -> str:
         lines = self._build_paragraph_lines(context)
         if not lines:
-            lines = ["Empty draft."]
+            lines = [("Empty draft.", False)]
 
-        first_line = self._escape_xml(lines[0])
+        first_line = self._escape_xml(lines[0][0])
         xml = template_xml.replace(
             '<hp:run charPrIDRef="0"><hp:t/></hp:run><hp:linesegarray>',
             f'<hp:run charPrIDRef="0"><hp:t>{first_line}</hp:t></hp:run><hp:linesegarray>',
@@ -70,8 +70,8 @@ class HwpxRenderer(BaseRenderer):
         )
 
         additional_paragraphs = "".join(
-            self._build_additional_paragraph(line, 3121190100 + index)
-            for index, line in enumerate(lines[1:], start=1)
+            self._build_additional_paragraph(line, 3121190100 + index, page_break=page_break)
+            for index, (line, page_break) in enumerate(lines[1:], start=1)
         )
         insert_at = xml.rfind("</hs:sec>")
         return xml[:insert_at] + additional_paragraphs + xml[insert_at:]
@@ -108,29 +108,52 @@ class HwpxRenderer(BaseRenderer):
         )
         return xml
 
-    def _build_paragraph_lines(self, context: RenderBuildContext) -> list[str]:
-        lines = [
-            context.project_title,
-            context.draft_title,
-            f"Requested by: {context.requested_by or 'anonymous'}",
-            "",
+    def _build_paragraph_lines(self, context: RenderBuildContext) -> list[tuple[str, bool]]:
+        lines: list[tuple[str, bool]] = [
+            (context.project_title, False),
+            (context.draft_title, False),
+            (f"Requested by: {context.requested_by or 'anonymous'}", False),
+            ("", False),
         ]
 
         for section_title, section_lines in split_markdown_sections(context.content_markdown):
             if section_title:
-                lines.append(section_title)
+                lines.append((section_title, False))
             bullets = markdown_lines_to_bullets(section_lines, max_items=5) or ["No content provided."]
-            lines.extend(bullets)
-            lines.append("")
+            lines.extend((bullet, False) for bullet in bullets)
+            lines.append(("", False))
 
-        normalized = [line.strip() for line in lines]
-        trimmed = [line for line in normalized if line]
+        appendix_lines = self._build_authenticity_appendix(context)
+        if appendix_lines:
+            lines.extend(appendix_lines)
+
+        normalized = [(line.strip(), page_break) for line, page_break in lines]
+        trimmed = [(line, page_break) for line, page_break in normalized if line]
         return trimmed[:40]
 
-    def _build_additional_paragraph(self, text: str, paragraph_id: int) -> str:
+    def _build_authenticity_appendix(self, context: RenderBuildContext) -> list[tuple[str, bool]]:
+        log_lines = [line.strip() for line in context.authenticity_log_lines if line.strip()]
+        appendix_lines: list[tuple[str, bool]] = [
+            ("부록: Poli Research Log", True),
+            (
+                "본 문서는 AI의 단순 생성이 아닌, 학생이 직접 KCI 논문을 탐색하고 시뮬레이션을 수행한 결과물임을 증명합니다.",
+                False,
+            ),
+        ]
+
+        if not log_lines:
+            appendix_lines.append(("아직 저장된 핵심 디스커션 프롬프트가 없습니다. 워크숍 대화를 2~3회 이상 진행하면 이 영역이 채워집니다.", False))
+            return appendix_lines
+
+        for index, prompt in enumerate(log_lines[-3:], start=1):
+            appendix_lines.append((f"핵심 디스커션 {index}: {prompt}", False))
+
+        return appendix_lines
+
+    def _build_additional_paragraph(self, text: str, paragraph_id: int, *, page_break: bool = False) -> str:
         escaped = self._escape_xml(text)
         return (
-            f'<hp:p id="{paragraph_id}" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+            f'<hp:p id="{paragraph_id}" paraPrIDRef="0" styleIDRef="0" pageBreak="{"1" if page_break else "0"}" columnBreak="0" merged="0">'
             f'<hp:run charPrIDRef="0"><hp:t>{escaped}</hp:t></hp:run>'
             '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" '
             'baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216"/></hp:linesegarray>'

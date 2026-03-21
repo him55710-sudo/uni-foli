@@ -110,6 +110,11 @@ def get_current_user(
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        if user.email != email or user.name != name:
+            user.email = email
+            user.name = name
+            db.commit()
+            db.refresh(user)
 
     return user
-

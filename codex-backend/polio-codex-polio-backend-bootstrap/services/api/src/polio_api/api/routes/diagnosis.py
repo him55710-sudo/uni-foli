@@ -40,7 +40,9 @@ async def perform_diagnosis(
 
     # Perform AI evaluation
     result = await evaluate_student_record(
-        user_major=project.target_major or "일반 학과",
+        user_major=project.target_major or current_user.target_major or "일반 학과",
+        target_university=current_user.target_university,
+        target_major=current_user.target_major or project.target_major,
         masked_text=full_text[:15000] # Simple truncation for token limit safety
     )
     

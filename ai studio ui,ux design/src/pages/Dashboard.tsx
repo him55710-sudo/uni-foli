@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Zap, ArrowRight } from 'lucide-react';
+import { ArrowRight, BarChart3, Compass, School, Telescope, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { DiagnosisModal } from '../components/DiagnosisModal';
+import { OnboardingModal } from '../components/OnboardingModal';
 import { api } from '../lib/api';
 
 const trends = [
@@ -14,21 +15,80 @@ const trends = [
   { id: 4, icon: '💡', title: '기후·경제 융합 탐구 주제 10선', tag: '탐구 주제' },
 ];
 
+const DIAGNOSIS_STORAGE_KEY = 'polio_last_diagnosis';
+
 interface UserStats {
   report_count: number;
   level: string;
   completion_rate: number;
 }
 
+interface UserProfile {
+  id: string;
+  email: string | null;
+  name: string | null;
+  target_university: string | null;
+  target_major: string | null;
+}
+
+interface DiagnosisSubject {
+  name: string;
+  status: 'safe' | 'warning' | 'danger';
+  feedback: string;
+}
+
+interface StoredDiagnosis {
+  major: string;
+  savedAt: string;
+  diagnosis: {
+    overall: {
+      score: number;
+      summary: string;
+    };
+    subjects: DiagnosisSubject[];
+    prescription: {
+      message: string;
+      recommendedTopic: string;
+    };
+  };
+}
+
+interface RoadmapStage {
+  year: string;
+  phase: string;
+  icon: React.ComponentType<{ size?: number }>;
+  topic: string;
+  description: string;
+  accentClass: string;
+}
+
+function readStoredDiagnosis(): StoredDiagnosis | null {
+  try {
+    const raw = localStorage.getItem(DIAGNOSIS_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as StoredDiagnosis;
+  } catch {
+    return null;
+  }
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const { user, isGuestSession } = useAuth();
   const [isDiagnosisOpen, setIsDiagnosisOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [stats, setStats] = useState<UserStats>({
     report_count: 0,
     level: '로딩 중...',
     completion_rate: 0,
   });
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [storedDiagnosis, setStoredDiagnosis] = useState<StoredDiagnosis | null>(null);
+
+  useEffect(() => {
+    setStoredDiagnosis(readStoredDiagnosis());
+  }, []);
 
   useEffect(() => {
     if (!user && !isGuestSession) return;
@@ -43,10 +103,76 @@ export function Dashboard() {
           completion_rate: 0,
         });
       });
+
+    api.get<UserProfile>('/api/v1/users/me')
+      .then((data) => {
+        setProfile(data);
+        if (!data.target_university || !data.target_major) {
+          setIsOnboardingOpen(true);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load user profile:', error);
+      });
   }, [user, isGuestSession]);
 
+  const handleSaveTargets = async (payload: { targetUniversity: string; targetMajor: string }) => {
+    setIsSavingProfile(true);
+    const loadingId = toast.loading('목표 정보를 저장하는 중입니다...');
+    try {
+      const data = await api.patch<UserProfile>('/api/v1/users/me/targets', {
+        target_university: payload.targetUniversity,
+        target_major: payload.targetMajor,
+      });
+      setProfile(data);
+      setIsOnboardingOpen(false);
+      toast.success('목표 대학과 전공이 저장되었습니다.', { id: loadingId });
+    } catch (error) {
+      console.error('Failed to save targets:', error);
+      toast.error('목표 정보 저장에 실패했습니다. 잠시 후 다시 시도해주세요.', { id: loadingId });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const roadmapMajor = profile?.target_major || storedDiagnosis?.major || '희망 전공';
+  const weakestSubject = storedDiagnosis?.diagnosis.subjects.find((subject) => subject.status !== 'safe')?.name;
+  const roadmapStages: RoadmapStage[] = [
+    {
+      year: '1학년',
+      phase: '기초 탐색',
+      icon: Compass,
+      topic: `${roadmapMajor} 입문 개념 지도 만들기`,
+      description: '학교 활동 전반에서 관심 키워드를 좁히고, 세특 기반 질문을 축적합니다.',
+      accentClass: 'from-sky-500 to-cyan-400',
+    },
+    {
+      year: '2학년',
+      phase: '전공 심화',
+      icon: Telescope,
+      topic: storedDiagnosis?.diagnosis.prescription.recommendedTopic || `${roadmapMajor} 심화 비교 분석 탐구`,
+      description: storedDiagnosis?.diagnosis.overall.summary || '진단 결과를 바탕으로 전공 적합성을 강하게 드러낼 중심 주제를 만듭니다.',
+      accentClass: 'from-violet-500 to-indigo-400',
+    },
+    {
+      year: '3학년',
+      phase: '융합/데이터 분석',
+      icon: BarChart3,
+      topic: weakestSubject
+        ? `${weakestSubject} 데이터를 활용한 ${roadmapMajor} 융합 탐구`
+        : `${roadmapMajor} 데이터 기반 확장 프로젝트`,
+      description: '정량 분석과 시뮬레이션을 더해 최종 제출용 탐구 서사를 완성합니다.',
+      accentClass: 'from-emerald-500 to-teal-400',
+    },
+  ];
+
+  const handleCloseDiagnosis = () => {
+    setIsDiagnosisOpen(false);
+    setStoredDiagnosis(readStoredDiagnosis());
+  };
+
   return (
-    <div className="mx-auto max-w-5xl px-4 pb-12 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 lg:px-8">
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -71,13 +197,29 @@ export function Dashboard() {
           진단부터 워크숍, 내보내기까지 한 흐름으로 이어집니다. 오늘 작업을 바로 시작해보세요.
         </p>
 
-        <button
-          onClick={() => setIsDiagnosisOpen(true)}
-          className="group mx-auto flex w-full items-center justify-center gap-3 px-8 py-5 text-lg font-extrabold md:mx-0 md:w-auto clay-btn-primary shimmer"
-        >
-          무료로 전공 적합도 진단 받기
-          <ArrowRight className="transition-transform group-hover:translate-x-1" />
-        </button>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center">
+          <button
+            onClick={() => setIsDiagnosisOpen(true)}
+            className="group mx-auto flex w-full items-center justify-center gap-3 px-8 py-5 text-lg font-extrabold md:mx-0 md:w-auto clay-btn-primary shimmer"
+          >
+            무료로 전공 적합도 진단 받기
+            <ArrowRight className="transition-transform group-hover:translate-x-1" />
+          </button>
+
+          {profile?.target_university && profile?.target_major ? (
+            <div className="inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <School size={20} />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Current Track</p>
+                <p className="text-sm font-extrabold text-slate-800">
+                  {profile.target_university} · {profile.target_major}
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </motion.div>
 
       <div className="mb-16 grid grid-cols-1 gap-8 lg:grid-cols-3">
@@ -138,6 +280,54 @@ export function Dashboard() {
         </motion.button>
       </div>
 
+      <motion.section
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.35, ease: 'easeOut' }}
+        className="mb-16 overflow-hidden p-8 sm:p-10 clay-card"
+      >
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-blue-500">Roadmap</p>
+            <h2 className="text-2xl font-extrabold text-slate-800 sm:text-3xl">나만의 3개년 세특 로드맵</h2>
+            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500 sm:text-base">
+              1회성 보고서가 아니라, 3년 동안 사정관이 읽게 될 스토리 라인을 지금부터 설계합니다.
+            </p>
+          </div>
+          {storedDiagnosis?.savedAt ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
+              최근 진단 반영: {new Date(storedDiagnosis.savedAt).toLocaleDateString()}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="relative">
+          <div className="absolute left-6 top-6 bottom-6 hidden w-px bg-gradient-to-b from-blue-200 via-slate-200 to-emerald-200 lg:block" />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            {roadmapStages.map((stage, index) => (
+              <div key={stage.year} className="relative rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className={`mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br ${stage.accentClass} text-white shadow-lg`}>
+                  <stage.icon size={24} />
+                </div>
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-600">
+                  {stage.year}
+                  <span className="text-slate-400">·</span>
+                  {stage.phase}
+                </div>
+                <h3 className="mb-3 text-xl font-extrabold leading-snug text-slate-800">{stage.topic}</h3>
+                <p className="text-sm font-medium leading-relaxed text-slate-500">{stage.description}</p>
+                {index < roadmapStages.length - 1 ? (
+                  <div className="mt-6 hidden items-center gap-2 text-sm font-extrabold text-slate-300 lg:flex">
+                    다음 단계
+                    <ArrowRight size={16} />
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      </motion.section>
+
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -179,7 +369,14 @@ export function Dashboard() {
         </div>
       </motion.div>
 
-      <DiagnosisModal isOpen={isDiagnosisOpen} onClose={() => setIsDiagnosisOpen(false)} />
+      <DiagnosisModal isOpen={isDiagnosisOpen} onClose={handleCloseDiagnosis} />
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        initialUniversity={profile?.target_university}
+        initialMajor={profile?.target_major}
+        isSubmitting={isSavingProfile}
+        onSubmit={handleSaveTargets}
+      />
     </div>
   );
 }

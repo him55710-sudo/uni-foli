@@ -69,6 +69,8 @@ const FALLBACK_DIAGNOSIS: DiagnosisResponse = {
   },
 };
 
+const DIAGNOSIS_STORAGE_KEY = 'polio_last_diagnosis';
+
 export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
   const [step, setStep] = useState(1);
   const [major, setMajor] = useState('');
@@ -128,17 +130,28 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
     setStep(3);
     const startAt = Date.now();
     const minimumLoadingMs = 2000;
+    let resolvedDiagnosis: DiagnosisResponse = FALLBACK_DIAGNOSIS;
 
     try {
       const result = await api.post<DiagnosisResponse>(`/api/v1/projects/${activeProjectId}/diagnose`);
       setDiagnosis(result);
       setExpandedSubject(result.subjects[0]?.name ?? null);
+      resolvedDiagnosis = result;
     } catch (error) {
       console.error('Diagnosis error:', error);
       setDiagnosis(FALLBACK_DIAGNOSIS);
       setExpandedSubject(FALLBACK_DIAGNOSIS.subjects[0]?.name ?? null);
       toast('실시간 진단 연결이 불안정해 기본 분석으로 이어갑니다.', { icon: '⚠️' });
+      resolvedDiagnosis = FALLBACK_DIAGNOSIS;
     } finally {
+      localStorage.setItem(
+        DIAGNOSIS_STORAGE_KEY,
+        JSON.stringify({
+          major: major.trim(),
+          diagnosis: resolvedDiagnosis,
+          savedAt: new Date().toISOString(),
+        }),
+      );
       const elapsed = Date.now() - startAt;
       const delay = Math.max(0, minimumLoadingMs - elapsed);
       setTimeout(() => setStep(4), delay);

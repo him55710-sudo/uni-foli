@@ -7,6 +7,7 @@ from polio_api.db.models.draft import Draft
 from polio_api.db.models.project import Project
 from polio_api.db.models.render_job import RenderJob
 from polio_api.schemas.render_job import RenderFormatInfo, RenderJobCreate
+from polio_api.services.project_service import list_project_discussion_log
 from polio_domain.enums import RenderFormat, RenderStatus
 from polio_render.dispatcher import dispatch_render
 from polio_render.models import RenderBuildContext
@@ -92,6 +93,7 @@ def process_render_job(db: Session, job_id: str) -> RenderJob | None:
             content_markdown=draft.content_markdown,
             requested_by=job.requested_by,
             job_id=job.id,
+            authenticity_log_lines=list_project_discussion_log(project),
         )
         artifact = dispatch_render(context)
 

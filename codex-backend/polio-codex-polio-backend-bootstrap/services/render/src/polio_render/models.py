@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from polio_domain.enums import RenderFormat
 
@@ -13,6 +13,7 @@ class RenderBuildContext:
     content_markdown: str
     requested_by: str | None
     job_id: str
+    authenticity_log_lines: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

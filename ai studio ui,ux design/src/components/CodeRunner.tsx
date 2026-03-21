@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Loader2, TerminalSquare } from 'lucide-react';
+import { Play, Loader2, SquareTerminal } from 'lucide-react';
 import { usePyodide } from '../hooks/usePyodide';
 
 interface CodeRunnerProps {
@@ -38,7 +38,7 @@ export function CodeRunner({ code }: CodeRunnerProps) {
     <div className="my-5 overflow-hidden rounded-2xl border border-slate-700 bg-[#0F172A] shadow-xl clay-card">
       <div className="flex items-center justify-between border-b border-slate-700/60 bg-slate-800/80 px-4 py-3 backdrop-blur-sm">
         <div className="flex items-center text-[13px] font-bold text-slate-300">
-          <TerminalSquare size={16} className="mr-2 text-[#3B82F6]" />
+          <SquareTerminal size={16} className="mr-2 text-[#3B82F6]" />
           Python Sandbox
           {isPyodideLoading && (
             <span className="ml-3 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300 shadow-sm border border-amber-500/20">

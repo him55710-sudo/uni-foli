@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 
@@ -14,7 +13,7 @@ from polio_api.api.deps import get_current_user, get_db
 from polio_api.db.models.user import User
 from polio_api.schemas.draft import DraftCreate, DraftRead
 from polio_api.services.draft_service import create_draft, get_draft, list_drafts_for_project
-from polio_api.services.project_service import get_project
+from polio_api.services.project_service import append_project_discussion_log, get_project
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "DUMMY_KEY"))
 
@@ -55,11 +54,13 @@ def _format_reference_materials(reference_materials: list[ReferenceMaterial]) ->
     return "\n".join(blocks)
 
 
-def _build_system_instruction(target_major: str | None, reference_materials: list[ReferenceMaterial]) -> str:
-    major_context = (
-        f"학생의 목표 전공은 '{target_major}'이다."
-        if target_major
-        else "학생의 목표 전공 정보는 제공되지 않았다."
+def _build_system_instruction(
+    target_university: str | None,
+    target_major: str | None,
+    reference_materials: list[ReferenceMaterial],
+) -> str:
+    profile_context = (
+        f"학생의 목표 대학은 '{target_university or '미정'}'이고, 목표 전공은 '{target_major or '미정'}'이다."
     )
     reference_context = _format_reference_materials(reference_materials)
 
@@ -87,12 +88,16 @@ def _build_system_instruction(target_major: str | None, reference_materials: lis
     )
 
     if reference_context:
-        return f"{reference_context}\n\n[학생 맥락]\n{major_context}\n\n{base_instruction}"
-    return f"[학생 맥락]\n{major_context}\n\n{base_instruction}"
+        return f"{reference_context}\n\n[학생 맥락]\n{profile_context}\n\n{base_instruction}"
+    return f"[학생 맥락]\n{profile_context}\n\n{base_instruction}"
 
 
-def _build_chat_model(target_major: str | None, reference_materials: list[ReferenceMaterial]) -> genai.GenerativeModel:
-    system_instruction = _build_system_instruction(target_major, reference_materials)
+def _build_chat_model(
+    target_university: str | None,
+    target_major: str | None,
+    reference_materials: list[ReferenceMaterial],
+) -> genai.GenerativeModel:
+    system_instruction = _build_system_instruction(target_university, target_major, reference_materials)
     return genai.GenerativeModel(
         model_name="gemini-1.5-pro",
         system_instruction=system_instruction,
@@ -110,12 +115,23 @@ def _validate_reference_limit(reference_materials: list[ReferenceMaterial]) -> N
 def _build_streaming_response(
     payload: ChatRequest,
     current_user: User,
+    db: Session,
+    project_id: str | None,
+    target_university: str | None,
     target_major: str | None,
 ) -> StreamingResponse:
-    model = _build_chat_model(target_major=target_major, reference_materials=payload.reference_materials)
+    model = _build_chat_model(
+        target_university=target_university,
+        target_major=target_major,
+        reference_materials=payload.reference_materials,
+    )
 
     async def save_chat_to_db(user_message: str, ai_response: str, user: User) -> None:
         try:
+            if project_id:
+                project = get_project(db, project_id)
+                if project:
+                    append_project_discussion_log(db, project, user_message)
             print(
                 f"[DB Save] User: {user.id} | Message: {user_message[:30]}... | "
                 f"AI Response: {ai_response[:30]}..."
@@ -138,7 +154,7 @@ def _build_streaming_response(
                     full_response += token
                     yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
 
-            asyncio.create_task(save_chat_to_db(payload.message, full_response, current_user))
+            await save_chat_to_db(payload.message, full_response, current_user)
             yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"
         except Exception as exc:  # noqa: BLE001
             error_data = json.dumps(
@@ -196,7 +212,10 @@ async def handle_chat_stream_route(
     return _build_streaming_response(
         payload=payload,
         current_user=current_user,
-        target_major=project.target_major,
+        db=db,
+        project_id=project.id,
+        target_university=current_user.target_university or project.target_university,
+        target_major=project.target_major or current_user.target_major,
     )
 
 
@@ -218,6 +237,8 @@ async def handle_drafts_chat_stream_route(
     return _build_streaming_response(
         payload=payload,
         current_user=current_user,
-        target_major=target_major,
+        db=db,
+        project_id=payload.project_id,
+        target_university=current_user.target_university,
+        target_major=target_major or current_user.target_major,
     )
-

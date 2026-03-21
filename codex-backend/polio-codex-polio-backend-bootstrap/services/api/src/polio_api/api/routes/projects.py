@@ -6,7 +6,7 @@ import uuid
 
 from polio_api.api.deps import get_db, get_current_user
 from polio_api.schemas.project import ProjectCreate, ProjectRead
-from polio_api.services.project_service import create_project, get_project, list_projects
+from polio_api.services.project_service import create_project, get_project, list_project_discussion_log, list_projects
 from pydantic import BaseModel
 
 # Try to import from the render service
@@ -90,7 +90,8 @@ def export_project_hwpx(
         render_format=RenderFormat.HWPX,
         content_markdown=payload.content_markdown,
         requested_by=current_user.name,
-        job_id=str(uuid.uuid4())
+        job_id=str(uuid.uuid4()),
+        authenticity_log_lines=list_project_discussion_log(project),
     )
 
     try:
