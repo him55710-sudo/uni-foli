@@ -1,0 +1,18 @@
+[
+  {
+    "dataset_key": "alpha-retrieval",
+    "case_key": "approved-current-cycle",
+    "query_text": "academic competence inquiry coursework",
+    "filters_json": {
+      "claim_statuses": ["approved"],
+      "source_tiers": ["tier_1_official"],
+      "limit": 5
+    },
+    "expected_results_json": {
+      "document_ids": ["<document-id>"],
+      "require_approved_claim_top_hit": true,
+      "require_current_cycle_top_hit": true
+    },
+    "notes": "Current-cycle approved official claim should outrank older conflicting material."
+  }
+]

@@ -1,0 +1,23 @@
+Extract only high-value admissions claims from the following selected chunks.
+
+Prioritize:
+- official evaluation criteria
+- explicit admissions emphasis
+- eligibility conditions
+- caution or exclusion rules
+- current-cycle or university-specific exceptions
+- direct descriptions of academic competence, self-directed growth, career exploration, major fit, community contribution, evidence quality, or authenticity
+
+Ignore:
+- generic marketing language
+- repeated headers
+- contact information
+- legal disclaimers
+- table-of-contents text
+- vague summaries without evaluative meaning
+
+Return this schema exactly:
+{{SCHEMA_JSON}}
+
+Selected chunks JSON:
+{{BLOCKS_JSON}}

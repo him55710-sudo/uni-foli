@@ -1,0 +1,17 @@
+Extract only high-value admissions claims from the following chunks.
+
+Prioritize:
+- official evaluation criteria
+- eligibility conditions
+- caution or exclusion rules
+- cycle-specific or university-specific guidance
+- explicit statements about academic competence, self-directed growth, major fit, or community contribution
+
+Ignore:
+- generic promotional language
+- repeated headers
+- contact info
+- vague summaries without concrete evaluative meaning
+
+Chunks JSON:
+{{BLOCKS_JSON}}

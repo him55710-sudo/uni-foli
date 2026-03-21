@@ -1,0 +1,15 @@
+{
+  "name": "polio-monorepo",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "dev:infra": "docker-compose up -d",
+    "dev:backend": "cd backend && uv run uvicorn polio_api.main:app --reload --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:all": "npm run dev:infra && concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "install:all": "cd frontend && npm install && cd ../backend && uv sync"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

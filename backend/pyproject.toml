@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polio-backend"
+version = "0.1.0"
+description = "Beginner-friendly backend skeleton for the polio project."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.14,<2.0",
+  "fastapi>=0.115,<1.0",
+  "pgvector>=0.3,<1.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "pypdf>=5.0,<6.0",
+  "uvicorn[standard]>=0.32,<1.0",
+  "python-pptx>=1.0,<2.0",
+  "reportlab>=4.2,<5.0",
+  "sqlalchemy>=2.0,<3.0",
+  "pydantic>=2.9,<3.0",
+  "pydantic-settings>=2.6,<3.0",
+  "python-multipart>=0.0.9,<1.0",
+  "firebase-admin>=7.0,<8.0",
+  "pdfplumber>=0.11,<1.0",
+  "google-generativeai>=0.8,<1.0",
+  "httpx>=0.28,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0",
+]
+
+[project.scripts]
+polio-api = "polio_api.main:run"
+polio-worker = "polio_worker.main:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = [
+  "services/api/src",
+  "services/worker/src",
+  "services/render/src",
+  "services/ingest/src",
+  "packages/domain/src",
+  "packages/shared/src",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,10 @@
+{
+  "claim_extraction_v2": {
+    "version": "2.0.0",
+    "kind": "claim_extraction",
+    "system_path": "prompts/claim_extraction/v2/system.txt",
+    "user_path": "prompts/claim_extraction/v2/user.txt",
+    "schema_path": "prompts/claim_extraction/v2/schema.json",
+    "description": "Structured JSON extraction for official admissions claims with strict evidence grounding."
+  }
+}
