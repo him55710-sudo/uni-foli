@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from parsers.base import DocumentParser, ParserContext, ParserDescriptor
-from parsers.docling_parser import DoclingDocumentParser
-from parsers.errors import ParserError, ParserNotFoundError
-from parsers.html_parser import HtmlDocumentParser
-from parsers.hwpx_parser import HwpxDocumentParser
-from parsers.ocr_fallback import OcrFallbackParser
-from parsers.pdf_parser import PdfDocumentParser
-from parsers.schemas import CanonicalParseResult
-from parsers.text_parser import PlainTextParser
+from .base import DocumentParser, ParserContext, ParserDescriptor
+from .docling_parser import DoclingDocumentParser
+from .errors import ParserError, ParserNotFoundError
+from .html_parser import HtmlDocumentParser
+from .hwpx_parser import HwpxDocumentParser
+from .ocr_fallback import OcrFallbackParser
+from .pdf_parser import PdfDocumentParser
+from .schemas import CanonicalParseResult
+from .text_parser import PlainTextParser
 
 
 class ParserRegistry:

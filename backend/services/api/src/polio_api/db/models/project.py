@@ -43,7 +43,15 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    diagnoses: Mapped[list["DiagnosisRun"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     render_jobs: Mapped[list["RenderJob"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    blueprints: Mapped[list["Blueprint"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
     )

@@ -1,20 +1,36 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Polio Frontend
 
-# Run and deploy your AI Studio app
+`frontend/` is the source of truth for the Polio web app.
 
-This contains everything you need to run your app locally.
+The old AI Studio template framing is no longer the right mental model for this folder.
 
-View your app in AI Studio: https://ai.studio/apps/d913258f-6850-4f14-97c2-25e8297e35fb
+## Run
 
-## Run Locally
+```powershell
+npm install
+npm run dev
+```
 
-**Prerequisites:**  Node.js
+## Build
 
+```powershell
+npm run build
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Environment
+
+- Start from [`frontend/.env.example`](./.env.example).
+- `VITE_API_URL` should point to the backend API, usually `http://localhost:8000`.
+- Firebase variables are optional for local development.
+- When Firebase config is absent, the app can fall back to local guest mode instead of crashing.
+
+## Scope
+
+Use this app for:
+
+- auth and onboarding wiring
+- diagnosis and drafting flows
+- backend API integration
+- evidence-safe UX around missing data
+
+Do not treat this folder as a generated AI Studio export that should be regenerated from scratch.

@@ -4,12 +4,20 @@ from pathlib import Path
 import re
 
 
+def _is_backend_root(candidate: Path) -> bool:
+    return (
+        (candidate / "pyproject.toml").exists()
+        and (candidate / "services" / "api" / "src").exists()
+        and (candidate / "packages" / "shared" / "src").exists()
+    )
+
+
 def find_project_root() -> Path:
     search_points = [Path.cwd(), Path(__file__).resolve()]
 
     for start in search_points:
         for candidate in [start, *start.parents]:
-            if (candidate / "pyproject.toml").exists():
+            if _is_backend_root(candidate):
                 return candidate
 
     raise RuntimeError("Could not find the polio-backend project root.")

@@ -36,3 +36,9 @@ class UploadAsset(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+
+    @property
+    def parsed_document_id(self) -> str | None:
+        if self.parsed_document is None:
+            return None
+        return self.parsed_document.id

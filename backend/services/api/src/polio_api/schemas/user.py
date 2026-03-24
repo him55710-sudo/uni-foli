@@ -12,10 +12,21 @@ class UserProfileRead(BaseModel):
     name: str | None
     target_university: str | None
     target_major: str | None
+    grade: str | None
+    track: str | None
+    career: str | None
+    admission_type: str | None
     created_at: datetime
     updated_at: datetime
 
 
-class UserTargetUpdate(BaseModel):
-    target_university: str
-    target_major: str
+class UserProfileUpdate(BaseModel):
+    grade: str | None
+    track: str | None
+    career: str | None
+
+
+class UserGoalsUpdate(BaseModel):
+    target_university: str | None
+    target_major: str | None
+    admission_type: str | None

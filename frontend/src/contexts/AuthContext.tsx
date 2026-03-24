@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useAuthStore } from '../store/authStore';
 import {
   AuthError,
   User,
@@ -8,7 +9,7 @@ import {
   signInWithRedirect,
   signOut,
 } from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
+import { auth, googleProvider, isFirebaseConfigured } from '../lib/firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -44,7 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsGuestSession(true);
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    if (!auth || !isFirebaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         const shouldMarkGuest = currentUser.isAnonymous;
@@ -54,8 +60,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           localStorage.removeItem(GUEST_SESSION_KEY);
         }
+        
+        // Fetch backend profile and sync with zustand
+        await useAuthStore.getState().fetchProfile();
       } else {
         setIsGuestSession(savedGuestSession);
+        useAuthStore.getState().setUser(null);
       }
       setLoading(false);
     });
@@ -63,6 +73,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
+    if (!auth || !googleProvider || !isFirebaseConfigured) {
+      throw new Error('Google login is unavailable until Firebase env vars are configured.');
+    }
+
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
@@ -76,6 +90,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInAsGuest = async () => {
+    if (!auth || !isFirebaseConfigured) {
+      setIsGuestSession(true);
+      localStorage.setItem(GUEST_SESSION_KEY, '1');
+      return;
+    }
+
     try {
       await signInAnonymously(auth);
       setIsGuestSession(true);
@@ -96,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsGuestSession(false);
     localStorage.removeItem(GUEST_SESSION_KEY);
     try {
-      if (auth.currentUser) {
+      if (auth?.currentUser) {
         await signOut(auth);
       }
     } catch (error) {

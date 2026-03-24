@@ -5,9 +5,10 @@ import re
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
-from domain.enums import BlockType
-from parsers.base import DocumentParser, ParserContext
-from parsers.schemas import CanonicalBlock, CanonicalParseResult
+from polio_domain.enums import BlockType
+
+from .base import DocumentParser, ParserContext
+from .schemas import CanonicalBlock, CanonicalParseResult
 
 
 class HwpxDocumentParser(DocumentParser):

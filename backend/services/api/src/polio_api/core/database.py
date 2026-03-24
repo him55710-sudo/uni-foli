@@ -21,7 +21,19 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 
 def initialize_database() -> None:
-    from polio_api.db.models import document_chunk, draft, parsed_document, project, render_job, upload_asset, user  # noqa: F401
+    from polio_api.db.models import (  # noqa: F401
+        blueprint,
+        diagnosis_run,
+        document_chunk,
+        draft,
+        parsed_document,
+        project,
+        quest,
+        render_job,
+        upload_asset,
+        user,
+        workshop,
+    )
 
     if engine.dialect.name == "postgresql" and settings.postgres_enable_pgvector:
         with engine.begin() as connection:
@@ -39,6 +51,29 @@ def _apply_schema_evolution() -> None:
         },
         "projects": {
             "discussion_log": "discussion_log TEXT",
+        },
+        "blueprints": {
+            "headline": "headline VARCHAR(500)",
+            "recommended_focus": "recommended_focus TEXT",
+        },
+        "parsed_documents": {
+            "status": "status VARCHAR(32) DEFAULT 'uploaded' NOT NULL",
+            "masking_status": "masking_status VARCHAR(32) DEFAULT 'pending' NOT NULL",
+            "parse_attempts": "parse_attempts INTEGER DEFAULT 0 NOT NULL",
+            "last_error": "last_error TEXT",
+            "parse_started_at": "parse_started_at DATETIME",
+            "parse_completed_at": "parse_completed_at DATETIME",
+        },
+        "workshop_sessions": {
+            "quality_level": "quality_level VARCHAR(8) DEFAULT 'mid' NOT NULL",
+            "stream_token": "stream_token VARCHAR(128)",
+        },
+        "draft_artifacts": {
+            "quality_level_applied": "quality_level_applied VARCHAR(8)",
+            "safety_score": "safety_score INTEGER",
+            "safety_flags": "safety_flags JSON",
+            "quality_downgraded": "quality_downgraded BOOLEAN DEFAULT 0 NOT NULL",
+            "quality_control_meta": "quality_control_meta JSON",
         },
     }
 

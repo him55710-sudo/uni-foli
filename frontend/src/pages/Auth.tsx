@@ -20,6 +20,9 @@ function toAuthMessage(error: unknown): string {
   if (error instanceof FirebaseError) {
     return AUTH_ERROR_MESSAGES[error.code] ?? `Login failed (${error.code}).`;
   }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
   return 'Login failed. Please try again.';
 }
 

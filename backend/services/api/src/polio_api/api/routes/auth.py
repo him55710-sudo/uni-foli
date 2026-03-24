@@ -15,6 +15,15 @@ class SocialLoginRequest(BaseModel):
 class SocialLoginResponse(BaseModel):
     firebase_custom_token: str
 
+from polio_api.schemas.user import UserProfileRead
+from polio_api.api.deps import get_current_user
+from polio_api.db.models.user import User
+
+@router.post("/firebase/exchange", response_model=UserProfileRead)
+def firebase_exchange(current_user: User = Depends(get_current_user)) -> UserProfileRead:
+    """Verifies the Firebase token (via get_current_user) and returns the user profile."""
+    return UserProfileRead.model_validate(current_user)
+
 @router.post("/social", response_model=SocialLoginResponse)
 async def social_login(payload: SocialLoginRequest):
     settings = get_settings()

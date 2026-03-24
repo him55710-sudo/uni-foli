@@ -1,28 +1,82 @@
-import json
 import os
+from typing import Literal
+
 import google.generativeai as genai
 from pydantic import BaseModel, Field
-from typing import Literal
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "DUMMY_KEY"))
 
-class OverallEval(BaseModel):
-    score: int = Field(description="0~100 사이의 전공 적합도 점수 (정수)")
-    summary: str = Field(description="1줄 종합 평가 (예: ⚠️ 위험: 경영학 지원자이나 수리적 통계 분석 경험이 전무함)")
-
-class SubjectEval(BaseModel):
-    name: str = Field(description="과목명 (예: 수학, 생명과학)")
-    status: Literal['safe', 'warning', 'danger']
-    feedback: str = Field(description="사정관 시점의 팩트 폭행 코멘트 (50자 이내)")
-
-class PrescriptionEval(BaseModel):
-    message: str = Field(description="모달 최하단에 띄울 Poli의 제안 문구")
-    recommendedTopic: str = Field(description="추천하는 구체적인 탐구 보고서 주제 1개")
 
 class DiagnosisResult(BaseModel):
-    overall: OverallEval
-    subjects: list[SubjectEval]
-    prescription: PrescriptionEval
+    headline: str = Field(description="Short diagnosis summary headline")
+    strengths: list[str] = Field(description="Current grounded strengths in the record")
+    gaps: list[str] = Field(description="Visible evidence or inquiry gaps to close next")
+    risk_level: Literal["safe", "warning", "danger"] = Field(description="Risk tier")
+    recommended_focus: str = Field(description="Most important next focus")
+
+
+def build_grounded_diagnosis_result(
+    *,
+    project_title: str,
+    target_major: str | None,
+    document_count: int,
+    full_text: str,
+) -> DiagnosisResult:
+    major_label = target_major or "the selected major"
+    lowered = full_text.lower()
+
+    has_measurement = any(token in lowered for token in ["measure", "experiment", "data", "analysis", "survey"])
+    has_comparison = any(token in lowered for token in ["compare", "difference", "before", "after", "trend"])
+    has_reflection = any(token in lowered for token in ["reflect", "limit", "improve", "lesson", "feedback"])
+
+    strengths: list[str] = []
+    gaps: list[str] = []
+
+    if document_count >= 1 and len(full_text.split()) >= 120:
+        strengths.append("The uploaded record already contains enough grounded text to build the next activity.")
+    else:
+        gaps.append("The current record is still thin, so the next quest should create clearer evidence before expanding claims.")
+
+    if has_measurement or has_comparison:
+        strengths.append("The record shows an inquiry trace through measuring, comparing, or analyzing.")
+    else:
+        gaps.append("The record does not yet show a visible inquiry process such as comparison, measurement, or analysis.")
+
+    if has_reflection:
+        strengths.append("The student already reflects on limits or improvements, which helps later drafting.")
+    else:
+        gaps.append("Method limits and next-step reflection are still weak in the current record.")
+
+    if not strengths:
+        strengths.append("The record has a usable starting point, but it needs a more explicit evidence trail.")
+    if not gaps:
+        gaps.append("Turn the strongest topic into a deeper follow-up activity with clearer evidence and reflection.")
+
+    risk_level: Literal["safe", "warning", "danger"]
+    if len(gaps) >= 3:
+        risk_level = "danger"
+    elif len(gaps) == 2:
+        risk_level = "warning"
+    else:
+        risk_level = "safe"
+
+    recommended_focus = (
+        f"{major_label} inquiry for {project_title} that adds one comparison, one explicit method limit, "
+        "and one concrete reflection tied to the current record."
+    )
+    headline = (
+        f"For {major_label}, the record is {'grounded enough' if risk_level == 'safe' else 'not finished yet'}; "
+        "the next step should produce clearer evidence, not broader claims."
+    )
+
+    return DiagnosisResult(
+        headline=headline,
+        strengths=strengths[:3],
+        gaps=gaps[:4],
+        risk_level=risk_level,
+        recommended_focus=recommended_focus,
+    )
+
 
 async def evaluate_student_record(
     user_major: str,
@@ -30,46 +84,37 @@ async def evaluate_student_record(
     target_university: str | None = None,
     target_major: str | None = None,
 ) -> DiagnosisResult:
-    """
-    Pydantic 기반의 Structured Output을 사용하여 생기부(NEIS)를 진단합니다.
-    Gemini API에 response_schema를 강제 주입하여 무조건 파싱 가능한 JSON 객체만 반환하도록 방어합니다.
-    """
     system_instruction = (
-        "당신은 대한민국 명문대(서울대, 연세대, 고려대) 학생부 종합 전형의 평가 기준을 완벽하게 꿰뚫고 있는 "
-        "냉혹하고 예리한 입시 컨설턴트입니다. 입력된 학생의 목표 학과와 마스킹된 생기부 세특 텍스트를 분석하여, "
-        "학생의 강점과 치명적인 약점을 진단하고 주어진 JSON 구조에 맞추어 평가를 반환하세요."
+        "You are a rigorous admissions-oriented school record analyst. "
+        "Read the student's grounded record and explain the real gaps between the current evidence "
+        "and the stated target major. Do not predict admission. Focus on what is missing and what "
+        "the next action should be."
     )
     target_context = (
-        f"Target University (목표 대학): {target_university or '미정'}\n"
-        f"Target Major (희망 전공): {target_major or user_major}"
+        f"Target University: {target_university or 'Not set'}\n"
+        f"Target Major: {target_major or user_major}"
     )
-    
-    # 요구사항의 "Gemini 3.1 Pro" 대응. 현재 SDK에서 Structured Output을 지원하는 gemini-1.5-pro 모델 사용
+
     model = genai.GenerativeModel(
         model_name="gemini-1.5-pro",
-        system_instruction=system_instruction
+        system_instruction=system_instruction,
     )
-    
+
     try:
         response = await model.generate_content_async(
-            f"{target_context}\nPrimary Major Context (진단 기준 전공): {user_major}\nMasked NEIS Text (생기부 텍스트): {masked_text}",
+            f"{target_context}\nPrimary Major Context: {user_major}\n\n[Masked Record]\n{masked_text}",
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 response_schema=DiagnosisResult,
-                temperature=0.2 # 평가의 일관성을 위해 낮은 temperature 적용
-            )
+                temperature=0.2,
+            ),
         )
-        
-        # 100% 보장된 JSON 스키마를 Pydantic 객체로 재검증 및 반환
         return DiagnosisResult.model_validate_json(response.text)
-        
-    except Exception as e:
-        # API Limit, Timeout, 파싱 에러 발생 시 프론트엔드 크래시를 막기 위한 리턴 방어벽
+    except Exception as exc:  # noqa: BLE001
         return DiagnosisResult(
-            overall=OverallEval(score=0, summary=f"시스템 오류로 진단에 실패했습니다. (Error: {str(e)})"),
-            subjects=[],
-            prescription=PrescriptionEval(
-                message="서버와 연결을 다시 시도해주세요.",
-                recommendedTopic="없음"
-            )
+            headline=f"Diagnosis request failed: {exc}",
+            strengths=[],
+            gaps=["The AI diagnosis call failed, so use the grounded fallback diagnosis instead."],
+            risk_level="warning",
+            recommended_focus="Retry the diagnosis or continue with the grounded fallback blueprint.",
         )

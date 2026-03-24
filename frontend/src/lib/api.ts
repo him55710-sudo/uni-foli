@@ -7,7 +7,7 @@ const client = axios.create({
 
 client.interceptors.request.use(
   async (config) => {
-    if (auth.currentUser) {
+    if (auth?.currentUser) {
       const token = await auth.currentUser.getIdToken();
       const headers = AxiosHeaders.from(config.headers);
       headers.set('Authorization', `Bearer ${token}`);

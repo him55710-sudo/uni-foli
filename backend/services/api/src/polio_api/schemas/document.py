@@ -9,10 +9,23 @@ class ParsedDocumentSummary(BaseModel):
     id: str
     project_id: str
     upload_asset_id: str
+    original_filename: str | None
+    content_type: str | None
+    file_size_bytes: int | None
+    sha256: str | None
+    stored_path: str | None
+    upload_status: str | None
     parser_name: str
     source_extension: str
+    status: str
+    masking_status: str
+    parse_attempts: int
+    last_error: str | None
+    can_retry: bool
     page_count: int
     word_count: int
+    parse_started_at: datetime | None
+    parse_completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

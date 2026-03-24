@@ -31,3 +31,5 @@ storage/object-store/**
 references/open-source/*
 !references/open-source/README.md
 firebase-applet-config.json
+frontend/test-results/
+frontend/__playwright-*.png

@@ -13,6 +13,7 @@ class UploadAssetRead(BaseModel):
     stored_path: str
     file_size_bytes: int
     sha256: str | None
+    parsed_document_id: str | None
     status: str
     page_count: int | None
     ingest_error: str | None

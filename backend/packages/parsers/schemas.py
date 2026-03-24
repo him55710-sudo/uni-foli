@@ -4,7 +4,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
-from domain.enums import BlockType
+from polio_domain.enums import BlockType
 
 
 class CanonicalTable(BaseModel):

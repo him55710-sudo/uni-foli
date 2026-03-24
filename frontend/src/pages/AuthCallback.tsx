@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { auth } from '../lib/firebase';
+import { auth, isFirebaseConfigured } from '../lib/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
 import { api } from '../lib/api';
 import { motion } from 'motion/react';
@@ -21,6 +21,10 @@ export function AuthCallback() {
 
   const handleSocialLogin = async (provider: string, code: string) => {
     try {
+      if (!auth || !isFirebaseConfigured) {
+        throw new Error('Social login requires Firebase configuration.');
+      }
+
       const response = await api.post('/api/v1/auth/social', {
         provider,
         code,

@@ -18,13 +18,13 @@ import { Settings } from './pages/Settings';
 import { Trends } from './pages/Trends';
 import { testConnection } from './lib/db';
 
+import { useAuthStore } from './store/authStore';
+import { Onboarding } from './pages/Onboarding';
+
 // Protected Route Wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
-
-  useEffect(() => {
-    testConnection();
-  }, []);
+  const dbUser = useAuthStore(state => state.user);
 
   if (loading) {
     return (
@@ -36,6 +36,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Force onboarding if required fields are missing
+  if (dbUser && (!dbUser.grade || !dbUser.target_university)) {
+    if (window.location.pathname !== '/onboarding') {
+      return <Navigate to="/onboarding" replace />;
+    }
+  } else if (dbUser && dbUser.grade && dbUser.target_university && window.location.pathname === '/onboarding') {
+    // If fully onboarded and trying to access onboarding, redirect to dashboard
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
@@ -75,6 +85,12 @@ export default function App() {
             <Route path="trends" element={<Trends />} />
             <Route path="settings" element={<Settings />} />
           </Route>
+          
+          <Route path="/onboarding" element={
+            <ProtectedRoute>
+              <Onboarding />
+            </ProtectedRoute>
+          } />
           
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

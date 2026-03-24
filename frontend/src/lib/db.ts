@@ -1,4 +1,4 @@
-import { db, auth } from './firebase';
+import { db, auth, isFirebaseConfigured } from './firebase';
 import { 
   collection, 
   doc, 
@@ -46,12 +46,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
+      isAnonymous: auth?.currentUser?.isAnonymous,
+      tenantId: auth?.currentUser?.tenantId,
+      providerInfo: auth?.currentUser?.providerData.map(provider => ({
         providerId: provider.providerId,
         displayName: provider.displayName,
         email: provider.email,
@@ -65,11 +65,18 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+function requireFirestore() {
+  if (!db || !isFirebaseConfigured) {
+    throw new Error('Firebase is not configured for this environment.');
+  }
+  return db;
+}
+
 // User Profile
 export async function getUserProfile(userId: string) {
   const path = `users/${userId}`;
   try {
-    const docRef = doc(db, 'users', userId);
+    const docRef = doc(requireFirestore(), 'users', userId);
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? docSnap.data() : null;
   } catch (error) {
@@ -80,7 +87,7 @@ export async function getUserProfile(userId: string) {
 export async function createUserProfile(userId: string, data: any) {
   const path = `users/${userId}`;
   try {
-    await setDoc(doc(db, 'users', userId), {
+    await setDoc(doc(requireFirestore(), 'users', userId), {
       ...data,
       uid: userId,
       createdAt: Timestamp.now(),
@@ -94,7 +101,7 @@ export async function createUserProfile(userId: string, data: any) {
 export async function updateUserProfile(userId: string, data: any) {
   const path = `users/${userId}`;
   try {
-    await updateDoc(doc(db, 'users', userId), {
+    await updateDoc(doc(requireFirestore(), 'users', userId), {
       ...data,
       updatedAt: Timestamp.now(),
     });
@@ -107,7 +114,11 @@ export async function updateUserProfile(userId: string, data: any) {
 export async function getDocuments(userId: string) {
   const path = 'documents';
   try {
-    const q = query(collection(db, 'documents'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+    const q = query(
+      collection(requireFirestore(), 'documents'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+    );
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
@@ -118,7 +129,7 @@ export async function getDocuments(userId: string) {
 export async function createDocument(userId: string, data: any) {
   const path = 'documents';
   try {
-    const newDocRef = doc(collection(db, 'documents'));
+    const newDocRef = doc(collection(requireFirestore(), 'documents'));
     await setDoc(newDocRef, {
       ...data,
       id: newDocRef.id,
@@ -134,6 +145,9 @@ export async function createDocument(userId: string, data: any) {
 
 // Test Connection
 export async function testConnection() {
+  if (!db || !isFirebaseConfigured) {
+    return;
+  }
   try {
     await getDoc(doc(db, 'test', 'connection'));
   } catch (error) {

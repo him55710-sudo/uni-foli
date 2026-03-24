@@ -1,19 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowRight, BarChart3, Compass, School, Telescope, Zap } from 'lucide-react';
+import {
+  ArrowRight,
+  BarChart3,
+  Compass,
+  PlayCircle,
+  School,
+  Sparkles,
+  Target,
+  Zap,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from '../contexts/AuthContext';
 import { DiagnosisModal } from '../components/DiagnosisModal';
 import { OnboardingModal } from '../components/OnboardingModal';
+import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
-
-const trends = [
-  { id: 1, icon: '📘', title: '컴공 전공자를 위한 AI 윤리 이슈', tag: '도서 추천' },
-  { id: 2, icon: '🧭', title: '2026 수시 핵심 변화 요약', tag: '입시 이슈' },
-  { id: 3, icon: '🧪', title: '합격생 사례로 보는 탐구 보고서 구조', tag: '합격 가이드' },
-  { id: 4, icon: '💡', title: '기후·경제 융합 탐구 주제 10선', tag: '탐구 주제' },
-];
+import { type QuestStartPayload, saveQuestStart } from '../lib/questStart';
 
 const DIAGNOSIS_STORAGE_KEY = 'polio_last_diagnosis';
 
@@ -31,35 +34,51 @@ interface UserProfile {
   target_major: string | null;
 }
 
-interface DiagnosisSubject {
-  name: string;
-  status: 'safe' | 'warning' | 'danger';
-  feedback: string;
+interface DiagnosisResultPayload {
+  headline: string;
+  strengths: string[];
+  gaps: string[];
+  risk_level: 'safe' | 'warning' | 'danger';
+  recommended_focus: string;
 }
 
 interface StoredDiagnosis {
   major: string;
+  projectId?: string;
   savedAt: string;
-  diagnosis: {
-    overall: {
-      score: number;
-      summary: string;
-    };
-    subjects: DiagnosisSubject[];
-    prescription: {
-      message: string;
-      recommendedTopic: string;
-    };
-  };
+  diagnosis: DiagnosisResultPayload;
 }
 
-interface RoadmapStage {
-  year: string;
-  phase: string;
-  icon: React.ComponentType<{ size?: number }>;
-  topic: string;
-  description: string;
-  accentClass: string;
+interface BlueprintQuest {
+  id: string;
+  subject: string;
+  title: string;
+  summary: string;
+  difficulty: string;
+  why_this_matters: string;
+  expected_record_impact: string;
+  recommended_output_type: string;
+  status: string;
+}
+
+interface BlueprintGroup {
+  name: string;
+  quests: BlueprintQuest[];
+}
+
+interface CurrentBlueprintResponse {
+  id: string;
+  project_id: string;
+  project_title: string;
+  target_major: string | null;
+  headline: string;
+  recommended_focus: string;
+  semester_priority_message: string;
+  priority_quests: BlueprintQuest[];
+  subject_groups: BlueprintGroup[];
+  activity_groups: BlueprintGroup[];
+  expected_record_effects: string[];
+  created_at: string;
 }
 
 function readStoredDiagnosis(): StoredDiagnosis | null {
@@ -72,19 +91,100 @@ function readStoredDiagnosis(): StoredDiagnosis | null {
   }
 }
 
+function difficultyTone(difficulty: string) {
+  switch (difficulty) {
+    case 'high':
+      return 'bg-red-100 text-red-700 border-red-200';
+    case 'medium':
+      return 'bg-amber-100 text-amber-700 border-amber-200';
+    default:
+      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+  }
+}
+
+function statusTone(status: string) {
+  switch (status) {
+    case 'IN_PROGRESS':
+      return 'bg-blue-100 text-blue-700 border-blue-200';
+    case 'COMPLETED':
+      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    default:
+      return 'bg-slate-100 text-slate-600 border-slate-200';
+  }
+}
+
+function QuestCard({
+  quest,
+  onStart,
+  isStarting,
+}: {
+  quest: BlueprintQuest;
+  onStart: (quest: BlueprintQuest) => void;
+  isStarting: boolean;
+}) {
+  return (
+    <div className="flex h-full flex-col rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-600">
+          {quest.subject}
+        </span>
+        <span className={`rounded-full border px-3 py-1 text-xs font-black ${difficultyTone(quest.difficulty)}`}>
+          {quest.difficulty.toUpperCase()}
+        </span>
+        <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusTone(quest.status)}`}>
+          {quest.status}
+        </span>
+      </div>
+
+      <h3 className="mb-3 break-keep text-xl font-extrabold leading-snug text-slate-800">{quest.title}</h3>
+      <p className="mb-4 text-sm font-medium leading-relaxed text-slate-600">{quest.summary}</p>
+
+      <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+        <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-blue-500">Why This Matters</p>
+        <p className="text-sm font-medium leading-relaxed text-blue-900">{quest.why_this_matters}</p>
+      </div>
+
+      <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+        <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-emerald-600">Expected Record Impact</p>
+        <p className="text-sm font-medium leading-relaxed text-emerald-900">{quest.expected_record_impact}</p>
+      </div>
+
+      <div className="mt-auto flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Recommended Output</p>
+          <p className="text-sm font-bold text-slate-700">{quest.recommended_output_type}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onStart(quest)}
+          disabled={isStarting}
+          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isStarting ? '시작 중...' : '퀘스트 시작'}
+          <PlayCircle size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const { user, isGuestSession } = useAuth();
   const [isDiagnosisOpen, setIsDiagnosisOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isLoadingBlueprint, setIsLoadingBlueprint] = useState(false);
+  const [startingQuestId, setStartingQuestId] = useState<string | null>(null);
   const [stats, setStats] = useState<UserStats>({
     report_count: 0,
-    level: '로딩 중...',
+    level: '로딩 중',
     completion_rate: 0,
   });
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [storedDiagnosis, setStoredDiagnosis] = useState<StoredDiagnosis | null>(null);
+  const [blueprint, setBlueprint] = useState<CurrentBlueprintResponse | null>(null);
+  const [blueprintError, setBlueprintError] = useState<string | null>(null);
 
   useEffect(() => {
     setStoredDiagnosis(readStoredDiagnosis());
@@ -99,7 +199,7 @@ export function Dashboard() {
         console.error('Failed to load stats:', error);
         setStats({
           report_count: 0,
-          level: isGuestSession ? '게스트 모드' : '새로운 시작',
+          level: isGuestSession ? '게스트 모드' : '새로 시작',
           completion_rate: 0,
         });
       });
@@ -116,9 +216,36 @@ export function Dashboard() {
       });
   }, [user, isGuestSession]);
 
+  useEffect(() => {
+    if (!user && !isGuestSession) return;
+
+    setIsLoadingBlueprint(true);
+    setBlueprintError(null);
+
+    api.get<CurrentBlueprintResponse>('/api/v1/blueprints/current', {
+      params: storedDiagnosis?.projectId ? { project_id: storedDiagnosis.projectId } : undefined,
+    })
+      .then((data) => {
+        setBlueprint(data);
+      })
+      .catch((error) => {
+        console.error('Failed to load blueprint:', error);
+        const normalized = error as { response?: { status?: number; data?: { detail?: string } } };
+        if (normalized.response?.status === 404) {
+          setBlueprint(null);
+          return;
+        }
+        setBlueprint(null);
+        setBlueprintError(normalized.response?.data?.detail || '블루프린트를 불러오지 못했습니다.');
+      })
+      .finally(() => {
+        setIsLoadingBlueprint(false);
+      });
+  }, [user, isGuestSession, storedDiagnosis?.projectId]);
+
   const handleSaveTargets = async (payload: { targetUniversity: string; targetMajor: string }) => {
     setIsSavingProfile(true);
-    const loadingId = toast.loading('목표 정보를 저장하는 중입니다...');
+    const loadingId = toast.loading('목표 정보를 저장하고 있습니다...');
     try {
       const data = await api.patch<UserProfile>('/api/v1/users/me/targets', {
         target_university: payload.targetUniversity,
@@ -126,248 +253,319 @@ export function Dashboard() {
       });
       setProfile(data);
       setIsOnboardingOpen(false);
-      toast.success('목표 대학과 전공이 저장되었습니다.', { id: loadingId });
+      toast.success('목표 대학과 전공을 저장했습니다.', { id: loadingId });
     } catch (error) {
       console.error('Failed to save targets:', error);
-      toast.error('목표 정보 저장에 실패했습니다. 잠시 후 다시 시도해주세요.', { id: loadingId });
+      toast.error('목표 정보를 저장하지 못했습니다.', { id: loadingId });
     } finally {
       setIsSavingProfile(false);
     }
   };
-
-  const roadmapMajor = profile?.target_major || storedDiagnosis?.major || '희망 전공';
-  const weakestSubject = storedDiagnosis?.diagnosis.subjects.find((subject) => subject.status !== 'safe')?.name;
-  const roadmapStages: RoadmapStage[] = [
-    {
-      year: '1학년',
-      phase: '기초 탐색',
-      icon: Compass,
-      topic: `${roadmapMajor} 입문 개념 지도 만들기`,
-      description: '학교 활동 전반에서 관심 키워드를 좁히고, 세특 기반 질문을 축적합니다.',
-      accentClass: 'from-sky-500 to-cyan-400',
-    },
-    {
-      year: '2학년',
-      phase: '전공 심화',
-      icon: Telescope,
-      topic: storedDiagnosis?.diagnosis.prescription.recommendedTopic || `${roadmapMajor} 심화 비교 분석 탐구`,
-      description: storedDiagnosis?.diagnosis.overall.summary || '진단 결과를 바탕으로 전공 적합성을 강하게 드러낼 중심 주제를 만듭니다.',
-      accentClass: 'from-violet-500 to-indigo-400',
-    },
-    {
-      year: '3학년',
-      phase: '융합/데이터 분석',
-      icon: BarChart3,
-      topic: weakestSubject
-        ? `${weakestSubject} 데이터를 활용한 ${roadmapMajor} 융합 탐구`
-        : `${roadmapMajor} 데이터 기반 확장 프로젝트`,
-      description: '정량 분석과 시뮬레이션을 더해 최종 제출용 탐구 서사를 완성합니다.',
-      accentClass: 'from-emerald-500 to-teal-400',
-    },
-  ];
 
   const handleCloseDiagnosis = () => {
     setIsDiagnosisOpen(false);
     setStoredDiagnosis(readStoredDiagnosis());
   };
 
+  const handleStartQuest = async (quest: BlueprintQuest) => {
+    setStartingQuestId(quest.id);
+    const loadingId = toast.loading('퀘스트를 시작하는 중입니다...');
+    try {
+      const payload = await api.post<QuestStartPayload>(`/api/v1/quests/${quest.id}/start`);
+      saveQuestStart(payload);
+      toast.success('워크샵 시작 시드를 준비했습니다.', { id: loadingId });
+      navigate(`/workshop/${payload.project_id}?major=${encodeURIComponent(payload.target_major || quest.subject)}`, {
+        state: { questStart: payload },
+      });
+    } catch (error) {
+      console.error('Failed to start quest:', error);
+      toast.error('퀘스트를 시작하지 못했습니다.', { id: loadingId });
+    } finally {
+      setStartingQuestId(null);
+    }
+  };
+
+  const roadmapCards = useMemo(() => {
+    const majorLabel = blueprint?.target_major || profile?.target_major || storedDiagnosis?.major || '목표 전공';
+    const priorityQuests = blueprint?.priority_quests ?? [];
+
+    return [
+      {
+        icon: Compass,
+        title: '1단계: 진단 해석',
+        description: blueprint?.headline || storedDiagnosis?.diagnosis.headline || `${majorLabel} 기준으로 현재 기록의 빈 구간을 먼저 확인합니다.`,
+      },
+      {
+        icon: Target,
+        title: '2단계: 우선 보완',
+        description: priorityQuests[0]?.title || storedDiagnosis?.diagnosis.recommended_focus || '이번 학기 안에 끝낼 수 있는 가장 좁은 활동부터 시작합니다.',
+      },
+      {
+        icon: BarChart3,
+        title: '3단계: 기록 반영',
+        description: priorityQuests[0]?.expected_record_impact || '세특에 남길 수 있는 관찰, 비교, 반성 포인트까지 정리합니다.',
+      },
+    ];
+  }, [blueprint, profile?.target_major, storedDiagnosis]);
+
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 lg:px-8">
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className="mb-12 pt-8 text-center md:pt-12 md:text-left"
-      >
-        <div className="mb-6 inline-block">
-          <div className="rounded-full border border-red-200 bg-gradient-to-r from-red-50 to-red-100/50 px-6 py-2.5 text-sm font-extrabold text-red-600 shadow-sm clay-card md:text-base">
-            제출 마감 대비 집중 관리 모드
-          </div>
-        </div>
-
-        <h1 className="mb-6 break-keep text-4xl font-extrabold leading-tight tracking-tight text-slate-800 md:text-5xl lg:text-6xl">
-          내 학생부 탐구,
-          <br className="hidden md:block" />
-          <span className="bg-gradient-to-r from-blue-500 to-blue-400 bg-clip-text text-transparent">
-            AI와 함께 제출용 보고서로 완성하기
-          </span>
-        </h1>
-
-        <p className="mx-auto mb-10 max-w-2xl break-keep text-lg font-medium leading-relaxed text-slate-500 md:mx-0 md:text-xl">
-          진단부터 워크숍, 내보내기까지 한 흐름으로 이어집니다. 오늘 작업을 바로 시작해보세요.
-        </p>
-
-        <div className="flex flex-col gap-4 md:flex-row md:items-center">
-          <button
-            onClick={() => setIsDiagnosisOpen(true)}
-            className="group mx-auto flex w-full items-center justify-center gap-3 px-8 py-5 text-lg font-extrabold md:mx-0 md:w-auto clay-btn-primary shimmer"
-          >
-            무료로 전공 적합도 진단 받기
-            <ArrowRight className="transition-transform group-hover:translate-x-1" />
-          </button>
-
-          {profile?.target_university && profile?.target_major ? (
-            <div className="inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                <School size={20} />
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Current Track</p>
-                <p className="text-sm font-extrabold text-slate-800">
-                  {profile.target_university} · {profile.target_major}
-                </p>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </motion.div>
-
-      <div className="mb-16 grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2, ease: 'easeOut' }}
-          className="relative flex flex-col justify-center overflow-hidden p-8 sm:p-10 lg:col-span-2 clay-card"
-        >
-          <div className="absolute -mr-20 -mt-20 h-64 w-64 rounded-full bg-blue-100/30 blur-3xl" />
-          <div className="relative z-10">
-            <div className="mb-8 flex items-center justify-between">
-              <div>
-                <h2 className="mb-2 text-2xl font-extrabold text-slate-800 sm:text-3xl">나의 작업 진행도</h2>
-                <p className="text-lg font-medium text-slate-500">현재 상태: {stats.level}</p>
-              </div>
-              <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-white/50 bg-gradient-to-br from-yellow-50 to-yellow-100 text-4xl shadow-inner sm:h-20 sm:w-20">
-                🌟
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex justify-between text-sm font-extrabold text-slate-700 sm:text-base">
-                <span>Lv.1</span>
-                <span className="text-blue-600">
-                  진행도 {stats.completion_rate}% · 작성 보고서 {stats.report_count}개
-                </span>
-              </div>
-              <div className="h-8 w-full rounded-full border border-slate-200/50 bg-slate-100 p-1.5 shadow-inner sm:h-10">
-                <div
-                  className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-blue-400 to-blue-500 shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1),0_2px_4px_rgba(59,130,246,0.3)] transition-all duration-1000"
-                  style={{ width: `${Math.max(stats.completion_rate, 5)}%` }}
-                >
-                  <div className="absolute left-0 right-0 top-0 h-1/2 rounded-t-full bg-gradient-to-b from-white/40 to-transparent" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.button
-          type="button"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3, ease: 'easeOut' }}
-          onClick={() => setIsDiagnosisOpen(true)}
-          className="group flex cursor-pointer flex-col items-center justify-center p-8 text-center transition-colors hover:bg-blue-50/30 sm:p-10 clay-card"
-        >
-          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl border border-white/50 bg-gradient-to-br from-mint/20 to-mint/10 text-mint shadow-inner transition-transform duration-300 group-hover:scale-110 sm:h-24 sm:w-24">
-            <Zap size={40} />
-          </div>
-          <h3 className="mb-3 text-xl font-extrabold text-slate-800 sm:text-2xl">빠른 진단 시작</h3>
-          <p className="text-sm font-medium leading-relaxed text-slate-500 sm:text-base">
-            전공 입력과 PDF 업로드만 하면
-            <br />
-            바로 워크숍으로 연결됩니다.
-          </p>
-        </motion.button>
-      </div>
-
+    <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 lg:px-8">
       <motion.section
-        initial={{ opacity: 0, y: 30 }}
+        initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.35, ease: 'easeOut' }}
-        className="mb-16 overflow-hidden p-8 sm:p-10 clay-card"
+        transition={{ duration: 0.45, ease: 'easeOut' }}
+        className="relative overflow-hidden rounded-[36px] border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-8 sm:py-10"
       >
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-blue-500">Roadmap</p>
-            <h2 className="text-2xl font-extrabold text-slate-800 sm:text-3xl">나만의 3개년 세특 로드맵</h2>
-            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500 sm:text-base">
-              1회성 보고서가 아니라, 3년 동안 사정관이 읽게 될 스토리 라인을 지금부터 설계합니다.
-            </p>
+        <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-blue-100/70 blur-3xl" />
+        <div className="relative z-10">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-blue-600">
+            <Sparkles size={14} />
+            Action Blueprint
           </div>
-          {storedDiagnosis?.savedAt ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
-              최근 진단 반영: {new Date(storedDiagnosis.savedAt).toLocaleDateString()}
-            </div>
-          ) : null}
-        </div>
 
-        <div className="relative">
-          <div className="absolute left-6 top-6 bottom-6 hidden w-px bg-gradient-to-b from-blue-200 via-slate-200 to-emerald-200 lg:block" />
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            {roadmapStages.map((stage, index) => (
-              <div key={stage.year} className="relative rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-                <div className={`mb-5 flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br ${stage.accentClass} text-white shadow-lg`}>
-                  <stage.icon size={24} />
-                </div>
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-600">
-                  {stage.year}
-                  <span className="text-slate-400">·</span>
-                  {stage.phase}
-                </div>
-                <h3 className="mb-3 text-xl font-extrabold leading-snug text-slate-800">{stage.topic}</h3>
-                <p className="text-sm font-medium leading-relaxed text-slate-500">{stage.description}</p>
-                {index < roadmapStages.length - 1 ? (
-                  <div className="mt-6 hidden items-center gap-2 text-sm font-extrabold text-slate-300 lg:flex">
-                    다음 단계
-                    <ArrowRight size={16} />
-                  </div>
-                ) : null}
+          <div className="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
+            <div>
+              <h1 className="mb-4 break-keep text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">
+                진단에서 끝내지 않고,
+                <br />
+                이번 학기 실행 퀘스트까지 연결합니다.
+              </h1>
+              <p className="max-w-2xl break-keep text-base font-medium leading-relaxed text-slate-600 sm:text-lg">
+                Polio의 차별점은 진단 결과를 바로 눌러 시작할 수 있는 액션 블루프린트로 바꾸는 것입니다.
+                진단 후에는 과목별 보완 퀘스트와 기대되는 세특 효과까지 한 화면에서 확인할 수 있습니다.
+              </p>
+
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => setIsDiagnosisOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-6 py-4 text-base font-black text-white transition-colors hover:bg-slate-800"
+                >
+                  진단 실행
+                  <ArrowRight size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.getElementById('action-blueprint')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-6 py-4 text-base font-black text-slate-700 transition-colors hover:bg-slate-100"
+                >
+                  블루프린트 보기
+                  <Zap size={18} />
+                </button>
               </div>
-            ))}
+
+              {storedDiagnosis?.savedAt ? (
+                <p className="mt-5 text-sm font-bold text-slate-500">
+                  최근 진단 반영 시각: {new Date(storedDiagnosis.savedAt).toLocaleString()}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">Current Track</p>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+                    <School size={20} />
+                  </div>
+                  <div>
+                    <p className="text-lg font-black text-slate-900">
+                      {profile?.target_university || '목표 대학 미설정'}
+                    </p>
+                    <p className="text-sm font-bold text-slate-500">
+                      {profile?.target_major || storedDiagnosis?.major || '목표 전공 미설정'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">Progress</p>
+                <p className="text-3xl font-black text-slate-900">{stats.completion_rate}%</p>
+                <p className="mt-1 text-sm font-bold text-slate-500">
+                  보고서 {stats.report_count}개 · 상태 {stats.level}
+                </p>
+                <div className="mt-4 h-3 rounded-full bg-white shadow-inner">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-700"
+                    style={{ width: `${Math.max(stats.completion_rate, 6)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </motion.section>
 
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
+      <motion.section
+        id="action-blueprint"
+        initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.4, ease: 'easeOut' }}
+        transition={{ duration: 0.45, delay: 0.08, ease: 'easeOut' }}
+        className="mt-10"
       >
-        <div className="mb-8 flex items-start justify-between gap-4 px-2 sm:items-center">
-          <h2 className="break-keep text-2xl font-extrabold text-slate-800 sm:text-3xl">지금 참고하기 좋은 입시 트렌드</h2>
-          <button
-            onClick={() => navigate('/trends')}
-            className="mt-1 flex shrink-0 items-center gap-1 whitespace-nowrap text-sm font-extrabold text-blue-500 transition-colors hover:text-blue-600 sm:mt-0 sm:text-base"
-          >
-            전체보기
-            <ArrowRight size={16} />
-          </button>
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-blue-600">Blueprint</p>
+            <h2 className="text-3xl font-black text-slate-900">이번 학기 액션 블루프린트</h2>
+            <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500 sm:text-base">
+              진단 결과를 바로 실행 가능한 퀘스트 카드로 바꿨습니다. 우선순위가 높은 퀘스트부터 눌러
+              워크샵으로 들어가면 starter choices가 즉시 준비됩니다.
+            </p>
+          </div>
+          {blueprint?.created_at ? (
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-sm">
+              최신 생성일: {new Date(blueprint.created_at).toLocaleDateString()}
+            </div>
+          ) : null}
         </div>
 
-        <div className="-mx-2 flex snap-x gap-6 overflow-x-auto px-2 pb-8 hide-scrollbar">
-          {trends.map((trend) => (
+        {isLoadingBlueprint ? (
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="h-64 animate-pulse rounded-[28px] bg-slate-100" />
+            <div className="h-64 animate-pulse rounded-[28px] bg-slate-100" />
+          </div>
+        ) : blueprint ? (
+          <>
+            <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600">
+                  <Zap size={14} />
+                  Blueprint Summary
+                </div>
+                <h3 className="break-keep text-2xl font-black leading-snug text-slate-900">{blueprint.headline}</h3>
+                <p className="mt-4 text-sm font-medium leading-relaxed text-slate-600 sm:text-base">
+                  {blueprint.recommended_focus}
+                </p>
+                <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">Semester Priority</p>
+                  <p className="text-base font-black text-slate-900">{blueprint.semester_priority_message}</p>
+                </div>
+              </div>
+
+              <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-600">
+                  <BarChart3 size={14} />
+                  기대되는 세특 효과
+                </div>
+                <div className="space-y-3">
+                  {blueprint.expected_record_effects.map((effect) => (
+                    <div key={effect} className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-medium leading-relaxed text-emerald-900">
+                      {effect}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-10">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-red-500">Priority</p>
+                  <h3 className="text-2xl font-black text-slate-900">이번 학기 우선 보완 과제</h3>
+                </div>
+              </div>
+              <div className="grid gap-6 lg:grid-cols-3">
+                {blueprint.priority_quests.map((quest) => (
+                  <QuestCard
+                    key={quest.id}
+                    quest={quest}
+                    onStart={handleStartQuest}
+                    isStarting={startingQuestId === quest.id}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-10 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-sky-600">By Subject</p>
+                <h3 className="text-2xl font-black text-slate-900">과목별 추천 퀘스트</h3>
+                <div className="mt-6 space-y-6">
+                  {blueprint.subject_groups.map((group) => (
+                    <div key={group.name}>
+                      <div className="mb-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-600">
+                        {group.name}
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {group.quests.map((quest) => (
+                          <QuestCard
+                            key={quest.id}
+                            quest={quest}
+                            onStart={handleStartQuest}
+                            isStarting={startingQuestId === quest.id}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-violet-600">By Activity</p>
+                  <h3 className="text-2xl font-black text-slate-900">활동 유형별 시작점</h3>
+                  <div className="mt-5 space-y-4">
+                    {blueprint.activity_groups.map((group) => (
+                      <div key={group.name} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-sm font-black text-slate-800">{group.name}</p>
+                        <p className="mt-2 text-sm font-medium leading-relaxed text-slate-600">
+                          {group.quests[0]?.title}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-slate-500">Execution Map</p>
+                  <h3 className="text-2xl font-black text-slate-900">진단 후 실행 순서</h3>
+                  <div className="mt-5 space-y-4">
+                    {roadmapCards.map((card) => (
+                      <div key={card.title} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
+                          <card.icon size={20} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-slate-900">{card.title}</p>
+                          <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">{card.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-[32px] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-slate-700 shadow-sm">
+              <Target size={28} />
+            </div>
+            <h3 className="text-2xl font-black text-slate-900">아직 액션 블루프린트가 없습니다.</h3>
+            <p className="mx-auto mt-3 max-w-2xl break-keep text-sm font-medium leading-relaxed text-slate-500 sm:text-base">
+              학생부 진단을 먼저 실행하면, 결과를 과목별 보완 퀘스트와 워크샵 starter choices로 바꿔서
+              바로 실행 가능한 구조를 생성합니다.
+            </p>
+            {blueprintError ? (
+              <p className="mx-auto mt-4 max-w-2xl rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                {blueprintError}
+              </p>
+            ) : null}
             <button
               type="button"
-              key={trend.id}
-              onClick={() => {
-                navigate('/trends');
-                toast('트렌드 페이지에서 상세 자료를 확인하세요.', { icon: '📌' });
-              }}
-              className="group flex min-w-[280px] snap-start cursor-pointer flex-col p-8 text-left transition-colors hover:border-blue-200 md:min-w-[320px] clay-card"
+              onClick={() => setIsDiagnosisOpen(true)}
+              className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-6 py-4 text-base font-black text-white transition-colors hover:bg-slate-800"
             >
-              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-3xl border border-white/50 bg-slate-50 text-4xl shadow-inner transition-transform duration-300 group-hover:-translate-y-2 sm:h-20 sm:w-20">
-                {trend.icon}
-              </div>
-              <div className="mb-4 inline-block w-fit rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-extrabold text-slate-600 sm:text-sm">
-                {trend.tag}
-              </div>
-              <h3 className="text-lg font-extrabold leading-snug text-slate-800 transition-colors group-hover:text-blue-600 sm:text-xl">
-                {trend.title}
-              </h3>
+              진단하고 블루프린트 만들기
+              <ArrowRight size={18} />
             </button>
-          ))}
-        </div>
-      </motion.div>
+          </div>
+        )}
+      </motion.section>
 
       <DiagnosisModal isOpen={isDiagnosisOpen} onClose={handleCloseDiagnosis} />
       <OnboardingModal

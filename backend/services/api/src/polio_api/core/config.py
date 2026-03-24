@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3001"]
     )
+    cors_origin_regex: str | None = None
     allow_inline_render: bool = True
     auto_ingest_uploads: bool = True
     upload_chunk_size_chars: int = 1200

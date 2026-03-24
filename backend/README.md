@@ -1,122 +1,67 @@
-# polio Backend Blueprint
+# Polio Backend
 
-This workspace turns the Gemini planning thread into a backend that a beginner can actually run and extend.
+`backend/` is the only backend source of truth in this repository.
 
-## Start Here
+Do not add new backend code to archived root-level scaffolds or duplicated legacy folders.
 
-1. Read `BEGINNER_GUIDE.md`
-2. Run `.\scripts\setup-local.cmd`
-3. Run `.\scripts\start-api.cmd`
-4. Open `http://127.0.0.1:8000/docs`
+## Run
 
-## What Works Now
+From the repo root:
 
-- FastAPI backend with Swagger docs
-- project creation and listing
-- file upload storage under `storage/uploads/`
-- automatic ingest for `pdf`, `txt`, `md`
-- parsed document and chunk storage
-- document-based draft starter generation
-- render job queue with one selected output format
-- real file generation for `pdf`, `pptx`, `hwpx`
-- worker CLI for queued render jobs
-- Alembic migration structure
-- PostgreSQL + pgvector local recipe
+```powershell
+.\scripts\setup-local.ps1 sqlite
+.\scripts\start-api.ps1
+```
 
-## One Important Rule
+Or from `backend/` directly:
 
-The backend never renders every format automatically.
+```powershell
+.\scripts\setup-local.ps1 sqlite
+.\scripts\start-api.ps1
+```
 
-The user chooses exactly one of:
+Swagger UI: `http://127.0.0.1:8000/docs`
 
-- `pdf`
-- `pptx`
-- `hwpx`
+## Backend Map
 
-That format choice is stored in the render job and processed later.
+- `services/api/src/polio_api`: FastAPI app, routes, services, persistence wiring
+- `services/worker/src/polio_worker`: worker entrypoint
+- `services/ingest/src/polio_ingest`: ingest flow
+- `services/render/src/polio_render`: export renderers
+- `services/render/templates`: render templates such as HWPX skeleton assets
+- `packages/domain/src/polio_domain`: backend domain enums and constants
+- `packages/shared/src/polio_shared`: shared backend helpers and path utilities
+- `packages/parsers`: document parsing helpers
+- `packages/pipelines`: ingestion and analysis pipelines
+- `packages/prompts`: backend prompt package area
+- `alembic`: database migrations
+- `infra`: local infrastructure notes
+- `tests`: backend-local tests
 
-## Renderers Included
+## Product Boundary
 
-- `pdf`: ReportLab-based styled document export
-- `pptx`: `python-pptx` slide deck export
-- `hwpx`: template-based HWPX package export built from a bundled skeleton
+This backend exists for:
 
-## Ingest Flow Included
-
-1. User uploads a file
-2. Backend stores it in `storage/uploads/<project-id>/`
-3. If the file is `pdf`, `txt`, or `md`, the ingest service parses it immediately
-4. Parsed results are stored in `parsed_documents` and `document_chunks`
-5. The user can create a starter draft from that parsed document
-
-## Database Modes
-
-You have two practical ways to run this project.
-
-### Easy local mode
-
-- run `.\scripts\setup-local.cmd` (defaults to SQLite)
-- run the API
-- use SQLite in `storage/runtime/polio.db`
-
-### Recommended dev mode
-
-- run `.\scripts\setup-local.cmd postgres`
-- start Postgres + Valkey
-- run Alembic migrations
-- use PostgreSQL + pgvector
-
-## Code Map
-
-- `services/api/src/polio_api`: main API app, routes, DB services
-- `services/worker/src/polio_worker`: worker CLI for queued jobs
-- `services/ingest/src/polio_ingest`: parser and chunking logic
-- `services/render/src/polio_render`: PDF, PPTX, HWPX renderers
-- `services/render/templates`: bundled render templates like HWPX skeletons
-- `packages/domain/src/polio_domain`: enums and domain constants
-- `packages/shared/src/polio_shared`: path helpers and shared utilities
-- `alembic`: database migration files
-- `infra/postgres`: Postgres init scripts and notes
-- `references/open-source`: downloaded upstream open-source snapshots
-
-## Current Product Boundary
-
-`polio` is not an admission predictor.
-
-This backend is designed for:
-
-- evidence-grounded fit diagnosis
-- student record parsing and organization
-- source-based drafting support
+- evidence-grounded diagnosis
+- source-safe drafting support
+- student-owned document parsing
 - selected-format export
 
-This backend is intentionally not designed for:
+This backend does not exist for:
 
-- exact admission probability
-- private accepted-student dataset benchmarking
-- copyrighted source scraping without permission
-- day-1 binary `.hwp` output
+- guaranteed admission prediction
+- invented achievements
+- unsupported scraping or copyrighted source misuse
 
-## Folder Guide
+## Documentation
 
-- `docs/00-principles`: product and risk rules
-- `docs/01-product-boundary`: scope and non-goals
-- `docs/02-domain-model`: entities and state transitions
-- `docs/03-identity-consent`: consent and minors
-- `docs/04-student-ingestion`: upload and parsing design
-- `docs/05-source-ingestion`: admissions source collection
-- `docs/06-knowledge-base`: chunking and retrieval
-- `docs/07-diagnosis-engine`: scoring and recommendation logic
-- `docs/08-chat-orchestration`: model routing and tools
-- `docs/09-drafting-provenance`: source-safe writing workflow
-- `docs/10-render-export`: export design
-- `docs/11-notifications-workflow`: reminders and workflow
-- `docs/12-security-compliance`: privacy and security
-- `docs/13-observability-eval`: tracing and quality review
-- `docs/14-delivery-roadmap`: phased build order
+Canonical docs now live at the repo root under `../docs/`.
 
-## More Reading
+- `../docs/getting-started.md`
+- `../docs/monorepo-structure.md`
+- `../docs/00-principles/README.md`
+- `../docs/07-diagnosis-engine/README.md`
+- `../docs/08-chat-orchestration/README.md`
+- `../docs/09-drafting-provenance/README.md`
 
-- `GEMINI_REVIEW.md`: what was changed from the original Gemini plan
-- `ARCHITECTURE_OVERVIEW.md`: high-level service boundaries
-- `OPEN_SOURCE_CATALOG.md`: open-source choices and rationale
+Duplicated backend docs and old root-level backend notes were moved to `../archive/legacy/backend/`.

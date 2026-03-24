@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from app.core.config import get_settings
-from domain.enums import BlockType
-from parsers.base import DocumentParser, ParserContext
-from parsers.errors import ParserError
-from parsers.schemas import CanonicalBlock, CanonicalParseResult
+from polio_api.core.config import get_settings
+from polio_domain.enums import BlockType
+
+from .base import DocumentParser, ParserContext
+from .errors import ParserError
+from .schemas import CanonicalBlock, CanonicalParseResult
 
 
 class DoclingDocumentParser(DocumentParser):

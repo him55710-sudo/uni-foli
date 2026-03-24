@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import logging
 from pathlib import Path
 import re
@@ -8,91 +9,56 @@ from typing import Any
 import pdfplumber
 from pdfplumber.page import Page
 
+from polio_domain.enums import DocumentMaskingStatus, DocumentProcessingStatus
+from polio_ingest.masking import MaskingPipeline
 from polio_ingest.models import ParsedChunkPayload, ParsedDocumentPayload
 
 TEXT_EXTENSIONS = {".txt", ".md"}
 SUPPORTED_EXTENSIONS = {".pdf", *TEXT_EXTENSIONS}
 
 
-def _apply_neis_masking(text: str) -> str:
-    """
-    나이스 생기부(학교생활기록부 II)의 민감 정보(PII)를 비식별화합니다.
-    (블라인드 평가 기준 준수)
-    """
-    if not text:
-        return text
-
-    # 1. 주민등록번호 (000000-0000000)
-    text = re.sub(r"\b\d{6}\s*[-]?\s*[1-4]\d{6}\b", "[주민번호_MASKED]", text)
-    
-    # 2. 성명 (생기부 특성상 띄어쓰기가 포함된 경우가 많음 "성 명 : 홍 길 동")
-    # '성명'이라는 단어 근처에 있는 2~5글자의 한글을 블라인드 처리
-    text = re.sub(r"(성\s*명\s*[:]?\s*)([가-힣\s]{2,8})(?=\n|\s|$)", r"\1[이름_MASKED]", text)
-    
-    # 3. 학교명 (출신 고등학교 노출 방지 - OO고, OO고등학교)
-    text = re.sub(r"[가-힣]{2,10}(고등학교|과학고|외국어고|국제고|영재고|마이스터고|예술고|체육고)\b", "[학교명_MASKED]", text)
-    
-    # 4. 가족 이름 및 인적사항
-    text = re.sub(r"(부|모|보호자)\s*[:]?\s*([가-힣\s]{2,8})(?=\n|\s|$)", r"\1[가족이름_MASKED]", text)
-    
-    # 5. 연락처 (휴대전화, 일반전화)
-    text = re.sub(r"\b01[016789]\s*[-]?\s*\d{3,4}\s*[-]?\s*\d{4}\b", "[전화번호_MASKED]", text)
-    text = re.sub(r"\b0[2-9]\s*[-]?\s*\d{3,4}\s*[-]?\s*\d{4}\b", "[일반전화_MASKED]", text)
-    
-    # 6. 사진 데이터 제거 (pypdf는 텍스트만 뽑지만, 캡션 등으로 남을 경우 대비)
-    text = re.sub(r"(증명사진|사진란)", "[사진_제거됨]", text)
-
-    return text
-
-
-def _extract_tables_as_markdown(page: Page) -> str:
-    """
-    pdfplumber의 page 객체에서 표 데이터를 추출해 마크다운 형식으로 변환합니다.
-    표 안의 줄바꿈은 <br> 태그로 치환해 마크다운 테이블이 깨지지 않게 방어합니다.
-    """
+def _extract_tables_as_markdown(page: Page) -> tuple[str, int, list[str]]:
+    failures: list[str] = []
     try:
         tables = page.extract_tables()
-    except Exception as e:
-        logging.warning(f"Table extraction failed on page {page.page_number}: {e}")
-        return ""
-        
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"Table extraction failed: {exc}")
+        return "", 0, failures
+
     if not tables:
-        return ""
-        
-    md_tables: list[str] = []
-    
+        return "", 0, failures
+
+    markdown_tables: list[str] = []
     for table in tables:
         if not table:
             continue
-            
-        cleaned_table: list[list[str]] = []
+
+        cleaned_rows: list[list[str]] = []
         for row in table:
-            cleaned_row: list[str] = []
+            if row is None:
+                continue
+            cleaned_row = []
             for cell in row:
-                if cell is None:
-                    cleaned_row.append("")
-                else:
-                    # 마크다운 표 안에서 줄바꿈이 일어나면 구조가 파괴되므로 <br>로 치환
-                    cleaned_cell = str(cell).replace("\r\n", "<br>").replace("\n", "<br>").strip()
-                    cleaned_row.append(cleaned_cell)
-            if cleaned_row:
-                cleaned_table.append(cleaned_row)
-                
-        if not cleaned_table:
+                cell_text = "" if cell is None else str(cell).replace("\r\n", "<br>").replace("\n", "<br>").strip()
+                cleaned_row.append(cell_text)
+            if any(cell for cell in cleaned_row):
+                cleaned_rows.append(cleaned_row)
+
+        if not cleaned_rows:
             continue
-            
-        # 첫 번째 행을 헤더로 처리
-        headers = cleaned_table[0]
-        md_table_str = "| " + " | ".join(headers) + " |\n"
-        md_table_str += "| " + " | ".join(["---"] * len(headers)) + " |\n"
-        
-        for row in cleaned_table[1:]:
-            padded_row = row + [""] * (len(headers) - len(row))
-            md_table_str += "| " + " | ".join(padded_row[:len(headers)]) + " |\n"
-            
-        md_tables.append(md_table_str)
-        
-    return "\n\n".join(md_tables)
+
+        headers = cleaned_rows[0]
+        body = cleaned_rows[1:]
+        table_lines = [
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join(["---"] * len(headers)) + " |",
+        ]
+        for row in body:
+            padded = row + [""] * max(0, len(headers) - len(row))
+            table_lines.append("| " + " | ".join(padded[: len(headers)]) + " |")
+        markdown_tables.append("\n".join(table_lines))
+
+    return "\n\n".join(markdown_tables), len(markdown_tables), failures
 
 
 def parse_uploaded_document(
@@ -127,33 +93,57 @@ def parse_pdf_document(
     full_text_parts: list[str] = []
     chunks: list[ParsedChunkPayload] = []
     chunk_index = 0
+    page_count = 0
+    raw_metadata: dict[str, Any] = {}
+    page_summaries: list[dict[str, Any]] = []
+    page_failures: list[dict[str, Any]] = []
+    all_warnings: list[str] = []
+    aggregate_hits: Counter[str] = Counter()
+    total_tables = 0
+    total_replacements = 0
+    masking_methods: set[str] = set()
+    masking_pipeline = MaskingPipeline()
 
     try:
         with pdfplumber.open(file_path) as pdf:
             page_count = len(pdf.pages)
             raw_metadata = pdf.metadata or {}
-            
+
             for page_number, page in enumerate(pdf.pages, start=1):
+                text_errors: list[str] = []
                 try:
                     basic_text = page.extract_text(layout=True) or ""
-                except Exception as e:
-                    logging.warning(f"Text extraction failed on page {page_number}: {e}")
+                except Exception as exc:  # noqa: BLE001
                     basic_text = ""
-                
-                table_md = _extract_tables_as_markdown(page)
-                
-                # 하이브리드 추출 로직: 일반 텍스트 + 마크다운 테이블 병합
-                raw_text = basic_text
-                if table_md:
-                    raw_text += "\n\n" + table_md
-                    
-                # PII 마스킹을 최우선으로 적용 (절대 유지 규칙)
-                masked_text = _apply_neis_masking(raw_text)
-                
-                # 하위 호환성을 보장하기 위해 기존 정규화 및 청킹 사용
-                page_text = _normalize_text(masked_text)
-                
+                    text_errors.append(f"Text extraction failed: {exc}")
+                    logging.warning("Text extraction failed on page %s: %s", page_number, exc)
+
+                table_markdown, table_count, table_errors = _extract_tables_as_markdown(page)
+                total_tables += table_count
+                page_errors = [*text_errors, *table_errors]
+
+                raw_page_text = "\n\n".join(
+                    part for part in [basic_text.strip(), table_markdown.strip()] if part
+                ).strip()
+                if not raw_page_text:
+                    if page_errors:
+                        page_failures.extend(
+                            {"page_number": page_number, "message": message} for message in page_errors
+                        )
+                    continue
+
+                masking_result = masking_pipeline.mask_text(raw_page_text)
+                aggregate_hits.update(masking_result.pattern_hits)
+                total_replacements += masking_result.replacements
+                all_warnings.extend(masking_result.warnings)
+                if masking_result.method:
+                    masking_methods.add(masking_result.method)
+
+                page_text = _normalize_text(masking_result.text)
                 if not page_text:
+                    page_failures.append(
+                        {"page_number": page_number, "message": "Page became empty after masking."}
+                    )
                     continue
 
                 markdown_sections.append(f"## Page {page_number}\n\n{page_text}")
@@ -171,12 +161,35 @@ def parse_pdf_document(
                         )
                     )
                     chunk_index += 1
-    except Exception as e:
-        raise RuntimeError(f"Error parsing PDF with pdfplumber: {e}")
+
+                page_summaries.append(
+                    {
+                        "page_number": page_number,
+                        "table_count": table_count,
+                        "text_length": len(page_text),
+                        "masking_method": masking_result.method,
+                        "regex_hits": masking_result.pattern_hits,
+                        "warnings": [*page_errors, *masking_result.warnings],
+                    }
+                )
+                page_failures.extend(
+                    {"page_number": page_number, "message": message}
+                    for message in page_errors
+                )
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Error parsing PDF with pdfplumber: {exc}") from exc
 
     content_text = "\n\n".join(full_text_parts).strip()
     content_markdown = f"# {file_path.stem}\n\n" + ("\n\n".join(markdown_sections) or "No text extracted.")
-    
+    processing_status = DocumentProcessingStatus.PARSED.value
+    masking_status = DocumentMaskingStatus.MASKED.value
+
+    if not chunks:
+        processing_status = DocumentProcessingStatus.FAILED.value
+        masking_status = DocumentMaskingStatus.FAILED.value
+    elif page_failures:
+        processing_status = DocumentProcessingStatus.PARTIAL.value
+
     metadata = _clean_metadata(
         {
             "filename": file_path.name,
@@ -185,9 +198,18 @@ def parse_pdf_document(
             "subject": raw_metadata.get("Subject"),
             "creator": raw_metadata.get("Creator"),
             "producer": raw_metadata.get("Producer"),
+            "table_count": total_tables,
+            "page_summaries": page_summaries,
+            "page_failures": page_failures,
+            "masking": {
+                "methods": sorted(masking_methods) or ["regex"],
+                "replacement_count": total_replacements,
+                "pattern_hits": dict(aggregate_hits),
+            },
         }
     )
 
+    warnings = [*all_warnings, *[item["message"] for item in page_failures]]
     return ParsedDocumentPayload(
         parser_name="pdfplumber",
         source_extension=".pdf",
@@ -197,6 +219,9 @@ def parse_pdf_document(
         content_markdown=content_markdown.strip(),
         metadata=metadata,
         chunks=chunks,
+        processing_status=processing_status,
+        masking_status=masking_status,
+        warnings=warnings,
     )
 
 
@@ -207,11 +232,10 @@ def parse_text_document(
     overlap_chars: int,
 ) -> ParsedDocumentPayload:
     raw_text = file_path.read_text(encoding="utf-8", errors="ignore")
-    
-    # 텍스트 파일(MD, TXT) 형태의 생기부 복붙 데이터가 들어올 경우에도 마스킹 적용
-    masked_text = _apply_neis_masking(raw_text)
-    normalized = _normalize_text(masked_text)
-    
+    masking_pipeline = MaskingPipeline()
+    masking_result = masking_pipeline.mask_text(raw_text)
+    normalized = _normalize_text(masking_result.text)
+
     chunks = [
         ParsedChunkPayload(
             chunk_index=index,
@@ -227,9 +251,16 @@ def parse_text_document(
     ]
 
     if file_path.suffix.lower() == ".md":
-        content_markdown = masked_text.strip()
+        content_markdown = masking_result.text.strip()
     else:
         content_markdown = f"# {file_path.stem}\n\n{normalized}"
+
+    processing_status = (
+        DocumentProcessingStatus.PARSED.value if chunks else DocumentProcessingStatus.FAILED.value
+    )
+    masking_status = (
+        DocumentMaskingStatus.MASKED.value if normalized else DocumentMaskingStatus.FAILED.value
+    )
 
     return ParsedDocumentPayload(
         parser_name="plain-text",
@@ -238,8 +269,19 @@ def parse_text_document(
         word_count=len(normalized.split()),
         content_text=normalized,
         content_markdown=content_markdown.strip(),
-        metadata={"filename": file_path.name},
+        metadata={
+            "filename": file_path.name,
+            "masking": {
+                "methods": [masking_result.method],
+                "replacement_count": masking_result.replacements,
+                "pattern_hits": masking_result.pattern_hits,
+            },
+            "warnings": masking_result.warnings,
+        },
         chunks=chunks,
+        processing_status=processing_status,
+        masking_status=masking_status,
+        warnings=masking_result.warnings,
     )
 
 
@@ -252,18 +294,15 @@ def _slice_text(text: str, chunk_size_chars: int, overlap_chars: int) -> list[tu
         return []
 
     step = max(chunk_size_chars - overlap_chars, 1)
-    chunks: list[tuple[str, int, int]] = []
-
+    sliced: list[tuple[str, int, int]] = []
     for start in range(0, len(text), step):
         end = min(start + chunk_size_chars, len(text))
         chunk = text[start:end].strip()
-        if not chunk:
-            continue
-        chunks.append((chunk, start, end))
+        if chunk:
+            sliced.append((chunk, start, end))
         if end >= len(text):
             break
-
-    return chunks
+    return sliced
 
 
 def _normalize_text(value: str) -> str:
@@ -279,4 +318,4 @@ def _estimate_tokens(value: str) -> int:
 
 
 def _clean_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in metadata.items() if value not in (None, "", [])}
+    return {key: value for key, value in metadata.items() if value not in (None, "", [], {})}

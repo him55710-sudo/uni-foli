@@ -10,11 +10,18 @@ from sqlalchemy.orm import Session
 
 from polio_api.core.config import get_settings
 from polio_api.db.models.upload_asset import UploadAsset
-from polio_api.services.document_service import ingest_upload_asset, upload_supports_ingest
+from polio_api.services.document_service import ensure_document_placeholder, ingest_upload_asset, upload_supports_ingest
 from polio_shared.paths import find_project_root, get_upload_root, slugify
+from polio_domain.enums import UploadStatus
 
 
-async def store_upload(db: Session, project_id: str, upload: UploadFile) -> UploadAsset:
+async def store_upload(
+    db: Session,
+    project_id: str,
+    upload: UploadFile,
+    *,
+    auto_ingest: bool | None = None,
+) -> UploadAsset:
     project_dir = get_upload_root() / project_id
     project_dir.mkdir(parents=True, exist_ok=True)
 
@@ -34,13 +41,18 @@ async def store_upload(db: Session, project_id: str, upload: UploadFile) -> Uplo
         stored_path=relative_path,
         file_size_bytes=len(contents),
         sha256=hashlib.sha256(contents).hexdigest(),
+        status=UploadStatus.STORED.value,
     )
     db.add(asset)
     db.commit()
     db.refresh(asset)
+    ensure_document_placeholder(db, asset)
 
     settings = get_settings()
-    if settings.auto_ingest_uploads and upload_supports_ingest(asset):
+    if auto_ingest is None:
+        auto_ingest = settings.auto_ingest_uploads
+
+    if auto_ingest and upload_supports_ingest(asset):
         try:
             ingest_upload_asset(db, asset)
         except Exception:  # noqa: BLE001

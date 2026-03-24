@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from parsers.base import DocumentParser, ParserContext
-from parsers.schemas import CanonicalParseResult
+from .base import DocumentParser, ParserContext
+from .schemas import CanonicalParseResult
 
 
 class OcrFallbackParser(DocumentParser):

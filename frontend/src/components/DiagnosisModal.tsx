@@ -1,19 +1,19 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
   Search,
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Zap,
   Sparkles,
   AlertCircle,
   FileText,
   ShieldCheck,
+  TrendingDown,
+  TrendingUp,
+  Target,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
@@ -23,51 +23,21 @@ interface DiagnosisModalProps {
   onClose: () => void;
 }
 
-interface DiagnosisSubject {
-  name: string;
-  status: 'safe' | 'warning' | 'danger';
-  feedback: string;
+interface DiagnosisResultPayload {
+  headline: string;
+  strengths: string[];
+  gaps: string[];
+  risk_level: 'safe' | 'warning' | 'danger';
+  recommended_focus: string;
 }
 
-interface DiagnosisResponse {
-  overall: {
-    score: number;
-    summary: string;
-  };
-  subjects: DiagnosisSubject[];
-  prescription: {
-    message: string;
-    recommendedTopic: string;
-  };
+interface DiagnosisRunResponse {
+  id: string;
+  project_id: string;
+  status: string;
+  result_payload: DiagnosisResultPayload | null;
+  error_message: string | null;
 }
-
-const FALLBACK_DIAGNOSIS: DiagnosisResponse = {
-  overall: {
-    score: 71,
-    summary: '전공 연결성이 일부 부족하지만, 강점 과목을 중심으로 구조를 잡으면 빠르게 개선 가능합니다.',
-  },
-  subjects: [
-    {
-      name: '수학',
-      status: 'warning',
-      feedback: '탐구 과정 설명은 좋지만 전공 연계 근거를 한 문단 더 보강하면 완성도가 올라갑니다.',
-    },
-    {
-      name: '과학',
-      status: 'danger',
-      feedback: '결론이 관찰 내용 반복에 머물러 있습니다. 해석과 시사점 중심으로 재구성이 필요합니다.',
-    },
-    {
-      name: '국어',
-      status: 'safe',
-      feedback: '논리 전개와 표현이 안정적입니다. 발표/토론 연계 내용이 강점으로 보입니다.',
-    },
-  ],
-  prescription: {
-    message: '다음 보고서는 강점 과목의 분석 프레임을 약점 과목에 이식하는 방식으로 구성해보세요.',
-    recommendedTopic: '전공 키워드 기반 비교 분석 보고서',
-  },
-};
 
 const DIAGNOSIS_STORAGE_KEY = 'polio_last_diagnosis';
 
@@ -75,27 +45,17 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
   const [step, setStep] = useState(1);
   const [major, setMajor] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
-  const [diagnosis, setDiagnosis] = useState<DiagnosisResponse | null>(null);
+  const [diagnosis, setDiagnosis] = useState<DiagnosisResultPayload | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-
-  const navigate = useNavigate();
-
-  const scoreColorClass = useMemo(() => {
-    const score = diagnosis?.overall.score ?? 0;
-    if (score >= 80) return 'text-emerald-600';
-    if (score >= 60) return 'text-amber-600';
-    return 'text-red-600';
-  }, [diagnosis?.overall.score]);
-
   const resetState = () => {
     setStep(1);
     setMajor('');
     setProjectId(null);
-    setExpandedSubject(null);
     setDiagnosis(null);
     setUploadedFileName(null);
+    setErrorMessage('');
     setIsBusy(false);
   };
 
@@ -126,35 +86,52 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
     }
   };
 
+  const pollDiagnosisStatus = async (runId: string, minStartMs: number) => {
+    try {
+      const res = await api.get<DiagnosisRunResponse>(`/api/v1/diagnosis/${runId}`);
+      if (res.status === 'COMPLETED' && res.result_payload) {
+        setDiagnosis(res.result_payload);
+        
+        // Save to cache for roadmap usage
+        localStorage.setItem(
+          DIAGNOSIS_STORAGE_KEY,
+          JSON.stringify({
+            major: major.trim(),
+            projectId,
+            diagnosis: res.result_payload,
+            savedAt: new Date().toISOString(),
+          }),
+        );
+        
+        const elapsed = Date.now() - minStartMs;
+        const delay = Math.max(0, 2000 - elapsed);
+        setTimeout(() => { setIsBusy(false); setStep(4); }, delay);
+      } else if (res.status === 'FAILED') {
+        setIsBusy(false);
+        setErrorMessage(res.error_message || '진단 중 알 수 없는 오류가 발생했습니다.');
+        setStep(5); // Error step
+      } else {
+        setTimeout(() => pollDiagnosisStatus(runId, minStartMs), 2000);
+      }
+    } catch (error) {
+      setIsBusy(false);
+      setErrorMessage('서버와 상태를 확인하는 과정에서 통신 오류가 발생했습니다.');
+      setStep(5);
+    }
+  };
+
   const runDiagnosis = async (activeProjectId: string) => {
     setStep(3);
+    setIsBusy(true);
     const startAt = Date.now();
-    const minimumLoadingMs = 2000;
-    let resolvedDiagnosis: DiagnosisResponse = FALLBACK_DIAGNOSIS;
-
     try {
-      const result = await api.post<DiagnosisResponse>(`/api/v1/projects/${activeProjectId}/diagnose`);
-      setDiagnosis(result);
-      setExpandedSubject(result.subjects[0]?.name ?? null);
-      resolvedDiagnosis = result;
+      const run = await api.post<DiagnosisRunResponse>(`/api/v1/diagnosis/run`, { project_id: activeProjectId });
+      pollDiagnosisStatus(run.id, startAt);
     } catch (error) {
-      console.error('Diagnosis error:', error);
-      setDiagnosis(FALLBACK_DIAGNOSIS);
-      setExpandedSubject(FALLBACK_DIAGNOSIS.subjects[0]?.name ?? null);
-      toast('실시간 진단 연결이 불안정해 기본 분석으로 이어갑니다.', { icon: '⚠️' });
-      resolvedDiagnosis = FALLBACK_DIAGNOSIS;
-    } finally {
-      localStorage.setItem(
-        DIAGNOSIS_STORAGE_KEY,
-        JSON.stringify({
-          major: major.trim(),
-          diagnosis: resolvedDiagnosis,
-          savedAt: new Date().toISOString(),
-        }),
-      );
-      const elapsed = Date.now() - startAt;
-      const delay = Math.max(0, minimumLoadingMs - elapsed);
-      setTimeout(() => setStep(4), delay);
+      console.error('Diagnosis trigger error:', error);
+      setIsBusy(false);
+      setErrorMessage('진단 프로세스를 시작할 수 없습니다. 문서를 먼저 업로드했는지 확인해주세요.');
+      setStep(5);
     }
   };
 
@@ -169,6 +146,7 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
       try {
         const formData = new FormData();
         formData.append('file', file);
+        // Note: Using the project-specific upload endpoint to bind to project 
         await api.post(`/api/v1/projects/${projectId}/uploads`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -177,7 +155,6 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
       } catch (error) {
         console.error('Upload error:', error);
         toast.error('PDF 업로드에 실패했습니다. 파일 형식을 확인해주세요.', { id: toastId });
-      } finally {
         setIsBusy(false);
       }
     },
@@ -193,21 +170,11 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
   });
 
   const handleStartWorkshop = () => {
-    const majorQuery = encodeURIComponent(major.trim());
+    window.location.hash = 'action-blueprint';
     handleClose();
-    if (projectId) {
-      navigate(`/workshop/${projectId}?major=${majorQuery}`);
-      return;
-    }
-    navigate(`/workshop?major=${majorQuery}`);
   };
 
   if (!isOpen) return null;
-
-  const subjectList = diagnosis?.subjects ?? [];
-  const overallScore = diagnosis?.overall.score ?? 0;
-  const overallSummary = diagnosis?.overall.summary ?? '';
-  const prescription = diagnosis?.prescription;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -236,11 +203,14 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                 exit={{ opacity: 0, x: -50 }}
                 className="flex h-full flex-col justify-center p-6 sm:p-8"
               >
+                <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-xl shadow-blue-500/20">
+                  <Target size={30} className="text-white" />
+                </div>
                 <h3 className="mb-3 break-keep text-3xl font-extrabold leading-tight text-slate-800">
-                  목표 전공을 입력해주세요.
+                  목표 전공을 알려주세요.
                 </h3>
-                <p className="mb-10 text-lg font-medium text-slate-500">
-                  전공 정보를 기반으로 진단 질문과 분석 기준을 세팅합니다.
+                <p className="mb-8 text-lg font-medium text-slate-500">
+                  전공을 기준으로 현재 기록과의 '실제 거리'와 '우선 보완점'을 계산해 드립니다.
                 </p>
                 <input
                   type="text"
@@ -264,9 +234,9 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                 exit={{ opacity: 0, x: -50 }}
                 className="flex h-full flex-col p-6 pt-16 sm:p-8"
               >
-                <h3 className="mb-2 text-2xl font-extrabold text-slate-800">학교생활기록부 PDF를 업로드해주세요.</h3>
+                <h3 className="mb-2 text-2xl font-extrabold text-slate-800">학교생활기록부 PDF 업로드</h3>
                 <p className="mb-6 font-medium text-slate-500">
-                  프로젝트가 생성되었습니다. 이제 파일을 올리면 바로 분석을 시작합니다.
+                  목표 전공과 비교할 기준점을 마련합니다.
                 </p>
 
                 <div
@@ -291,7 +261,7 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
 
                   <div className="mt-auto flex items-center gap-1.5 rounded-full bg-white/60 px-4 py-2.5 text-center text-xs font-bold text-slate-500">
                     <ShieldCheck size={16} className="shrink-0 text-emerald-500" />
-                    업로드 파일은 진단 처리 용도로만 사용됩니다.
+                    업로드 파일은 진단 처리 용도로만 보관 및 암호화됩니다.
                   </div>
                 </div>
               </motion.div>
@@ -314,126 +284,107 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                   <Search size={40} className="animate-pulse text-blue-500" />
                 </div>
                 <h3 className="mb-3 text-2xl font-extrabold text-slate-800">
-                  AI가 PDF를 읽고 전공 적합도를 계산 중입니다...
+                  AI가 객관적 관점에서 간극(Gap)을 찾고 있습니다.
                 </h3>
-                <p className="font-bold text-blue-500">Poli가 근거 중심으로 분석하고 있어요.</p>
+                <p className="font-bold text-blue-500">
+                  과장된 합격 예측이 아닌, 명확한 다음 액션 플랜을 도출합니다. (최대 1분 소요될 수 있습니다)
+                </p>
               </motion.div>
             ) : null}
 
-            {step === 4 ? (
+            {step === 5 ? (
+              <motion.div
+                key="step5"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.1 }}
+                className="flex h-full flex-col items-center justify-center p-6 text-center"
+              >
+                <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-red-100">
+                  <AlertCircle size={40} className="text-red-500" />
+                </div>
+                <h3 className="mb-3 text-2xl font-extrabold text-slate-800">진단 중 오류가 발생했습니다.</h3>
+                <p className="mb-8 font-medium text-slate-500">{errorMessage}</p>
+                <button
+                  onClick={() => projectId ? runDiagnosis(projectId) : setStep(1)}
+                  className="rounded-2xl bg-slate-900 px-8 py-4 text-base font-extrabold text-white transition-colors hover:bg-slate-800"
+                >
+                  {projectId ? '다시 시도하기' : '처음부터 다시 시도'}
+                </button>
+              </motion.div>
+            ) : null}
+
+            {step === 4 && diagnosis ? (
               <motion.div
                 key="step4"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="flex h-full flex-col bg-slate-50"
               >
-                <div className="hide-scrollbar flex-1 space-y-6 overflow-y-auto p-6 pb-32 sm:p-8">
+                <div className="hide-scrollbar flex-1 space-y-8 overflow-y-auto p-6 pb-32 sm:p-8">
                   <div className="relative overflow-hidden bg-white p-8 text-center clay-card">
                     <div className="absolute left-0 top-0 h-2 w-full bg-gradient-to-r from-blue-400 to-indigo-500" />
-                    <h2 className="mb-6 text-xl font-extrabold text-slate-800">AI 종합 진단 리포트</h2>
-
-                    <div className="mx-auto mb-4 w-48">
-                      <div className={`text-5xl font-black tracking-tighter ${scoreColorClass}`}>
-                        {overallScore}
-                        <span className="text-2xl text-slate-400">%</span>
-                      </div>
-                      <p className="mt-1 text-xs font-bold text-slate-500">전공 적합도 점수</p>
+                    
+                    <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5">
+                      <Zap size={16} className="text-blue-500" />
+                      <span className="text-sm font-extrabold text-slate-600">
+                        {major} 목표 대비 학생부 진단
+                      </span>
                     </div>
 
-                    <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-600">
-                      <AlertTriangle size={18} className="shrink-0" />
-                      <span className="text-left">{overallSummary}</span>
+                    <h2 className="text-2xl font-black leading-snug tracking-tight text-slate-800 break-keep sm:text-3xl">
+                      "{diagnosis.headline}"
+                    </h2>
+
+                    <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 sm:gap-4 sm:rounded-full">
+                      <div className="flex items-center gap-2 px-3 py-1">
+                         <span className="text-xs font-bold text-slate-500">리스크 레벨</span>
+                         <span className={`rounded-full px-3 py-1 text-sm font-black ${
+                           diagnosis.risk_level === 'danger' ? 'bg-red-100 text-red-700' :
+                           diagnosis.risk_level === 'warning' ? 'bg-amber-100 text-amber-700' :
+                           'bg-emerald-100 text-emerald-700'
+                         }`}>
+                           {diagnosis.risk_level === 'danger' ? '위험 수준' :
+                            diagnosis.risk_level === 'warning' ? '보완 필수' : '상대적 안정'}
+                         </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <h3 className="px-2 text-lg font-extrabold text-slate-800">과목별 상세 진단</h3>
-                    {subjectList.map((subject) => (
-                      <div
-                        key={subject.name}
-                        className={`overflow-hidden border-2 bg-white transition-all duration-300 clay-card ${
-                          expandedSubject === subject.name
-                            ? subject.status === 'danger'
-                              ? 'border-red-200'
-                              : subject.status === 'warning'
-                                ? 'border-amber-200'
-                                : 'border-emerald-200'
-                            : 'border-transparent'
-                        }`}
-                      >
-                        <button
-                          onClick={() =>
-                            setExpandedSubject((prev) => (prev === subject.name ? null : subject.name))
-                          }
-                          className="flex w-full items-center justify-between bg-white p-5 transition-colors hover:bg-slate-50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-extrabold text-slate-700">
-                              {subject.name}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {subject.status === 'safe' ? (
-                                <>
-                                  <CheckCircle2 size={18} className="text-emerald-500" />
-                                  <span className="text-sm font-bold text-emerald-600">안정</span>
-                                </>
-                              ) : null}
-                              {subject.status === 'warning' ? (
-                                <>
-                                  <AlertCircle size={18} className="text-amber-500" />
-                                  <span className="text-sm font-bold text-amber-600">보완 필요</span>
-                                </>
-                              ) : null}
-                              {subject.status === 'danger' ? (
-                                <>
-                                  <AlertTriangle size={18} className="text-red-500" />
-                                  <span className="text-sm font-bold text-red-600">집중 보완</span>
-                                </>
-                              ) : null}
-                            </div>
-                          </div>
-                          {expandedSubject === subject.name ? (
-                            <ChevronUp size={20} className="text-slate-400" />
-                          ) : (
-                            <ChevronDown size={20} className="text-slate-400" />
-                          )}
-                        </button>
-
-                        <AnimatePresence>
-                          {expandedSubject === subject.name ? (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div
-                                className={`p-5 pt-0 text-sm font-medium leading-relaxed ${
-                                  subject.status === 'danger'
-                                    ? 'text-red-700'
-                                    : subject.status === 'warning'
-                                      ? 'text-amber-700'
-                                      : 'text-emerald-700'
-                                }`}
-                              >
-                                <div
-                                  className={`rounded-xl p-4 ${
-                                    subject.status === 'danger'
-                                      ? 'bg-red-50'
-                                      : subject.status === 'warning'
-                                        ? 'bg-amber-50'
-                                        : 'bg-emerald-50'
-                                  }`}
-                                >
-                                  <span className="mb-1 block font-extrabold">Poli 피드백</span>
-                                  {subject.feedback}
-                                </div>
-                              </div>
-                            </motion.div>
-                          ) : null}
-                        </AnimatePresence>
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div className="flex flex-col rounded-3xl border border-emerald-100 bg-emerald-50/50 p-6 sm:p-8">
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                          <TrendingUp size={20} />
+                        </div>
+                        <h3 className="text-xl font-extrabold text-emerald-900">현재의 확실한 강점</h3>
                       </div>
-                    ))}
+                      <ul className="flex-1 space-y-3">
+                        {diagnosis.strengths.map((str, i) => (
+                           <li key={i} className="flex items-start gap-3 rounded-2xl border border-white bg-white/80 p-4 text-sm font-bold leading-relaxed text-emerald-800 shadow-sm backdrop-blur-sm">
+                             <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-500" />
+                             <span>{str}</span>
+                           </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="flex flex-col rounded-3xl border border-red-100 bg-red-50/50 p-6 sm:p-8">
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                          <TrendingDown size={20} />
+                        </div>
+                        <h3 className="text-xl font-extrabold text-red-900">치명적인 약점 (Gap)</h3>
+                      </div>
+                      <ul className="flex-1 space-y-3">
+                        {diagnosis.gaps.map((gap, i) => (
+                           <li key={i} className="flex items-start gap-3 rounded-2xl border border-white bg-white/80 p-4 text-sm font-bold leading-relaxed text-red-800 shadow-sm backdrop-blur-sm">
+                             <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-500" />
+                             <span>{gap}</span>
+                           </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 </div>
 
@@ -443,14 +394,9 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                       P
                     </div>
                     <div className="flex-1 rounded-2xl rounded-tl-sm border border-blue-100 bg-blue-50 p-4">
-                      <p className="text-sm font-bold leading-snug text-blue-900 sm:text-base">
-                        {prescription?.message}
-                        {prescription?.recommendedTopic ? (
-                          <>
-                            {' '}
-                            <span className="font-black text-blue-600">"{prescription.recommendedTopic}"</span>
-                          </>
-                        ) : null}
+                      <p className="text-sm font-extrabold leading-snug text-blue-900 sm:text-base">
+                        <span className="mb-1 block text-xs font-black uppercase tracking-wider text-blue-500">Next Action Goal</span>
+                        {diagnosis.recommended_focus}
                       </p>
                     </div>
                   </div>
@@ -459,7 +405,7 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                     className="group flex w-full items-center justify-center gap-2 py-4 text-lg font-extrabold clay-btn-primary"
                   >
                     <Zap size={20} className="fill-yellow-300 text-yellow-300 transition-transform group-hover:scale-110" />
-                    진단 결과 기반으로 워크숍 시작하기
+                    다음 학기 보완을 위한 워크숍 시작
                   </button>
                 </div>
               </motion.div>
