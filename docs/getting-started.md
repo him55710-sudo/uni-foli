@@ -7,24 +7,26 @@ This guide is for the current monorepo layout.
 SQLite mode:
 
 ```powershell
-.\scripts\setup-local.ps1 sqlite
+.\scripts\setup-local.cmd sqlite
 ```
 
 PostgreSQL mode:
 
 ```powershell
-.\scripts\setup-local.ps1 postgres
-.\scripts\start-infra.ps1
-.\scripts\migrate.ps1
+.\scripts\setup-local.cmd postgres
+.\scripts\start-infra.cmd
+.\scripts\migrate.cmd
 ```
 
 ## 2. Start the backend
 
 ```powershell
-.\scripts\start-api.ps1
+.\scripts\start-api.cmd
 ```
 
 Then open `http://127.0.0.1:8000/docs`.
+
+If PowerShell blocks `.ps1` execution on Windows, use the `.cmd` wrappers in `scripts/`.
 
 ## 3. Start the frontend
 

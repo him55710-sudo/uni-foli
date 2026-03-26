@@ -12,6 +12,7 @@ export interface GoalsData {
   target_university: string;
   target_major: string;
   admission_type: string;
+  interest_universities: string[];
 }
 
 interface OnboardingState {
@@ -30,7 +31,12 @@ interface OnboardingState {
 }
 
 const initialProfile = { grade: '', track: '', career: '' };
-const initialGoals = { target_university: '', target_major: '', admission_type: '' };
+const initialGoals = {
+  target_university: '',
+  target_major: '',
+  admission_type: '',
+  interest_universities: [],
+};
 
 export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   step: 1,

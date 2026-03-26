@@ -26,3 +26,7 @@ Normalization pipeline for user uploads and source materials.
 ## Special concern
 
 Everything here must preserve provenance and parser confidence.
+
+## NEIS PDF path
+
+See `NEIS_PDF_PIPELINE.md` for the OpenDataLoader routing policy, normalized JSON artifact, page-stitching trace, and known limitations.

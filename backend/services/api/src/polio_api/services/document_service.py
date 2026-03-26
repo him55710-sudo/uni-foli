@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import Thread
 
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from polio_api.core.config import get_settings
 from polio_api.core.database import SessionLocal
@@ -162,6 +162,7 @@ def ingest_upload_asset(
             source_path,
             chunk_size_chars=settings.upload_chunk_size_chars,
             overlap_chars=settings.upload_chunk_overlap_chars,
+            odl_enabled=getattr(settings, "opendataloader_enabled", True),
         )
 
         if document.chunks:
@@ -180,6 +181,16 @@ def ingest_upload_asset(
             **parsed.metadata,
             "warnings": parsed.warnings,
             "chunk_count": len(parsed.chunks),
+            "chunk_evidence_map": {
+                str(chunk.chunk_index): chunk.metadata
+                for chunk in parsed.chunks
+                if chunk.metadata
+            },
+            "raw_artifact": parsed.raw_artifact,
+            "masked_artifact": parsed.masked_artifact,
+            "analysis_artifact": parsed.analysis_artifact,
+            "parse_confidence": parsed.parse_confidence,
+            "needs_review": parsed.needs_review,
         }
         document.last_error = None
         if parsed.processing_status in {
@@ -271,6 +282,18 @@ def list_chunks_for_document(db: Session, document_id: str) -> list[DocumentChun
         .where(DocumentChunk.document_id == document_id)
         .order_by(DocumentChunk.chunk_index.asc())
     )
+    return list(db.scalars(stmt))
+
+
+def list_chunks_for_project(db: Session, project_id: str, *, limit: int | None = None) -> list[DocumentChunk]:
+    stmt = (
+        select(DocumentChunk)
+        .options(joinedload(DocumentChunk.document))
+        .where(DocumentChunk.project_id == project_id)
+        .order_by(DocumentChunk.chunk_index.asc())
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
     return list(db.scalars(stmt))
 
 

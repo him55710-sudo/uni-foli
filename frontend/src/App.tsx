@@ -39,11 +39,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Force onboarding if required fields are missing
-  if (dbUser && (!dbUser.grade || !dbUser.target_university)) {
+  if (dbUser && (!dbUser.grade || !dbUser.target_university || !dbUser.target_major)) {
     if (window.location.pathname !== '/onboarding') {
       return <Navigate to="/onboarding" replace />;
     }
-  } else if (dbUser && dbUser.grade && dbUser.target_university && window.location.pathname === '/onboarding') {
+  } else if (dbUser && dbUser.grade && dbUser.target_university && dbUser.target_major && window.location.pathname === '/onboarding') {
     // If fully onboarded and trying to access onboarding, redirect to dashboard
     return <Navigate to="/" replace />;
   }

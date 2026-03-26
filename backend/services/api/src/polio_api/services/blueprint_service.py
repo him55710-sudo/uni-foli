@@ -306,8 +306,15 @@ def get_blueprint_by_id(db: Session, blueprint_id: str) -> Blueprint:
     return blueprint
 
 
-def get_current_blueprint(db: Session, *, project_id: str | None = None) -> Blueprint | None:
+def get_current_blueprint(
+    db: Session,
+    *,
+    project_id: str | None = None,
+    owner_user_id: str | None = None,
+) -> Blueprint | None:
     stmt = select(Blueprint).options(joinedload(Blueprint.project), selectinload(Blueprint.quests))
+    if owner_user_id:
+        stmt = stmt.join(Blueprint.project).where(Project.owner_user_id == owner_user_id)
     if project_id:
         stmt = stmt.where(Blueprint.project_id == project_id)
     stmt = stmt.order_by(Blueprint.created_at.desc())

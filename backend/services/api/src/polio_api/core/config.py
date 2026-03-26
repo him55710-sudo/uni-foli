@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     auto_ingest_uploads: bool = True
     upload_chunk_size_chars: int = 1200
     upload_chunk_overlap_chars: int = 180
+    opendataloader_enabled: bool = True
+    opendataloader_default_mode: str = "heuristic"
+    opendataloader_hybrid_ocr_enabled: bool = True
+    opendataloader_annotate_pdf: bool = False
     vector_dimensions: int = 1536
     semantic_scholar_search_url: str = "https://api.semanticscholar.org/graph/v1/paper/search"
     semantic_scholar_timeout_seconds: float = 10.0
@@ -40,6 +44,17 @@ class Settings(BaseSettings):
     naver_client_id: str = "DUMMY_NAVER_ID"
     naver_client_secret: str = "DUMMY_NAVER_SECRET"
     naver_redirect_uri: str = "http://localhost:3001/auth/callback/naver"
+    google_client_id: str = "DUMMY_GOOGLE_ID"
+    google_client_secret: str = "DUMMY_GOOGLE_SECRET"
+    google_redirect_uri: str = "http://localhost:3001/auth/callback/google"
+    auth_jwt_algorithm: str = "HS256"
+    auth_jwt_secret: str | None = None
+    auth_jwt_public_key: str | None = None
+    auth_jwt_issuer: str | None = None
+    auth_jwt_audience: str | None = None
+    auth_token_leeway_seconds: int = 30
+    auth_allow_local_dev_bypass: bool = True
+    auth_firebase_fallback_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

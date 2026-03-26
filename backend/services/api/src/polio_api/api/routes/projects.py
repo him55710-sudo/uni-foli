@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from typing import Any
 import uuid
 
 from polio_api.api.deps import get_db, get_current_user
+from polio_api.db.models.user import User
 from polio_api.schemas.project import ProjectCreate, ProjectRead
 from polio_api.services.blueprint_service import create_blueprint_from_project_diagnosis
 from polio_api.services.document_service import list_documents_for_project
@@ -133,19 +133,30 @@ def _build_grounded_diagnosis(
     )
 
 @router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
-def create_project_route(payload: ProjectCreate, db: Session = Depends(get_db)) -> ProjectRead:
-    project = create_project(db, payload)
+def create_project_route(
+    payload: ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProjectRead:
+    project = create_project(db, payload, owner_user_id=current_user.id)
     return ProjectRead.model_validate(project)
 
 
 @router.get("", response_model=list[ProjectRead])
-def list_projects_route(db: Session = Depends(get_db)) -> list[ProjectRead]:
-    return [ProjectRead.model_validate(item) for item in list_projects(db)]
+def list_projects_route(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ProjectRead]:
+    return [ProjectRead.model_validate(item) for item in list_projects(db, owner_user_id=current_user.id)]
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
-def get_project_route(project_id: str, db: Session = Depends(get_db)) -> ProjectRead:
-    project = get_project(db, project_id)
+def get_project_route(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProjectRead:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     return ProjectRead.model_validate(project)
@@ -155,9 +166,9 @@ def get_project_route(project_id: str, db: Session = Depends(get_db)) -> Project
 def diagnose_project_route(
     project_id: str,
     db: Session = Depends(get_db),
-    current_user: Any = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ProjectDiagnosisResponse:
-    project = get_project(db, project_id)
+    project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
@@ -210,9 +221,9 @@ class UserStats(BaseModel):
 @router.get("/user/stats", response_model=UserStats)
 def get_user_stats(
     db: Session = Depends(get_db),
-    current_user: Any = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> UserStats:
-    projects = list_projects(db)
+    projects = list_projects(db, owner_user_id=current_user.id)
     report_count = len(projects)
     level_map = ["탐구의 시작 🐣", "성장하는 잎새 🌱", "열매 맺는 나무 🌳"]
     level_index = min(report_count, len(level_map) - 1)
@@ -231,9 +242,9 @@ def export_project_hwpx(
     project_id: str,
     payload: ExportRequest,
     db: Session = Depends(get_db),
-    current_user: Any = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
-    project = get_project(db, project_id)
+    project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from polio_api.api.deps import get_db
+from polio_api.api.deps import get_current_user, get_db
+from polio_api.db.models.user import User
 from polio_api.schemas.document import DocumentChunkRead, ParsedDocumentRead, ParsedDocumentSummary
 from polio_api.schemas.draft import DraftFromDocumentCreate, DraftRead
 from polio_api.services.document_service import (
@@ -18,8 +19,12 @@ router = APIRouter()
 
 
 @router.get("/{project_id}/documents", response_model=list[ParsedDocumentSummary])
-def list_documents_route(project_id: str, db: Session = Depends(get_db)) -> list[ParsedDocumentSummary]:
-    project = get_project(db, project_id)
+def list_documents_route(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ParsedDocumentSummary]:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
@@ -28,7 +33,15 @@ def list_documents_route(project_id: str, db: Session = Depends(get_db)) -> list
 
 
 @router.get("/{project_id}/documents/{document_id}", response_model=ParsedDocumentRead)
-def get_document_route(project_id: str, document_id: str, db: Session = Depends(get_db)) -> ParsedDocumentRead:
+def get_document_route(
+    project_id: str,
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ParsedDocumentRead:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     document = get_document(db, document_id)
     if not document or document.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
@@ -40,7 +53,11 @@ def list_document_chunks_route(
     project_id: str,
     document_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[DocumentChunkRead]:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     document = get_document(db, document_id)
     if not document or document.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
@@ -54,7 +71,15 @@ def list_document_chunks_route(
     response_model=ParsedDocumentRead,
     status_code=status.HTTP_201_CREATED,
 )
-def ingest_upload_route(project_id: str, upload_id: str, db: Session = Depends(get_db)) -> ParsedDocumentRead:
+def ingest_upload_route(
+    project_id: str,
+    upload_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ParsedDocumentRead:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     upload = get_upload(db, upload_id)
     if not upload or upload.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
@@ -79,7 +104,11 @@ def create_draft_from_document_route(
     document_id: str,
     payload: DraftFromDocumentCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> DraftRead:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     document = get_document(db, document_id)
     if not document or document.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")

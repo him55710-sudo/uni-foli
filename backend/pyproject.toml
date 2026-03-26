@@ -49,6 +49,8 @@ where = [
   "services/ingest/src",
   "packages/domain/src",
   "packages/shared/src",
+  "packages/parsers/src",
+  "packages/prompts/src",
 ]
 
 [tool.pytest.ini_options]

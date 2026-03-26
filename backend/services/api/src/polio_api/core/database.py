@@ -23,13 +23,17 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 def initialize_database() -> None:
     from polio_api.db.models import (  # noqa: F401
         blueprint,
+        citation,
         diagnosis_run,
         document_chunk,
         draft,
         parsed_document,
+        policy_flag,
         project,
         quest,
         render_job,
+        response_trace,
+        review_task,
         upload_asset,
         user,
         workshop,
@@ -48,8 +52,10 @@ def _apply_schema_evolution() -> None:
         "users": {
             "target_university": "target_university VARCHAR(200)",
             "target_major": "target_major VARCHAR(200)",
+            "interest_universities": "interest_universities JSON",
         },
         "projects": {
+            "owner_user_id": "owner_user_id VARCHAR(36)",
             "discussion_log": "discussion_log TEXT",
         },
         "blueprints": {

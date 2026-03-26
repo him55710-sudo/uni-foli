@@ -7,6 +7,7 @@ import {
   Compass,
   PlayCircle,
   School,
+  Settings2,
   Sparkles,
   Target,
   Zap,
@@ -32,6 +33,7 @@ interface UserProfile {
   name: string | null;
   target_university: string | null;
   target_major: string | null;
+  interest_universities: string[] | null;
 }
 
 interface DiagnosisResultPayload {
@@ -129,10 +131,10 @@ function QuestCard({
           {quest.subject}
         </span>
         <span className={`rounded-full border px-3 py-1 text-xs font-black ${difficultyTone(quest.difficulty)}`}>
-          {quest.difficulty.toUpperCase()}
+          {quest.difficulty === 'high' ? '상' : quest.difficulty === 'medium' ? '중' : '하'}
         </span>
         <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusTone(quest.status)}`}>
-          {quest.status}
+          {quest.status === 'IN_PROGRESS' ? '진행 중' : quest.status === 'COMPLETED' ? '완료' : '대기'}
         </span>
       </div>
 
@@ -140,18 +142,18 @@ function QuestCard({
       <p className="mb-4 text-sm font-medium leading-relaxed text-slate-600">{quest.summary}</p>
 
       <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
-        <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-blue-500">Why This Matters</p>
+        <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-blue-500">배경 및 필요성</p>
         <p className="text-sm font-medium leading-relaxed text-blue-900">{quest.why_this_matters}</p>
       </div>
 
       <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-        <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-emerald-600">Expected Record Impact</p>
+        <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-emerald-600">예상 생기부 반영 효과</p>
         <p className="text-sm font-medium leading-relaxed text-emerald-900">{quest.expected_record_impact}</p>
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Recommended Output</p>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">추천 결과물 형태</p>
           <p className="text-sm font-bold text-slate-700">{quest.recommended_output_type}</p>
         </div>
         <button
@@ -243,14 +245,25 @@ export function Dashboard() {
       });
   }, [user, isGuestSession, storedDiagnosis?.projectId]);
 
-  const handleSaveTargets = async (payload: { targetUniversity: string; targetMajor: string }) => {
+  const handleSaveTargets = async (payload: {
+    targetUniversity: string;
+    targetMajor: string;
+    interestUniversities: string[];
+  }) => {
     setIsSavingProfile(true);
     const loadingId = toast.loading('목표 정보를 저장하고 있습니다...');
+    console.log('DEBUG: Saving targets with payload:', {
+      target_university: payload.targetUniversity,
+      target_major: payload.targetMajor,
+      interest_universities: payload.interestUniversities,
+    });
     try {
       const data = await api.patch<UserProfile>('/api/v1/users/me/targets', {
         target_university: payload.targetUniversity,
         target_major: payload.targetMajor,
+        interest_universities: payload.interestUniversities,
       });
+      console.log('DEBUG: Save targets successful. Response data:', data);
       setProfile(data);
       setIsOnboardingOpen(false);
       toast.success('목표 대학과 전공을 저장했습니다.', { id: loadingId });
@@ -320,7 +333,7 @@ export function Dashboard() {
         <div className="relative z-10">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-blue-600">
             <Sparkles size={14} />
-            Action Blueprint
+            액션 블루프린트
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
@@ -365,24 +378,47 @@ export function Dashboard() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
               <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">Current Track</p>
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
-                    <School size={20} />
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">현재 목표</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+                      <School size={20} />
+                    </div>
+                    <div>
+                      <p className="text-lg font-black text-slate-900">
+                        {profile?.target_university || '목표 대학 미설정'}
+                      </p>
+                      <p className="text-sm font-bold text-slate-500">
+                        {profile?.target_major || storedDiagnosis?.major || '목표 전공 미설정'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-lg font-black text-slate-900">
-                      {profile?.target_university || '목표 대학 미설정'}
-                    </p>
-                    <p className="text-sm font-bold text-slate-500">
-                      {profile?.target_major || storedDiagnosis?.major || '목표 전공 미설정'}
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsOnboardingOpen(true)}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-400 shadow-sm transition-all hover:bg-slate-50 hover:text-blue-600"
+                    title="목표 수정"
+                  >
+                    <Settings2 size={18} />
+                  </button>
                 </div>
+
+                {profile?.interest_universities && profile.interest_universities.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-1.5 border-t border-slate-100 pt-4">
+                    {profile.interest_universities.map((univ) => (
+                      <span
+                        key={univ}
+                        className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-500"
+                      >
+                        {univ}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">Progress</p>
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">진행률</p>
                 <p className="text-3xl font-black text-slate-900">{stats.completion_rate}%</p>
                 <p className="mt-1 text-sm font-bold text-slate-500">
                   보고서 {stats.report_count}개 · 상태 {stats.level}
@@ -408,7 +444,7 @@ export function Dashboard() {
       >
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-blue-600">Blueprint</p>
+            <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-blue-600">블루프린트</p>
             <h2 className="text-3xl font-black text-slate-900">이번 학기 액션 블루프린트</h2>
             <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500 sm:text-base">
               진단 결과를 바로 실행 가능한 퀘스트 카드로 바꿨습니다. 우선순위가 높은 퀘스트부터 눌러
@@ -433,14 +469,14 @@ export function Dashboard() {
               <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600">
                   <Zap size={14} />
-                  Blueprint Summary
+                  블루프린트 요약
                 </div>
                 <h3 className="break-keep text-2xl font-black leading-snug text-slate-900">{blueprint.headline}</h3>
                 <p className="mt-4 text-sm font-medium leading-relaxed text-slate-600 sm:text-base">
                   {blueprint.recommended_focus}
                 </p>
                 <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                  <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">Semester Priority</p>
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">이번 학기 우선순위</p>
                   <p className="text-base font-black text-slate-900">{blueprint.semester_priority_message}</p>
                 </div>
               </div>
@@ -448,7 +484,7 @@ export function Dashboard() {
               <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-600">
                   <BarChart3 size={14} />
-                  기대되는 세특 효과
+                  기대되는 생기부 효과
                 </div>
                 <div className="space-y-3">
                   {blueprint.expected_record_effects.map((effect) => (
@@ -463,7 +499,7 @@ export function Dashboard() {
             <div className="mt-10">
               <div className="mb-5 flex items-center justify-between">
                 <div>
-                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-red-500">Priority</p>
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-red-500">우선 과제</p>
                   <h3 className="text-2xl font-black text-slate-900">이번 학기 우선 보완 과제</h3>
                 </div>
               </div>
@@ -481,7 +517,7 @@ export function Dashboard() {
 
             <div className="mt-10 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
               <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
-                <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-sky-600">By Subject</p>
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-sky-600">과목별</p>
                 <h3 className="text-2xl font-black text-slate-900">과목별 추천 퀘스트</h3>
                 <div className="mt-6 space-y-6">
                   {blueprint.subject_groups.map((group) => (
@@ -506,7 +542,7 @@ export function Dashboard() {
 
               <div className="space-y-6">
                 <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
-                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-violet-600">By Activity</p>
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-violet-600">활동 유형별</p>
                   <h3 className="text-2xl font-black text-slate-900">활동 유형별 시작점</h3>
                   <div className="mt-5 space-y-4">
                     {blueprint.activity_groups.map((group) => (
@@ -521,7 +557,7 @@ export function Dashboard() {
                 </div>
 
                 <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
-                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-slate-500">Execution Map</p>
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.24em] text-slate-500">실행 로드맵</p>
                   <h3 className="text-2xl font-black text-slate-900">진단 후 실행 순서</h3>
                   <div className="mt-5 space-y-4">
                     {roadmapCards.map((card) => (
@@ -570,8 +606,10 @@ export function Dashboard() {
       <DiagnosisModal isOpen={isDiagnosisOpen} onClose={handleCloseDiagnosis} />
       <OnboardingModal
         isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
         initialUniversity={profile?.target_university}
         initialMajor={profile?.target_major}
+        initialInterests={profile?.interest_universities || []}
         isSubmitting={isSavingProfile}
         onSubmit={handleSaveTargets}
       />

@@ -9,18 +9,20 @@ Do not add new backend code to archived root-level scaffolds or duplicated legac
 From the repo root:
 
 ```powershell
-.\scripts\setup-local.ps1 sqlite
-.\scripts\start-api.ps1
+.\scripts\setup-local.cmd sqlite
+.\scripts\start-api.cmd
 ```
 
 Or from `backend/` directly:
 
 ```powershell
-.\scripts\setup-local.ps1 sqlite
-.\scripts\start-api.ps1
+.\scripts\setup-local.cmd sqlite
+.\scripts\start-api.cmd
 ```
 
 Swagger UI: `http://127.0.0.1:8000/docs`
+
+If Windows PowerShell blocks `.ps1` execution, use the `.cmd` wrappers under `scripts/`.
 
 ## Backend Map
 

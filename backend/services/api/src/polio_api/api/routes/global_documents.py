@@ -5,7 +5,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
-from polio_api.api.deps import get_db
+from polio_api.api.deps import get_current_user, get_db
+from polio_api.db.models.user import User
 from polio_api.schemas.document import ParsedDocumentRead
 from polio_api.schemas.project import ProjectCreate
 from polio_api.services.document_service import (
@@ -33,10 +34,11 @@ async def upload_global_document(
     target_university: str | None = Form(default=None),
     auto_parse: bool = Form(default=False),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ParsedDocumentRead:
     active_project_id = project_id
     if active_project_id:
-        project = get_project(db, active_project_id)
+        project = get_project(db, active_project_id, owner_user_id=current_user.id)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     else:
@@ -49,6 +51,7 @@ async def upload_global_document(
                 target_major=target_major,
                 target_university=target_university,
             ),
+            owner_user_id=current_user.id,
         )
         active_project_id = project.id
 
@@ -68,9 +71,13 @@ def parse_global_document(
     document_id: str,
     wait_for_completion: bool = Query(default=False),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ParsedDocumentRead:
     document = get_document(db, document_id)
     if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    project = get_project(db, document.project_id, owner_user_id=current_user.id)
+    if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
     if document.upload_asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload asset not found.")
@@ -101,8 +108,15 @@ def parse_global_document(
 
 
 @router.get("/{document_id}", response_model=ParsedDocumentRead)
-def get_global_document_status(document_id: str, db: Session = Depends(get_db)) -> ParsedDocumentRead:
+def get_global_document_status(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ParsedDocumentRead:
     document = get_document(db, document_id)
     if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    project = get_project(db, document.project_id, owner_user_id=current_user.id)
+    if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
     return ParsedDocumentRead.model_validate(document)

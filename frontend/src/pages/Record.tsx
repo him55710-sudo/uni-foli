@@ -78,19 +78,19 @@ function formatBytes(value: number | null): string {
 function formatStatusLabel(status: DocumentStatus): string {
   switch (status) {
     case 'uploaded':
-      return 'Uploaded';
+      return '업로드 완료';
     case 'masking':
-      return 'Masking';
+      return '마스킹 진행 중';
     case 'parsing':
-      return 'Parsing';
+      return '파싱 진행 중';
     case 'retrying':
-      return 'Retrying';
+      return '재시도 중';
     case 'parsed':
-      return 'Parsed';
+      return '파싱 완료';
     case 'partial':
-      return 'Partial';
+      return '일부 완료';
     case 'failed':
-      return 'Failed';
+      return '실패';
     default:
       return status;
   }
@@ -208,11 +208,11 @@ export function Record() {
     if (lastTerminalStatus.current === document.status) return;
 
     if (document.status === 'parsed') {
-      toast.success('Upload, masking, and parsing completed.');
+      toast.success('업로드, 마스킹 및 파싱이 모두 완료되었습니다.');
     } else if (document.status === 'partial') {
-      toast('Parsing completed with warnings. Review the status panel before continuing.', { icon: '!' });
+      toast('파싱이 완료되었으나 경고가 발생했습니다. 계속하기 전에 상태 위젯을 확인해 주세요.', { icon: '!' });
     } else if (document.status === 'failed') {
-      toast.error(document.last_error || 'Parsing failed. Review the error details and retry.');
+      toast.error(document.last_error || '파싱에 실패했습니다. 오류 내용을 확인하고 다시 시도해 주세요.');
     }
     lastTerminalStatus.current = document.status;
   }, [document]);
@@ -224,7 +224,7 @@ export function Record() {
       setDocument(started);
     } catch (error) {
       console.error('Failed to start parsing:', error);
-      toast.error('Could not start masking and parsing.');
+      toast.error('마스킹 및 파싱을 시작할 수 없습니다.');
     } finally {
       setIsStartingParse(false);
     }
@@ -236,7 +236,7 @@ export function Record() {
       if (!file || isBusy) return;
 
       setIsUploading(true);
-      const loadingId = toast.loading('Uploading PDF and creating a tracked document...');
+      const loadingId = toast.loading('PDF를 업로드하고 문서를 등록하는 중...');
 
       try {
         const formData = new FormData();
@@ -250,11 +250,11 @@ export function Record() {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
         setDocument(created);
-        toast.success('Upload saved. Masking and parsing will start next.', { id: loadingId });
+        toast.success('업로드 성공. 다음 단계인 마스킹과 파싱이 시작됩니다.', { id: loadingId });
         await startParse(created.id);
       } catch (error) {
         console.error('Upload flow failed:', error);
-        toast.error('Upload failed. Please retry with a valid PDF.', { id: loadingId });
+        toast.error('업로드에 실패했습니다. 올바른 PDF 파일인지 확인 후 다시 시도해 주세요.', { id: loadingId });
       } finally {
         setIsUploading(false);
       }
@@ -279,20 +279,20 @@ export function Record() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800">
-            {user?.displayName || (isGuestSession ? 'Guest' : 'Student')} document intake
+            {user?.displayName || (isGuestSession ? '게스트' : '학생')} 생기부 데이터 관리
           </h1>
           <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500">
-            Upload a real school-record PDF, pass it through masking before storage, and track each processing step.
+            실제 생활기록부 PDF를 업로드하여 개인정보 마스킹을 거친 뒤 안전하게 저장하고 처리 과정을 추적합니다.
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <label className="block text-xs font-extrabold uppercase tracking-[0.18em] text-slate-400">
-            Target Major
+            목표 전공
           </label>
           <input
             value={targetMajor}
             onChange={(event) => setTargetMajor(event.target.value)}
-            placeholder="Optional context for the intake project"
+            placeholder="업로드할 문서의 목표 전공 정보를 입력해 주세요 (선택 사항)"
             className="mt-2 w-full min-w-[280px] bg-transparent text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400"
           />
         </div>
@@ -315,32 +315,32 @@ export function Record() {
                   <FileUp size={30} />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-extrabold text-slate-800">Upload school-record PDF</h2>
+                  <h2 className="text-2xl font-extrabold text-slate-800">생활기록부 PDF 업로드</h2>
                   <p className="mt-2 max-w-xl text-sm font-medium leading-6 text-slate-500">
-                    The backend will create a tracked document resource first, then apply masking before it stores parsed text and chunks.
+                    백엔드에서 먼저 문서 리소스를 생성한 뒤, 텍스트 파싱 및 청크 저장 전에 개인정보 마스킹을 적용합니다.
                   </p>
                 </div>
               </div>
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-                {isBusy ? 'Processing in progress' : 'Single PDF, up to 50 MB'}
+                {isBusy ? '처리 진행 중' : '단일 PDF, 최대 50MB'}
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <StepRow
-              title="1. Upload saved"
-              description="The file is written to backend storage and assigned a document id."
+              title="1. 업로드 및 등록"
+              description="파일이 백엔드 저장소에 기록되고 문서 ID가 할당됩니다."
               state={getStepState(document, 'upload')}
             />
             <StepRow
-              title="2. PII masking"
-              description="Regex fallback always runs. Presidio augments when available."
+              title="2. 개인정보 마스킹"
+              description="정규표현식 기반 필터링과 Presidio(가능한 경우)가 적용됩니다."
               state={getStepState(document, 'masking')}
             />
             <StepRow
-              title="3. PDF parsing"
-              description="Text, tables, chunks, and parse metadata are persisted with status."
+              title="3. PDF 텍스트 파싱"
+              description="텍스트, 표, 청크 및 파싱 메타데이터가 상태와 함께 저장됩니다."
               state={getStepState(document, 'parsing')}
             />
           </div>
@@ -348,36 +348,36 @@ export function Record() {
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center gap-3">
               <span className={`rounded-full border px-3 py-1 text-xs font-extrabold uppercase tracking-[0.16em] ${getStatusTone(document?.status ?? 'uploaded')}`}>
-                {document ? formatStatusLabel(document.status) : 'Waiting'}
+                {document ? formatStatusLabel(document.status) : '대기 중'}
               </span>
               {document ? (
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
-                  Attempts: {document.parse_attempts}
+                  시도 횟수: {document.parse_attempts}회
                 </span>
               ) : null}
               {document?.masking_status ? (
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
-                  Masking: {document.masking_status}
+                  마스킹 상태: {document.masking_status === 'masked' ? '완료' : document.masking_status}
                 </span>
               ) : null}
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">File</p>
-                <p className="mt-2 text-sm font-bold text-slate-700">{document?.original_filename || 'No file yet'}</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">파일명</p>
+                <p className="mt-2 text-sm font-bold text-slate-700">{document?.original_filename || '파일 없음'}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Size</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">용량</p>
                 <p className="mt-2 text-sm font-bold text-slate-700">{formatBytes(document?.file_size_bytes ?? null)}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Pages</p>
-                <p className="mt-2 text-sm font-bold text-slate-700">{document?.page_count ?? 0}</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">페이지 수</p>
+                <p className="mt-2 text-sm font-bold text-slate-700">{document?.page_count ?? 0}p</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Chunks</p>
-                <p className="mt-2 text-sm font-bold text-slate-700">{document?.parse_metadata?.chunk_count ?? 0}</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">데이터 조각</p>
+                <p className="mt-2 text-sm font-bold text-slate-700">{document?.parse_metadata?.chunk_count ?? 0}개</p>
               </div>
             </div>
 
@@ -390,7 +390,7 @@ export function Record() {
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <TimerReset size={16} />
-                  Retry parsing
+                  파싱 재시도
                 </button>
                 <button
                   type="button"
@@ -398,7 +398,7 @@ export function Record() {
                   disabled={!canContinue}
                   className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  Continue to workshop
+                  워크숍 시작하기
                   <ArrowRight size={16} />
                 </button>
               </div>
@@ -413,30 +413,30 @@ export function Record() {
                 <ShieldCheck size={22} />
               </div>
               <div>
-                <h2 className="text-lg font-extrabold text-slate-800">Masking summary</h2>
-                <p className="text-sm font-medium text-slate-500">Stored and indexed text must pass a masking path first.</p>
+                <h2 className="text-lg font-extrabold text-slate-800">마스킹 요약</h2>
+                <p className="text-sm font-medium text-slate-500">저장 및 인덱싱되는 모든 텍스트는 먼저 마스킹 과정을 거쳐야 합니다.</p>
               </div>
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Method</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">적용 방법</p>
                 <p className="mt-2 text-sm font-bold text-slate-700">
-                  {maskingSummary?.methods?.join(', ') || 'Pending'}
+                  {maskingSummary?.methods?.join(', ') || '대기 중'}
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Replacements</p>
-                <p className="mt-2 text-sm font-bold text-slate-700">{maskingSummary?.replacement_count ?? 0}</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">변환 횟수</p>
+                <p className="mt-2 text-sm font-bold text-slate-700">{maskingSummary?.replacement_count ?? 0}회</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Tables kept</p>
-                <p className="mt-2 text-sm font-bold text-slate-700">{document?.parse_metadata?.table_count ?? 0}</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">보존된 표</p>
+                <p className="mt-2 text-sm font-bold text-slate-700">{document?.parse_metadata?.table_count ?? 0}개</p>
               </div>
             </div>
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Regex hit summary</p>
+              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">정규표현식 매칭 요약</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {Object.entries(maskingSummary?.pattern_hits ?? {}).length ? (
                   Object.entries(maskingSummary?.pattern_hits ?? {}).map(([key, value]) => (
@@ -448,7 +448,7 @@ export function Record() {
                     </span>
                   ))
                 ) : (
-                  <span className="text-sm font-medium text-slate-500">No regex replacements recorded yet.</span>
+                  <span className="text-sm font-medium text-slate-500">기록된 정규표현식 매칭 결과가 없습니다.</span>
                 )}
               </div>
             </div>
@@ -460,14 +460,14 @@ export function Record() {
                 <FileText size={22} />
               </div>
               <div>
-                <h2 className="text-lg font-extrabold text-slate-800">Parsed preview</h2>
-                <p className="text-sm font-medium text-slate-500">This preview is already masked before it is shown here.</p>
+                <h2 className="text-lg font-extrabold text-slate-800">파싱 미리보기</h2>
+                <p className="text-sm font-medium text-slate-500">여기 표시되는 미리보기는 이미 마스킹 처리가 완료된 상태입니다.</p>
               </div>
             </div>
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-950 p-4 text-sm leading-6 text-slate-100">
               <pre className="whitespace-pre-wrap break-words font-mono">
-                {previewText || 'No parsed text available yet.'}
+                {previewText || '사용 가능한 파싱 텍스트가 아직 없습니다.'}
               </pre>
             </div>
           </div>
@@ -476,7 +476,7 @@ export function Record() {
             <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
               <div className="flex items-center gap-3">
                 <AlertTriangle size={20} className="text-amber-600" />
-                <h2 className="text-lg font-extrabold text-amber-900">Warnings and recovery details</h2>
+                <h2 className="text-lg font-extrabold text-amber-900">경고 및 복구 상세 정보</h2>
               </div>
               <div className="mt-4 space-y-3 text-sm font-medium text-amber-900">
                 {document?.last_error ? <p>{document.last_error}</p> : null}
@@ -484,9 +484,9 @@ export function Record() {
                   <p key={warning}>{warning}</p>
                 ))}
                 {pageFailures.map((failure, index) => (
-                  <p key={`${failure.page_number ?? 'na'}-${index}`}>
-                    Page {failure.page_number ?? '?'}: {failure.message || 'Unknown parsing issue'}
-                  </p>
+                   <p key={`${failure.page_number ?? 'na'}-${index}`}>
+                     {failure.page_number ?? '?'}페이지: {failure.message || '알 수 없는 파싱 문제'}
+                   </p>
                 ))}
               </div>
             </div>

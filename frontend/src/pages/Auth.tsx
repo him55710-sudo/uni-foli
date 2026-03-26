@@ -10,10 +10,12 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth/popup-closed-by-user': 'Google login was cancelled. Please try again.',
   'auth/popup-blocked': 'Popup was blocked. Please allow popups and try again.',
   'auth/network-request-failed': 'Network error. Check your internet connection.',
-  'auth/unauthorized-domain': 'This domain is not allowed in Firebase Auth.',
+  'auth/unauthorized-domain': 'This domain is not allowed in Firebase Auth (check Authorized Domains).',
   'auth/configuration-not-found': 'Google provider is not enabled in Firebase Auth.',
-  'auth/operation-not-allowed': 'Guest login is not enabled in Firebase Auth settings.',
+  'auth/operation-not-allowed': 'Guest (Anonymous) login is not enabled in Firebase Auth settings.',
   'auth/admin-restricted-operation': 'Guest login is blocked by Firebase project settings.',
+  'auth/invalid-api-key': 'The Firebase API Key is invalid or restricted (check .env).',
+  'auth/internal-error': 'Internal Firebase error. Please check your config.',
 };
 
 function toAuthMessage(error: unknown): string {

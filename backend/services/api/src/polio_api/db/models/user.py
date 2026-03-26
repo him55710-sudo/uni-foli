@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Text, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from polio_api.core.database import Base
 
@@ -26,5 +26,11 @@ class User(Base):
     track: Mapped[str | None] = mapped_column(String(100), nullable=True)
     career: Mapped[str | None] = mapped_column(String(200), nullable=True)
     admission_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    interest_universities: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+    projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+    policy_flags: Mapped[list["PolicyFlag"]] = relationship(back_populates="user")
+    review_tasks: Mapped[list["ReviewTask"]] = relationship(back_populates="user")
+    response_traces: Mapped[list["ResponseTrace"]] = relationship(back_populates="user")

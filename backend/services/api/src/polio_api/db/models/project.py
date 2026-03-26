@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import String, Text
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from polio_api.core.database import Base
@@ -18,6 +18,11 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
     target_university: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -26,6 +31,8 @@ class Project(Base):
     status: Mapped[str] = mapped_column(String(32), default=ProjectStatus.ACTIVE.value)
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+    owner: Mapped["User | None"] = relationship(back_populates="projects")
 
     uploads: Mapped[list["UploadAsset"]] = relationship(
         back_populates="project",
@@ -52,6 +59,18 @@ class Project(Base):
         cascade="all, delete-orphan",
     )
     blueprints: Mapped[list["Blueprint"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    policy_flags: Mapped[list["PolicyFlag"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    review_tasks: Mapped[list["ReviewTask"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    response_traces: Mapped[list["ResponseTrace"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
     )

@@ -19,3 +19,6 @@ class DiagnosisRun(Base):
 
     project = relationship("Project", back_populates="diagnoses", lazy="joined")
     blueprints = relationship("Blueprint", back_populates="diagnosis_run", lazy="selectin")
+    policy_flags = relationship("PolicyFlag", back_populates="diagnosis_run", lazy="selectin", cascade="all, delete-orphan")
+    review_tasks = relationship("ReviewTask", back_populates="diagnosis_run", lazy="selectin", cascade="all, delete-orphan")
+    response_traces = relationship("ResponseTrace", back_populates="diagnosis_run", lazy="selectin", cascade="all, delete-orphan")

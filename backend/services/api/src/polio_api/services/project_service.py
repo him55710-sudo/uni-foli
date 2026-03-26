@@ -7,8 +7,9 @@ from polio_api.db.models.project import Project
 from polio_api.schemas.project import ProjectCreate
 
 
-def create_project(db: Session, payload: ProjectCreate) -> Project:
+def create_project(db: Session, payload: ProjectCreate, *, owner_user_id: str | None = None) -> Project:
     project = Project(
+        owner_user_id=owner_user_id,
         title=payload.title,
         description=payload.description,
         target_university=payload.target_university,
@@ -20,12 +21,19 @@ def create_project(db: Session, payload: ProjectCreate) -> Project:
     return project
 
 
-def list_projects(db: Session) -> list[Project]:
-    return list(db.scalars(select(Project).order_by(Project.created_at.desc())))
+def list_projects(db: Session, *, owner_user_id: str | None = None) -> list[Project]:
+    stmt = select(Project)
+    if owner_user_id is not None:
+        stmt = stmt.where(Project.owner_user_id == owner_user_id)
+    stmt = stmt.order_by(Project.created_at.desc())
+    return list(db.scalars(stmt))
 
 
-def get_project(db: Session, project_id: str) -> Project | None:
-    return db.get(Project, project_id)
+def get_project(db: Session, project_id: str, *, owner_user_id: str | None = None) -> Project | None:
+    stmt = select(Project).where(Project.id == project_id)
+    if owner_user_id is not None:
+        stmt = stmt.where(Project.owner_user_id == owner_user_id)
+    return db.scalar(stmt)
 
 
 def append_project_discussion_log(db: Session, project: Project, prompt: str) -> Project:

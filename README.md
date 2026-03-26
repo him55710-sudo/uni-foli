@@ -53,31 +53,40 @@ Those paths are not present in this checkout.
 SQLite mode:
 
 ```powershell
-.\scripts\setup-local.ps1 sqlite
-.\scripts\start-api.ps1
+.\scripts\setup-local.cmd sqlite
+.\scripts\start-api.cmd
 ```
 
 PostgreSQL mode:
 
 ```powershell
-.\scripts\setup-local.ps1 postgres
-.\scripts\start-infra.ps1
-.\scripts\migrate.ps1
-.\scripts\start-api.ps1
+.\scripts\setup-local.cmd postgres
+.\scripts\start-infra.cmd
+.\scripts\migrate.cmd
+.\scripts\start-api.cmd
 ```
 
 Swagger UI: `http://127.0.0.1:8000/docs`
 
+If your Windows PowerShell execution policy blocks `.ps1` files, use the `.cmd` wrappers in
+`scripts/` instead of calling the PowerShell files directly.
+
 ### Frontend
+
+```powershell
+.\scripts\start-frontend.cmd
+```
+
+The frontend defaults to `http://localhost:8000` and can run in guest mode when Firebase
+variables are absent.
+
+If you prefer to run it manually:
 
 ```powershell
 cd frontend
 npm install
 npm run dev
 ```
-
-The frontend defaults to `http://localhost:8000` and can run in guest mode when Firebase
-variables are absent.
 
 ## Test
 

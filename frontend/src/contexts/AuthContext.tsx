@@ -32,6 +32,9 @@ const POPUP_FALLBACK_ERROR_CODES = new Set([
 const GUEST_FALLBACK_ERROR_CODES = new Set([
   'auth/operation-not-allowed',
   'auth/admin-restricted-operation',
+  'auth/invalid-api-key',
+  'auth/network-request-failed',
+  'auth/configuration-not-found'
 ]);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -102,8 +105,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(GUEST_SESSION_KEY, '1');
     } catch (error) {
       const authError = error as Partial<AuthError>;
-      if (authError.code && GUEST_FALLBACK_ERROR_CODES.has(authError.code)) {
-        // Fallback guest session for local/demo usage when anonymous auth is disabled.
+      // In local dev, always fallback to guest mode if Firebase setup is problematic
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+      if (isLocal || (authError.code && GUEST_FALLBACK_ERROR_CODES.has(authError.code))) {
+        console.warn('Firebase Auth guest login failed, falling back to local guest mode:', authError.code);
         setIsGuestSession(true);
         localStorage.setItem(GUEST_SESSION_KEY, '1');
         return;

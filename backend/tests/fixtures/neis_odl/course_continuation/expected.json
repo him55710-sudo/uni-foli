@@ -1,0 +1,14 @@
+{
+  "case_name": "course_continuation",
+  "expected_chain_count": 1,
+  "expected_page_span": [1, 2],
+  "expected_section_type": "교과학습발달상황",
+  "expected_record_count": 1,
+  "expected_school_year": "2",
+  "expected_semester": "1",
+  "expected_subject_name": "수학",
+  "expected_special_notes_contains": [
+    "함수의 증가와 감소를 그래프로 해석하고",
+    "도함수 개념과 연결해 설명함"
+  ]
+}

@@ -48,6 +48,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        print(f"DEBUG: Incoming {request.method} request to {request.url.path}")
+        response = await call_next(request)
+        print(f"DEBUG: Response status: {response.status_code}")
+        return response
+
     app.include_router(api_router, prefix=settings.api_prefix)
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)

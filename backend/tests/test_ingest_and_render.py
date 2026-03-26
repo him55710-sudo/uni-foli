@@ -54,6 +54,12 @@ def test_pdf_ingest_and_selected_render_flow() -> None:
             assert len(documents) == 1
             document_id = documents[0]["id"]
 
+            document_response = client.get(f"/api/v1/projects/{project_id}/documents/{document_id}")
+            assert document_response.status_code == 200
+            document_payload = document_response.json()
+            assert document_payload["parse_metadata"]["student_artifact_parse"]["schema_version"] == "student_artifact_parse.v1"
+            assert "chunk_evidence_map" in document_payload["parse_metadata"]
+
             chunks_response = client.get(f"/api/v1/projects/{project_id}/documents/{document_id}/chunks")
             assert chunks_response.status_code == 200
             assert len(chunks_response.json()) >= 1

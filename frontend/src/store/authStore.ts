@@ -14,6 +14,7 @@ interface UserProfile {
   target_university: string | null;
   target_major: string | null;
   admission_type: string | null;
+  interest_universities: string[];
 }
 
 interface AuthState {
