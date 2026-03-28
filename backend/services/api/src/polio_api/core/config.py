@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_debug: bool = True
     api_prefix: str = "/api/v1"
-    database_url: str = "sqlite:///./storage/runtime/polio.db"
+    database_url: str = "sqlite:///./storage/runtime/polio.db?check_same_thread=False&timeout=30"
     database_echo: bool = False
     database_auto_create_tables: bool = True
     postgres_enable_pgvector: bool = True
@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     opendataloader_hybrid_ocr_enabled: bool = True
     opendataloader_annotate_pdf: bool = False
     vector_dimensions: int = 1536
+    retrieval_candidate_pool_size: int = 24
+    retrieval_embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    retrieval_reranker_enabled: bool = True
+    retrieval_reranker_model: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+    grounded_answer_top_k: int = 4
+    grounded_answer_min_similarity: float = 0.15
+    grounded_answer_min_lexical_overlap: float = 0.08
     semantic_scholar_search_url: str = "https://api.semanticscholar.org/graph/v1/paper/search"
     semantic_scholar_timeout_seconds: float = 10.0
     semantic_scholar_api_key: str | None = None
@@ -55,6 +62,12 @@ class Settings(BaseSettings):
     auth_token_leeway_seconds: int = 30
     auth_allow_local_dev_bypass: bool = True
     auth_firebase_fallback_enabled: bool = True
+
+    # LLM Settings
+    llm_provider: str = Field(default="gemini", description="LLM provider: 'gemini' or 'ollama'")
+    gemini_api_key: str | None = None
+    ollama_base_url: str = "http://localhost:11434/v1"
+    ollama_model: str = "llama3.1"
 
     model_config = SettingsConfigDict(
         env_file=".env",

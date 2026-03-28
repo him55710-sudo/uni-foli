@@ -4,7 +4,7 @@ import { FirebaseError } from 'firebase/app';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, ArrowRight, AlertCircle, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import poliDuoMascot from '../assets/poli-duo.png';
+import foliDuoMascot from '../assets/foli-duo.png';
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth/popup-closed-by-user': 'Google login was cancelled. Please try again.',
@@ -94,11 +94,11 @@ export function Auth() {
         <div className="relative z-10">
           <div className="mb-10 flex items-center gap-3">
             <img
-              src={poliDuoMascot}
-              alt="Polio mascot"
+              src={foliDuoMascot}
+              alt="Uni Folia mascot"
               className="h-12 w-12 rounded-2xl border border-blue-100 bg-white object-cover p-1.5 shadow-lg shadow-blue-500/20"
             />
-            <span className="text-3xl font-extrabold tracking-tight text-slate-800">polio</span>
+            <span className="text-3xl font-extrabold tracking-tight text-slate-800">Uni Folia</span>
           </div>
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
@@ -122,7 +122,7 @@ export function Auth() {
         >
           <div className="relative flex h-80 w-80 items-center justify-center overflow-hidden rounded-[3rem] border-4 border-white bg-white shadow-2xl shadow-blue-200/50">
             <div className="absolute inset-0 bg-gradient-to-tr from-blue-50 to-transparent" />
-            <img src={poliDuoMascot} alt="Polio mascot duo" className="h-64 w-64 object-contain drop-shadow-2xl" />
+            <img src={foliDuoMascot} alt="Uni Folia mascot duo" className="h-64 w-64 object-contain drop-shadow-2xl" />
           </div>
           <div className="absolute -bottom-8 left-1/2 h-8 w-56 -translate-x-1/2 rounded-full bg-blue-900/10 blur-xl" />
         </motion.div>
@@ -131,11 +131,11 @@ export function Auth() {
       <div className="relative flex w-full items-center justify-center bg-white p-6 sm:p-12 lg:w-1/2">
         <div className="absolute left-8 top-8 flex items-center gap-2 lg:hidden">
           <img
-            src={poliDuoMascot}
-            alt="Polio mascot"
+            src={foliDuoMascot}
+            alt="Uni Folia mascot"
             className="h-10 w-10 rounded-xl border border-blue-100 bg-white object-cover p-1 shadow-md shadow-blue-500/15"
           />
-          <span className="text-2xl font-extrabold tracking-tight text-slate-800">polio</span>
+          <span className="text-2xl font-extrabold tracking-tight text-slate-800">Uni Folia</span>
         </div>
 
         <motion.div

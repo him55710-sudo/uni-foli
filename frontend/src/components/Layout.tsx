@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import poliDuoMascot from '../assets/poli-duo.png';
+import foliDuoMascot from '../assets/foli-duo.png';
 
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -23,7 +23,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 const navItems = [
   { path: '/', name: '홈', icon: Home, sub: '대시보드' },
   { path: '/record', name: '내 생기부', icon: FolderOpen, sub: '데이터 관리' },
-  { path: '/workshop', name: 'Poli 작업실', icon: PenTool, sub: 'AI 멘토' },
+  { path: '/workshop', name: 'Foli 작업실', icon: PenTool, sub: 'AI 멘토' },
   { path: '/archive', name: '내 보관함', icon: Archive, sub: '결과물' },
   { path: '/trends', name: '입시 트렌드', icon: TrendingUp, sub: '리소스' },
   { path: '/settings', name: '설정 및 내 정보', icon: Settings, sub: '프로필/구독' },
@@ -38,8 +38,8 @@ export function Layout() {
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-100 z-30 shadow-sm">
         <div className="flex items-center gap-2">
-          <img src={poliDuoMascot} alt="Polio mascot" className="w-8 h-8 rounded-xl object-cover border border-blue-100 bg-white p-0.5 shadow-sm" />
-          <span className="font-extrabold text-xl tracking-tight text-slate-800">polio</span>
+          <img src={foliDuoMascot} alt="Uni Folia mascot" className="w-8 h-8 rounded-xl object-cover border border-blue-100 bg-white p-0.5 shadow-sm" />
+          <span className="font-extrabold text-xl tracking-tight text-slate-800">Uni Folia</span>
         </div>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -59,8 +59,8 @@ export function Layout() {
         <div className="hidden md:flex h-20 items-center justify-between px-6 border-b border-slate-100">
           {isSidebarOpen && (
             <div className="flex items-center gap-3">
-              <img src={poliDuoMascot} alt="Polio mascot" className="w-10 h-10 rounded-xl object-cover border border-blue-100 bg-white p-0.5 shadow-md shadow-blue-500/10" />
-              <span className="font-extrabold text-2xl tracking-tight text-slate-800">polio</span>
+              <img src={foliDuoMascot} alt="Uni Folia mascot" className="w-10 h-10 rounded-xl object-cover border border-blue-100 bg-white p-0.5 shadow-md shadow-blue-500/10" />
+              <span className="font-extrabold text-2xl tracking-tight text-slate-800">Uni Folia</span>
             </div>
           )}
           <button 
@@ -110,7 +110,7 @@ export function Layout() {
             !isSidebarOpen && "justify-center"
           )}>
             <img 
-              src={user?.photoURL || poliDuoMascot} 
+              src={user?.photoURL || foliDuoMascot} 
               alt="Profile" 
               className="w-10 h-10 rounded-full border-2 border-white shadow-sm object-cover"
             />
@@ -143,7 +143,7 @@ export function Layout() {
           <div className="flex items-center gap-4">
              <div className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-extrabold flex items-center gap-2 shadow-sm border border-blue-100">
                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"></span>
-               Poli Online
+               Foli Online
              </div>
           </div>
         </header>
@@ -158,7 +158,7 @@ export function Layout() {
           <footer className="mt-16 py-8 border-t border-slate-200 bg-white rounded-3xl px-8 shadow-sm">
             <div className="flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500 font-medium">
               <div className="flex flex-wrap justify-center md:justify-start gap-x-4 gap-y-2">
-                <span className="font-bold text-slate-700">상호명: polio (폴리오)</span>
+                <span className="font-bold text-slate-700">상호명: Uni Folia (유니 폴리아)</span>
                 <span className="hidden md:inline text-slate-300">|</span>
                 <span>대표: 임현수</span>
                 <span className="hidden md:inline text-slate-300">|</span>
@@ -167,7 +167,7 @@ export function Layout() {
                 <span>문의: mongben@naver.com</span>
               </div>
               <div className="text-xs text-slate-400 font-semibold">
-                © 2026 polio. All rights reserved.
+                © 2026 Uni Folia. All rights reserved.
               </div>
             </div>
           </footer>

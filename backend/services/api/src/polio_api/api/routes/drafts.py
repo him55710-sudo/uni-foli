@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_current_user, get_db
 from polio_api.db.models.user import User
+from polio_api.core.llm import get_llm_client
 from polio_api.schemas.draft import DraftCreate, DraftRead
 from polio_api.services.draft_service import create_draft, get_draft, list_drafts_for_project
 from polio_api.services.project_service import append_project_discussion_log, get_project
@@ -64,44 +65,12 @@ def _build_system_instruction(
     )
     reference_context = _format_reference_materials(reference_materials)
 
-    base_instruction = (
-        "너는 대치동 수석 컨설턴트 Poli다. 사용자가 질문할 때, 내가 제공한 [참고 문헌 데이터]가 있다면 "
-        "반드시 그 문헌의 내용을 바탕으로 답변하고, 문장 끝에 [논문 제목, 발행연도] 형태로 명확한 출처(Citation)를 달아라. "
-        "제공된 문헌에 없는 내용을 지어내지 마라.\n"
-        "추가 응답 규칙:\n"
-        "1. 한국어로 답변한다.\n"
-        "2. 친절하지만 핵심 위주로 간결하게 답변한다.\n"
-        "3. 보고서 문단(예: 서론/결론/분석 파트) 제안을 줄 때는 반드시 [CONTENT]...[/CONTENT] 태그로 감싼다.\n"
-        "4. 참고 문헌 데이터가 없는 경우에만 일반 지식 기반으로 답변하되, 추측은 명확히 추측이라고 밝혀라.\n"
-        "5. 학생이 통계, 추이 분석, 데이터 시각화를 요구하거나 제공된 📌참고 문헌에 중요한 수치 데이터가 있다면, 분석 결과를 텍스트로 설명한 뒤 반드시 아래 포맷의 JSON 데이터를 생성해라.\n"
-        "[CHART]\n"
-        '{ "title": "그래프 제목", "type": "bar", "data": [{"name": "항목1", "value": 10}, {"name": "항목2", "value": 20}] }\n'
-        "[/CHART]\n"
-        "6. 학생이 복잡한 수치 계산, 확률 시뮬레이션, 데이터 전처리를 요구할 경우, 분석 결과를 말로만 설명하지 말고 파이썬 코드를 작성해라.\n"
-        "코드는 반드시 [PYTHON] 태그와 [/PYTHON] 태그 사이에 작성해야 한다.\n"
-        "예:\n"
-        "[PYTHON]\n"
-        "def simulate():\n"
-        "    return '분석 완료'\n"
-        "print(simulate())\n"
-        "[/PYTHON]\n"
-    )
 
     if reference_context:
         return f"{reference_context}\n\n[학생 맥락]\n{profile_context}\n\n{base_instruction}"
     return f"[학생 맥락]\n{profile_context}\n\n{base_instruction}"
 
 
-def _build_chat_model(
-    target_university: str | None,
-    target_major: str | None,
-    reference_materials: list[ReferenceMaterial],
-) -> genai.GenerativeModel:
-    system_instruction = _build_system_instruction(target_university, target_major, reference_materials)
-    return genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
-        system_instruction=system_instruction,
-    )
 
 
 def _validate_reference_limit(reference_materials: list[ReferenceMaterial]) -> None:
@@ -120,7 +89,8 @@ def _build_streaming_response(
     target_university: str | None,
     target_major: str | None,
 ) -> StreamingResponse:
-    model = _build_chat_model(
+    llm = get_llm_client()
+    system_instruction = _build_system_instruction(
         target_university=target_university,
         target_major=target_major,
         reference_materials=payload.reference_materials,
@@ -142,17 +112,13 @@ def _build_streaming_response(
     async def event_stream():
         full_response = ""
         try:
-            response_stream = await model.generate_content_async(
-                contents=f"Student says: {payload.message}",
-                stream=True,
-                generation_config=genai.GenerationConfig(temperature=0.5),
-            )
-
-            async for chunk in response_stream:
-                token = getattr(chunk, "text", None)
-                if token:
-                    full_response += token
-                    yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+            async for token in llm.stream_chat(
+                prompt=f"Student says: {payload.message}",
+                system_instruction=system_instruction,
+                temperature=0.5,
+            ):
+                full_response += token
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
 
             await save_chat_to_db(payload.message, full_response, current_user)
             yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"

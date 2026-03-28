@@ -1,379 +1,244 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Loader2, Sparkles, Target, User } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Loader2, Sparkles, Target, User, Trash2, School, ChevronUp, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CatalogAutocompleteInput } from '../components/CatalogAutocompleteInput';
-import { CatalogMultiSelectInput } from '../components/CatalogMultiSelectInput';
-import {
-  isEducationCatalogLoaded,
-  searchMajors,
-  searchUniversities,
-  isMajorInUniversity,
-} from '../lib/educationCatalog';
 import { useAuthStore } from '../store/authStore';
 import { useOnboardingStore } from '../store/onboardingStore';
+import { searchUniversities, searchMajors } from '../lib/educationCatalog';
 
 const TEXT = {
-  profileTitle: '\uAE30\uBCF8 \uC815\uBCF4 \uC124\uC815',
-  goalTitle: '\uBAA9\uD45C \uC815\uBCF4 \uC124\uC815',
-  profileSectionTitle: '\uAE30\uBCF8 \uD504\uB85C\uD544',
-  profileSectionDescription:
-    '\uD559\uB144\uACFC \uACC4\uC5F4\uC744 \uBA3C\uC800 \uC800\uC7A5\uD558\uBA74 \uC774\uD6C4 \uCD94\uCC9C \uD750\uB984\uC774 \uB354 \uC548\uC815\uC801\uC73C\uB85C \uB9DE\uCD94\uC5B4\uC9D1\uB2C8\uB2E4.',
-  goalSectionTitle: '\uBAA9\uD45C \uB300\uD559\uACFC \uD559\uACFC',
-  goalSectionDescription:
-    '\uB300\uD559\uACFC \uD559\uACFC\uB97C \uC800\uC7A5\uD558\uBA74 \uC9C4\uB2E8\uACFC \uB85C\uB4DC\uB9F5\uC774 \uD574\uB2F9 \uBAA9\uD45C\uC5D0 \uB9DE\uAC8C \uC870\uC815\uB429\uB2C8\uB2E4.',
-  gradeLabel: '\uD559\uB144',
-  trackLabel: '\uACC4\uC5F4',
-  careerLabel: '\uD76C\uB9DD \uC9C4\uB85C',
-  careerPlaceholder: '\uC608: \uAC74\uCD95\uC0AC, \uD504\uB85C\uB355\uD2B8 \uB514\uC790\uC774\uB108',
-  choose: '\uC120\uD0DD\uD574\uC8FC\uC138\uC694',
-  universityLabel: '\uBAA9\uD45C \uB300\uD559 *',
-  universityPlaceholder: '\uC608: \uC22D\uC2E4\uB300\uD559\uAD50, \uAC74\uAD6D\uB300\uD559\uAD50',
-  universityHelperLoaded: '\uCD08\uC131 \uAC80\uC0C9\uC744 \uC9C0\uC6D0\uD569\uB2C8\uB2E4. \uC608: \u3131, \u3131\u3131, \uC22D\uC2E4, \uAC74\uAD6D',
-  universityHelperFallback:
-    '\uB300\uD559 \uBAA9\uB85D\uC774 \uC5C6\uB354\uB77C\uB3C4 \uC9C1\uC811 \uC785\uB825\uD574\uC11C \uC800\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
-  universityEmpty:
-    '\uC77C\uCE58\uD558\uB294 \uB300\uD559\uC774 \uC5C6\uC5B4\uB3C4 \uC9C1\uC811 \uC785\uB825\uD574\uC11C \uC800\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
-  majorLabel: '\uBAA9\uD45C \uD559\uACFC',
-  majorPlaceholder: '\uC608: \uAC74\uCD95\uD559\uACFC, \uCEF4\uD4E8\uD130\uACF5\uD559\uACFC',
-  majorHelperDefault:
-    '\uB300\uD559\uC744 \uBA3C\uC800 \uC785\uB825\uD558\uBA74 \uD574\uB2F9 \uB300\uD559 \uD559\uACFC\uB97C \uC6B0\uC120 \uCD94\uCC9C\uD569\uB2C8\uB2E4.',
-  majorHelperFallback:
-    '\uD559\uACFC\uB3C4 \uC9C1\uC811 \uC785\uB825\uD574\uC11C \uC800\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
-  majorEmpty:
-    '\uC77C\uCE58\uD558\uB294 \uD559\uACFC\uAC00 \uC5C6\uC5B4\uB3C4 \uC9C1\uC811 \uC785\uB825\uD574\uC11C \uC800\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
-  admissionTypeLabel: '\uC8FC\uB825 \uC804\uD615',
-  next: '\uB2E4\uC74C \uB2E8\uACC4\uB85C',
-  start: '\uC2DC\uC791\uD558\uAE30',
-  loading: '\uC800\uC7A5 \uC911...',
-  grade1: '\uACE01',
-  grade2: '\uACE02',
-  grade3: '\uACE03',
-  nStudent: 'N\uC218\uC0DD',
-  humanities: '\uC778\uBB38',
-  natural: '\uC790\uC5F0',
-  arts: '\uC608\uCCB4\uB2A5',
-  other: '\uAE30\uD0C0',
-  studentRecordAcademic: '\uD559\uC0DD\uBD80\uAD50\uACFC',
-  studentRecordGeneral: '\uD559\uC0DD\uBD80\uC885\uD569',
-  essay: '\uB17C\uC220',
-  regular: '\uC815\uC2DC',
-  practical: '\uC2E4\uAE30/\uAE30\uD0C0',
-  interestUniversityLabel: '\uAD00\uC2EC \uB300\uD559',
-  representativeBadge: '\uB300\uD45C',
+  profileTitle: '기본 정보 설정',
+  goalTitle: '목표 대학 설정',
+  profileSectionTitle: '기본 프로필',
+  profileSectionDescription: '학년과 계열을 먼저 저장하면 이후 추천 흐름이 더 안정적으로 맞춰집니다.',
+  goalSectionTitle: '나의 목표 대학 (최대 6개)',
+  goalSectionDescription: '최대 6개까지 가장 가고 싶은 순서대로 담아보세요.',
+  gradeLabel: '학년',
+  trackLabel: '계열',
+  careerLabel: '희망 진로',
+  careerPlaceholder: '예: 건축가, 프로덕트 디자이너',
+  choose: '선택해주세요',
+  universityLabel: '대학 선택',
+  majorLabel: '학과 선택',
+  admissionTypeLabel: '주력 전형',
+  next: '다음 단계로',
+  start: '시작하기',
+  loading: '저장 중...',
+  grade1: '고1', grade2: '고2', grade3: '고3', nStudent: 'N수생',
+  humanities: '인문', natural: '자연', arts: '예체능', other: '기타',
+  academic: '학생부교과', general: '학생부종합', essay: '논술', regular: '정시', practical: '실기/기타',
+  addGoal: '이 목표 추가',
+  emptyGoals: '아직 추가된 대학이 없습니다.',
 };
 
 export function Onboarding() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const {
-    step,
-    profile,
-    goals,
-    isLoading,
-    error,
-    setStep,
-    setProfile,
-    setGoals,
-    submitProfile,
-    submitGoals,
-  } = useOnboardingStore();
+  const { step, profile, goals, isLoading, error, setStep, setProfile, setGoals, submitProfile, submitGoals } = useOnboardingStore();
 
-  const [univInput, setUnivInput] = React.useState('');
+  const [univInput, setUnivInput] = useState('');
+  const [currentUniv, setCurrentUniv] = useState('');
+  const [currentMajor, setCurrentMajor] = useState('');
+  const [goalList, setGoalList] = useState<{id: string, university: string, major: string}[]>([]);
 
   useEffect(() => {
     if (!user) return;
-    setProfile({
-      grade: user.grade ?? '',
-      track: user.track ?? '',
-      career: user.career ?? '',
-    });
-    setGoals({
-      target_university: user.target_university ?? '',
-      target_major: user.target_major ?? '',
-      admission_type: user.admission_type ?? '',
-      interest_universities: user.interest_universities ?? [],
-    });
-  }, [setGoals, setProfile, user]);
-
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
-
-  const catalogLoaded = isEducationCatalogLoaded();
-  const allSelected = [
-    ...(goals.target_university ? [goals.target_university] : []),
-    ...goals.interest_universities,
-  ];
-
-  const universitySuggestions = searchUniversities(univInput, {
-    excludeNames: allSelected,
-  });
-
-  const majorSuggestions = searchMajors(goals.target_major, goals.target_university, 20);
-  const isStep1Valid = Boolean(profile.grade && profile.track);
-  const isStep2Valid = Boolean(goals.target_university && goals.admission_type);
-  const isNextDisabled = isLoading || (step === 1 ? !isStep1Valid : !isStep2Valid);
-
-  const handleNext = async () => {
-    if (step === 1) {
-      const success = await submitProfile();
-      if (success) {
-        window.scrollTo(0, 0);
+    setProfile({ grade: user.grade ?? '', track: user.track ?? '', career: user.career ?? '' });
+    
+    const generateId = () => {
+      try {
+        return crypto.randomUUID();
+      } catch {
+        return Math.random().toString(36).substring(2) + Date.now().toString(36);
       }
-      return;
-    }
+    };
 
-    const success = await submitGoals();
-    if (success) {
-      navigate('/');
+    const initialList: { id: string; university: string; major: string }[] = [];
+    if (user.target_university && user.target_major) {
+      initialList.push({ id: generateId(), university: user.target_university, major: user.target_major });
     }
+    user.interest_universities?.forEach(i => {
+      const match = i.match(/^(.+)\s\((.+)\)$/);
+      if (match) initialList.push({ id: generateId(), university: match[1], major: match[2] });
+      else initialList.push({ id: generateId(), university: i, major: '' });
+    });
+    setGoalList(initialList.slice(0, 6));
+  }, [user]);
+
+  if (!user) return <Navigate to="/auth" replace />;
+
+  const universitySuggestions = searchUniversities(univInput, { excludeNames: [currentUniv, ...goalList.map(g => g.university)] });
+  const majorSuggestions = searchMajors(currentMajor, currentUniv, 20);
+
+  const handleAddGoal = () => {
+    const generateId = () => {
+      try {
+        return crypto.randomUUID();
+      } catch {
+        return Math.random().toString(36).substring(2) + Date.now().toString(36);
+      }
+    };
+    if (!currentUniv || !currentMajor || goalList.length >= 6) return;
+    setGoalList(prev => [...prev, { id: generateId(), university: currentUniv, major: currentMajor }]);
+    setCurrentUniv('');
+    setCurrentMajor('');
+    setUnivInput('');
+  };
+
+  const removeGoal = (id: string) => setGoalList(prev => prev.filter(g => g.id !== id));
+  const moveGoal = (idx: number, dir: 'up' | 'down') => {
+    const newList = [...goalList];
+    const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= goalList.length) return;
+    [newList[idx], newList[targetIdx]] = [newList[targetIdx], newList[idx]];
+    setGoalList(newList);
+  };
+
+  const handleStart = async () => {
+    if (goalList.length === 0) return;
+    const main = goalList[0];
+    const others = goalList.slice(1).map(g => `${g.university} (${g.major})`);
+    
+    // Update store state before submit
+    setGoals({
+      target_university: main.university,
+      target_major: main.major,
+      interest_universities: others,
+      admission_type: goals.admission_type || '학생부종합'
+    });
+    
+    const success = await submitGoals();
+    if (success) navigate('/');
   };
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
-      <div className="w-full max-w-2xl">
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (step === 2) {
-                  setStep(1);
-                }
-              }}
-              disabled={step === 1 || isLoading}
-              className={`flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm transition-all ${
-                step === 1 ? 'opacity-0' : 'hover:bg-slate-100'
-              }`}
-            >
-              <ArrowLeft size={20} className="text-slate-600" />
-            </button>
-            <h1 className="text-2xl font-extrabold text-slate-800">
-              {step === 1 ? TEXT.profileTitle : TEXT.goalTitle}
-            </h1>
+      <div className="w-full max-w-3xl">
+        <div className="mb-10 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => step === 2 && setStep(1)} disabled={step === 1 || isLoading} className={`h-12 w-12 flex items-center justify-center rounded-2xl bg-white shadow-sm ${step === 1 ? 'opacity-0' : 'hover:bg-slate-100'}`}><ArrowLeft/></button>
+            <h1 className="text-3xl font-black text-slate-900">{step === 1 ? TEXT.profileTitle : TEXT.goalTitle}</h1>
           </div>
           <div className="flex gap-2">
-            <div
-              className={`h-2.5 w-12 rounded-full transition-all duration-300 ${
-                step >= 1 ? 'bg-blue-600' : 'bg-slate-200'
-              }`}
-            />
-            <div
-              className={`h-2.5 w-12 rounded-full transition-all duration-300 ${
-                step >= 2 ? 'bg-blue-600' : 'bg-slate-200'
-              }`}
-            />
+             <div className={`h-2.5 w-16 rounded-full ${step >= 1 ? 'bg-blue-600' : 'bg-slate-200'}`} />
+             <div className={`h-2.5 w-16 rounded-full ${step >= 2 ? 'bg-blue-600' : 'bg-slate-200'}`} />
           </div>
         </div>
 
-        <motion.div
-          key={step}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          className="relative overflow-hidden rounded-3xl border border-slate-100 bg-white p-8 text-slate-700 shadow-xl shadow-slate-200/50 sm:p-12"
-        >
-          {error ? (
-            <div className="mb-6 rounded-xl bg-red-50 p-4 text-sm font-medium text-red-600">
-              {error}
-            </div>
-          ) : null}
+        <motion.div key={step} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-[40px] border border-slate-100 p-10 shadow-xl shadow-slate-200/50">
+          {error && <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-2xl font-bold">{error}</div>}
 
           {step === 1 ? (
-            <div className="space-y-8">
-              <div className="mb-8 flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                  <User size={28} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800">{TEXT.profileSectionTitle}</h2>
-                  <p className="text-slate-500">{TEXT.profileSectionDescription}</p>
-                </div>
+            <div className="space-y-10">
+              <div className="flex gap-4">
+                <div className="h-16 w-16 bg-blue-50 text-blue-600 flex items-center justify-center rounded-2xl"><User size={32}/></div>
+                <div><h2 className="text-xl font-black text-slate-800">{TEXT.profileSectionTitle}</h2><p className="text-slate-500 font-medium">{TEXT.profileSectionDescription}</p></div>
               </div>
-
-              <div className="space-y-6">
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    {TEXT.gradeLabel} <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={profile.grade}
-                    onChange={(event) => setProfile({ grade: event.target.value })}
-                    className="w-full rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 py-3.5 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white"
-                  >
-                    <option value="" disabled>
-                      {TEXT.choose}
-                    </option>
-                    <option value={TEXT.grade1}>{TEXT.grade1}</option>
-                    <option value={TEXT.grade2}>{TEXT.grade2}</option>
-                    <option value={TEXT.grade3}>{TEXT.grade3}</option>
-                    <option value={TEXT.nStudent}>{TEXT.nStudent}</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    {TEXT.trackLabel} <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={profile.track}
-                    onChange={(event) => setProfile({ track: event.target.value })}
-                    className="w-full rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 py-3.5 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white"
-                  >
-                    <option value="" disabled>
-                      {TEXT.choose}
-                    </option>
-                    <option value={TEXT.humanities}>{TEXT.humanities}</option>
-                    <option value={TEXT.natural}>{TEXT.natural}</option>
-                    <option value={TEXT.arts}>{TEXT.arts}</option>
-                    <option value={TEXT.other}>{TEXT.other}</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">{TEXT.careerLabel}</label>
-                  <input
-                    type="text"
-                    placeholder={TEXT.careerPlaceholder}
-                    value={profile.career}
-                    onChange={(event) => setProfile({ career: event.target.value })}
-                    className="w-full rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 py-3.5 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white"
-                  />
-                </div>
+              <div className="grid md:grid-cols-2 gap-8">
+                 <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-700">{TEXT.gradeLabel}</label>
+                    <select value={profile.grade} onChange={e => setProfile({ grade: e.target.value })} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-500">
+                       <option value="">{TEXT.choose}</option>
+                       {[TEXT.grade1, TEXT.grade2, TEXT.grade3, TEXT.nStudent].map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-700">{TEXT.trackLabel}</label>
+                    <select value={profile.track} onChange={e => setProfile({ track: e.target.value })} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-500">
+                       <option value="">{TEXT.choose}</option>
+                       {[TEXT.humanities, TEXT.natural, TEXT.arts, TEXT.other].map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                 </div>
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-black text-slate-700">{TEXT.careerLabel}</label>
+                <input type="text" value={profile.career} onChange={e => setProfile({ career: e.target.value })} placeholder={TEXT.careerPlaceholder} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-blue-500" />
+              </div>
+              <button onClick={submitProfile} disabled={!profile.grade || !profile.track || isLoading} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-xl flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-40 shadow-lg shadow-blue-500/20">
+                {isLoading ? <Loader2 className="animate-spin"/> : <>{TEXT.next} <ArrowRight/></>}
+              </button>
             </div>
           ) : (
-            <div className="space-y-8">
-              <div className="mb-8 flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
-                  <Target size={28} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800">{TEXT.goalSectionTitle}</h2>
-                  <p className="text-slate-500">{TEXT.goalSectionDescription}</p>
-                </div>
-              </div>
+            <div className="space-y-10">
+               <div className="grid lg:grid-cols-2 gap-10">
+                 {/* Selection Part */}
+                 <div className="space-y-8">
+                    <div className="flex gap-4">
+                      <div className="h-16 w-16 bg-blue-50 text-blue-600 flex items-center justify-center rounded-2xl"><Target size={32}/></div>
+                      <div><h2 className="text-xl font-black text-slate-800">{TEXT.goalSectionTitle}</h2><p className="text-slate-500 font-medium whitespace-pre-line">{TEXT.goalSectionDescription}</p></div>
+                    </div>
+                    
+                    <div className="p-6 bg-slate-50 border border-slate-100 rounded-[32px] space-y-6">
+                       <div className="relative">
+                         <label className="text-xs font-black text-slate-400 mb-2 block">{TEXT.universityLabel}</label>
+                         <input type="text" value={univInput} onChange={e => setUnivInput(e.target.value)} placeholder="대학명 검색..." className="w-full p-4 bg-white border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" />
+                         {univInput && universitySuggestions.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-auto bg-white border border-slate-100 rounded-xl shadow-xl">
+                               {universitySuggestions.map(s => <button key={s.label} onClick={() => { setCurrentUniv(s.label); setUnivInput(''); }} className="w-full text-left p-3 hover:bg-slate-50 text-sm font-bold border-b border-slate-50 last:border-0">{s.label}</button>)}
+                            </div>
+                         )}
+                       </div>
 
-              <div className="space-y-6">
-                <CatalogMultiSelectInput
-                  label={TEXT.universityLabel}
-                  selectedUniversities={allSelected}
-                  representativeUniversity={goals.target_university}
-                  suggestions={universitySuggestions}
-                  inputValue={univInput}
-                  onInputChange={setUnivInput}
-                  onAdd={(name) => {
-                    if (!goals.target_university) {
-                      setGoals({ target_university: name });
-                    } else {
-                      setGoals({
-                        interest_universities: [...goals.interest_universities, name],
-                      });
-                    }
-                  }}
-                  onRemove={(name) => {
-                    if (name === goals.target_university) {
-                      const nextTarget = goals.interest_universities[0] || '';
-                      setGoals({
-                        target_university: nextTarget,
-                        interest_universities: goals.interest_universities.slice(1),
-                        // Reset major if it's not in the new target
-                        target_major:
-                          nextTarget && isMajorInUniversity(nextTarget, goals.target_major)
-                            ? goals.target_major
-                            : '',
-                      });
-                    } else {
-                      setGoals({
-                        interest_universities: goals.interest_universities.filter((u) => u !== name),
-                      });
-                    }
-                  }}
-                  onSetRepresentative={(name) => {
-                    if (name === goals.target_university) return;
-                    const oldTarget = goals.target_university;
-                    setGoals({
-                      target_university: name,
-                      interest_universities: [
-                        ...goals.interest_universities.filter((u) => u !== name),
-                        ...(oldTarget ? [oldTarget] : []),
-                      ],
-                      // Reset major if it's not in the new target
-                      target_major: isMajorInUniversity(name, goals.target_major)
-                        ? goals.target_major
-                        : '',
-                    });
-                  }}
-                  placeholder={TEXT.universityPlaceholder}
-                  helperText={
-                    catalogLoaded ? TEXT.universityHelperLoaded : TEXT.universityHelperFallback
-                  }
-                  emptyText={TEXT.universityEmpty}
-                />
+                       {currentUniv && (
+                         <div className="space-y-4">
+                            <div className="p-3 bg-white rounded-xl border border-blue-100 flex items-center justify-between">
+                               <span className="text-sm font-black text-blue-600">{currentUniv}</span>
+                               <button onClick={() => setCurrentUniv('')} className="text-slate-400"><Trash2 size={16}/></button>
+                            </div>
+                            <CatalogAutocompleteInput label={TEXT.majorLabel} value={currentMajor} onChange={setCurrentMajor} placeholder="전공명 입력..." suggestions={searchMajors(currentMajor, currentUniv, 20)} onSelect={s => setCurrentMajor(s.label)} />
+                            <button onClick={handleAddGoal} disabled={!currentUniv || currentMajor.length < 2 || goalList.length >= 6} className="w-full py-4 bg-slate-900 text-white rounded-xl font-black text-sm">
+                               {TEXT.addGoal} (+{goalList.length}/6)
+                            </button>
+                         </div>
+                       )}
 
-                <CatalogAutocompleteInput
-                  label={TEXT.majorLabel}
-                  value={goals.target_major}
-                  placeholder={TEXT.majorPlaceholder}
-                  suggestions={majorSuggestions}
-                  onChange={(value) => setGoals({ target_major: value })}
-                  onSelect={(suggestion) => setGoals({ target_major: suggestion.label })}
-                  helperText={
-                    catalogLoaded
-                      ? goals.target_university.trim()
-                        ? `${goals.target_university} \uAE30\uC900\uC73C\uB85C \uD559\uACFC\uB97C \uC6B0\uC120 \uCD94\uCC9C\uD569\uB2C8\uB2E4.`
-                        : TEXT.majorHelperDefault
-                      : TEXT.majorHelperFallback
-                  }
-                  emptyText={TEXT.majorEmpty}
-                />
+                       <div className="pt-4 border-t border-slate-200">
+                          <label className="text-xs font-black text-slate-400 mb-2 block">{TEXT.admissionTypeLabel}</label>
+                          <select value={goals.admission_type} onChange={e => setGoals({ admission_type: e.target.value })} className="w-full p-4 bg-white border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500">
+                             <option value="">{TEXT.choose}</option>
+                             {[TEXT.academic, TEXT.general, TEXT.essay, TEXT.regular, TEXT.practical].map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                       </div>
+                    </div>
+                 </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    {TEXT.admissionTypeLabel} <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={goals.admission_type}
-                    onChange={(event) => setGoals({ admission_type: event.target.value })}
-                    className="w-full rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 py-3.5 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white"
-                  >
-                    <option value="" disabled>
-                      {TEXT.choose}
-                    </option>
-                    <option value={TEXT.studentRecordAcademic}>{TEXT.studentRecordAcademic}</option>
-                    <option value={TEXT.studentRecordGeneral}>{TEXT.studentRecordGeneral}</option>
-                    <option value={TEXT.essay}>{TEXT.essay}</option>
-                    <option value={TEXT.regular}>{TEXT.regular}</option>
-                    <option value={TEXT.practical}>{TEXT.practical}</option>
-                  </select>
-                </div>
-              </div>
+                 {/* List Part */}
+                 <div className="space-y-4">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Selected Goals</h3>
+                    {goalList.length === 0 ? (
+                      <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-[32px] text-slate-300">
+                         <School size={48} className="mb-2 opacity-10" />
+                         <p className="text-sm font-bold">{TEXT.emptyGoals}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {goalList.map((g, idx) => (
+                           <motion.div key={g.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-4 p-4 bg-slate-50 border border-slate-100 rounded-2xl group">
+                              <div className="text-slate-300 font-black text-lg italic">#{idx+1}</div>
+                              <div className="flex-1 min-w-0">
+                                 <p className="text-sm font-black text-slate-800 truncate">{g.university}</p>
+                                 <p className="text-[11px] font-bold text-slate-500">{g.major}</p>
+                              </div>
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                                 <button onClick={() => moveGoal(idx, 'up')} disabled={idx===0} className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-0"><ChevronUp size={20}/></button>
+                                 <button onClick={() => moveGoal(idx, 'down')} disabled={idx===goalList.length-1} className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-0"><ChevronDown size={20}/></button>
+                                 <button onClick={() => removeGoal(g.id)} className="p-1 text-slate-400 hover:text-red-500"><Trash2 size={20}/></button>
+                              </div>
+                           </motion.div>
+                        ))}
+                      </div>
+                    )}
+                 </div>
+               </div>
+
+               <div className="pt-10 border-t">
+                  <button onClick={handleStart} disabled={goalList.length === 0 || !goals.admission_type || isLoading} className="w-full py-5 bg-slate-900 text-white rounded-[24px] font-black text-2xl flex items-center justify-center gap-3 hover:bg-black disabled:opacity-30 shadow-2xl">
+                     {isLoading ? <Loader2 className="animate-spin"/> : <><Sparkles size={24} className="text-yellow-400"/> {TEXT.start}</>}
+                  </button>
+               </div>
             </div>
           )}
-
-          <div className="mt-12">
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={isNextDisabled}
-              className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-4 font-bold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
-            >
-              {isLoading ? (
-                <Loader2 size={24} className="animate-spin" />
-              ) : step === 1 ? (
-                <>
-                  {TEXT.next}
-                  <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
-                </>
-              ) : (
-                <>
-                  <Sparkles size={20} className="text-blue-200" />
-                  {TEXT.start}
-                </>
-              )}
-            </button>
-          </div>
         </motion.div>
       </div>
     </div>

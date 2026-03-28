@@ -16,7 +16,7 @@ class UserProfileRead(BaseModel):
     track: str | None
     career: str | None
     admission_type: str | None
-    interest_universities: list[str] = []
+    interest_universities: list[str] | None = []
     created_at: datetime
     updated_at: datetime
 

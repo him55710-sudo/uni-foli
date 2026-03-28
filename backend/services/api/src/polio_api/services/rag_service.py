@@ -27,6 +27,7 @@ class RAGContext:
     """렌더 프롬프트에 주입할 심화 참고자료 컨텍스트."""
 
     papers: list[ScholarPaper] = field(default_factory=list)
+    internal_chunks: list[Any] = field(default_factory=list)
     pinned_snippets: list[str] = field(default_factory=list)
     injection_text: str = ""
     source_label: str = "none"
@@ -38,9 +39,10 @@ class RAGConfig:
     """RAG 동작 설정."""
 
     enabled: bool = False
-    source: str = "semantic"  # "semantic" | "kci" | "both"
+    source: str = "semantic"  # "semantic" | "kci" | "both" | "internal"
     max_papers: int = 3
-    relevance_budget_chars: int = 2000
+    max_internal_chunks: int = 5
+    relevance_budget_chars: int = 3000
     pin_required: bool = True  # True면 핀된 자료 있을 때만 RAG 발동
 
 
@@ -73,7 +75,7 @@ def _format_paper_context(paper: ScholarPaper) -> str:
 def _format_pinned_snippets(pinned_references: list[Any]) -> list[str]:
     snippets: list[str] = []
     for ref in pinned_references:
-        text = getattr(ref, "text_content", None) or ""
+        text = getattr(ref, "text_content", None) or getattr(ref, "content_text", None) or ""
         text = text.strip()
         if text:
             source_type = getattr(ref, "source_type", "manual") or "manual"
@@ -81,8 +83,17 @@ def _format_pinned_snippets(pinned_references: list[Any]) -> list[str]:
     return snippets
 
 
+def _format_chunk_context(chunk: Any) -> str:
+    doc_name = "uploaded document"
+    if hasattr(chunk, "document") and chunk.document:
+        doc_name = chunk.document.parse_metadata.get("filename", "document")
+    return f"📄 [Source: {doc_name}, Page: {chunk.page_number or '?'}]\n   Content: {chunk.content_text.strip()}"
+
+
 async def build_rag_context(
+    db: Session,
     *,
+    project_id: str,
     query_keywords: list[str],
     pinned_references: list[Any],
     config: RAGConfig,
@@ -90,6 +101,8 @@ async def build_rag_context(
     """심화 모드 RAG 컨텍스트를 조립한다.
 
     Args:
+        db: DB 세션
+        project_id: 프로젝트 ID
         query_keywords: 검색 키워드 (탐구 주제에서 추출)
         pinned_references: 핀된 참고자료 객체 리스트
         config: RAG 설정
@@ -102,18 +115,31 @@ async def build_rag_context(
         return RAGContext()
 
     # 핀 필수 모드인데 핀이 없으면 빈 컨텍스트
+    # 단, 내부 벡터 검색이 명시적으로 활성화되어 있다면 계속 진행할 수도 있음 (여기서는 핀 필수 원칙 고수)
     if config.pin_required and not pinned_references:
         return RAGContext(source_label="pin_required_but_empty")
 
-    # 핀된 참고자료 정리
+    # 핀된 참고자료 정리 (이미 핀된 청크 포함)
     pinned_snippets = _format_pinned_snippets(pinned_references)
+    
+    # 내부 벡터 검색 결과
+    internal_chunks = []
+    if config.source in ("internal", "both") and query_keywords:
+         from polio_api.services.vector_service import search_relevant_chunks
+         full_query = " ".join(query_keywords)
+         internal_chunks = search_relevant_chunks(
+             db, 
+             project_id, 
+             full_query, 
+             limit=config.max_internal_chunks
+         )
 
     # 키워드 기반 학술 검색
     papers: list[ScholarPaper] = []
     source_label = config.source
 
-    if query_keywords:
-        combined_query = " ".join(query_keywords[:3])  # 최대 3개 키워드
+    if query_keywords and config.source != "internal":
+        combined_query = " ".join(query_keywords[:3])
 
         try:
             if config.source in ("semantic", "both"):
@@ -130,10 +156,9 @@ async def build_rag_context(
                 )
                 papers.extend(kci_result.papers)
         except ScholarServiceError:
-            # 검색 실패 시 핀된 자료만으로 진행
             source_label = f"{config.source}_fallback"
 
-    # 중복 제거 (제목 기준)
+    # 이부 제목 기준 학술지 중복 제거
     seen_titles: set[str] = set()
     unique_papers: list[ScholarPaper] = []
     for paper in papers:
@@ -155,8 +180,17 @@ async def build_rag_context(
             parts.append(snippet)
             char_count += len(snippet)
 
+    if internal_chunks:
+        parts.append("\n=== 관련 학생 기록 요약 (내부 자료) ===")
+        for chunk in internal_chunks:
+            formatted = _format_chunk_context(chunk)
+            if char_count + len(formatted) > config.relevance_budget_chars:
+                break
+            parts.append(formatted)
+            char_count += len(formatted)
+
     if papers:
-        parts.append("\n=== 학술 검색 결과 ===")
+        parts.append("\n=== 학술 검색 결과 (외부 자료) ===")
         for paper in papers:
             formatted = _format_paper_context(paper)
             if char_count + len(formatted) > config.relevance_budget_chars:
@@ -168,10 +202,11 @@ async def build_rag_context(
 
     return RAGContext(
         papers=papers,
+        internal_chunks=internal_chunks,
         pinned_snippets=pinned_snippets,
         injection_text=injection_text,
         source_label=source_label,
-        is_enhanced=bool(papers or pinned_snippets),
+        is_enhanced=bool(papers or internal_chunks or pinned_snippets),
     )
 
 

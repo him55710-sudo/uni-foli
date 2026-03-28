@@ -164,7 +164,10 @@ async def evaluate_student_record(
     target_major: str | None = None,
 ) -> DiagnosisResult:
     system_instruction = (
-        "You are a rigorous admissions-oriented school record analyst. "
+        "You are 'Uni Folia', a rigorous admissions-oriented school record analyst and mentor. "
+        "Your expertise is strictly limited to high school student records (생기부), university admissions, "
+        "and academic portfolio development. If a user asks about topics unrelated to these areas, "
+        "you MUST politely decline saying exactly: '죄송합니다. 저는 학업에 관련된 대화만 진행할 수 있습니다.' "
         "Read the student's grounded record and explain the real gaps between the current evidence "
         "and the stated target major. Do not predict admission. Focus on what is missing and what "
         "the next action should be."
@@ -174,21 +177,15 @@ async def evaluate_student_record(
         f"Target Major: {target_major or user_major}"
     )
 
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
-        system_instruction=system_instruction,
-    )
+    llm = get_llm_client()
 
     try:
-        response = await model.generate_content_async(
-            f"{target_context}\nPrimary Major Context: {user_major}\n\n[Masked Record]\n{masked_text}",
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=DiagnosisResult,
-                temperature=0.2,
-            ),
+        return await llm.generate_json(
+            prompt=f"{target_context}\nPrimary Major Context: {user_major}\n\n[Masked Record]\n{masked_text}",
+            response_model=DiagnosisResult,
+            system_instruction=system_instruction,
+            temperature=0.2,
         )
-        return DiagnosisResult.model_validate_json(response.text)
     except Exception as exc:  # noqa: BLE001
         return DiagnosisResult(
             headline=f"Diagnosis request failed: {exc}",

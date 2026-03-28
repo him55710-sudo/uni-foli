@@ -44,7 +44,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const savedGuestSession = localStorage.getItem(GUEST_SESSION_KEY) === '1';
-    if (savedGuestSession) {
+    
+    // Auto-login as guest for "Uni Folia" rebranding and to bypass landing page
+    if (!savedGuestSession && !user) {
+      setIsGuestSession(true);
+      localStorage.setItem(GUEST_SESSION_KEY, '1');
+    } else if (savedGuestSession) {
       setIsGuestSession(true);
     }
 

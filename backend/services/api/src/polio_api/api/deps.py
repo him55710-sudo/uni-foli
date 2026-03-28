@@ -206,11 +206,21 @@ def get_current_user(
 
     token = credentials.credentials
     try:
-        claims = _decode_jwt_claims(token, settings)
+        try:
+            claims = _decode_jwt_claims(token, settings)
+        except HTTPException:
+            if not settings.auth_firebase_fallback_enabled:
+                raise
+            claims = _decode_firebase_claims(token)
     except HTTPException:
-        if not settings.auth_firebase_fallback_enabled:
-            raise
-        claims = _decode_firebase_claims(token)
+        # If in local dev and bypass is allowed, fallback to local test user
+        if settings.app_env == "local" and settings.auth_allow_local_dev_bypass:
+            user = _get_or_create_local_dev_user(db)
+            request.state.current_user_id = user.id
+            request.state.tenant_user_id = user.id
+            request.state.auth_claims = {"sub": user.firebase_uid, "email": user.email, "name": user.name}
+            return user
+        raise
 
     user = _sync_user_from_claims(db, claims)
     request.state.current_user_id = user.id

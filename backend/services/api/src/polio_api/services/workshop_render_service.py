@@ -4,7 +4,7 @@ import json
 import os
 from typing import Any, AsyncIterator
 
-import google.generativeai as genai
+from polio_api.core.llm import get_llm_client
 
 from polio_api.services.quality_control import (
     build_quality_control_metadata,
@@ -21,7 +21,6 @@ from polio_api.services.rag_service import (
 from polio_api.services.safety_guard import SafetyFlag, run_safety_check
 from polio_domain.enums import QualityLevel
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "DUMMY_KEY"))
 
 
 class SSEEvent:
@@ -68,6 +67,10 @@ _GUARDRAILS: dict[str, str] = {
 
 
 def _supports_live_generation() -> bool:
+    from polio_api.core.config import get_settings
+    settings = get_settings()
+    if settings.llm_provider == "ollama":
+        return True
     api_key = os.environ.get("GEMINI_API_KEY")
     return bool(api_key and api_key != "DUMMY_KEY")
 
@@ -352,35 +355,29 @@ def _serialize_checks(checks: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-async def _generate_with_gemini(
+async def _generate_with_llm(
     *,
     prompt: str,
     quality_level: str,
 ) -> AsyncIterator[str]:
     profile = get_quality_profile(quality_level)
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
-        system_instruction=(
-            f"너는 학생 탐구 보고서 생성기다. 현재 수준은 {profile.label}이다. "
-            "허위 경험, 과장된 수치, 근거 없는 실험 결과를 절대 만들지 말고, 유효한 JSON만 출력하라."
-        ),
+    llm = get_llm_client()
+    system_instruction = (
+        f"너는 학생 탐구 보고서 생성기다. 현재 수준은 {profile.label}이다. "
+        "허위 경험, 과장된 수치, 근거 없는 실험 결과를 절대 만들지 말고, 유효한 JSON만 출력하라."
     )
-    response_stream = await model.generate_content_async(
-        contents=prompt,
-        stream=True,
-        generation_config=genai.GenerationConfig(
-            temperature=profile.temperature,
-            response_mime_type="application/json",
-        ),
-    )
-    async for chunk in response_stream:
-        token = getattr(chunk, "text", None)
-        if token:
-            yield token
+    async for token in llm.stream_chat(
+        prompt=prompt,
+        system_instruction=system_instruction,
+        temperature=profile.temperature,
+    ):
+        yield token
 
 
 async def stream_render(
+    db: Session,
     session_id: str,
+    project_id: str,
     turns: list[Any],
     references: list[Any],
     target_major: str | None,
@@ -409,6 +406,8 @@ async def stream_render(
             turns=turns,
         )
         rag_context = await build_rag_context(
+            db,
+            project_id=project_id,
             query_keywords=keywords,
             pinned_references=references,
             config=rag_config,
@@ -458,7 +457,7 @@ async def stream_render(
     if _supports_live_generation():
         try:
             chunk_count = 0
-            async for token in _generate_with_gemini(prompt=prompt, quality_level=profile.level):
+            async for token in _generate_with_llm(prompt=prompt, quality_level=profile.level):
                 full_text += token
                 buffer += token
                 chunk_count += 1

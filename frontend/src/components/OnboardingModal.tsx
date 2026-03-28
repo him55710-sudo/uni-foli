@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowRight, Goal, GraduationCap, School, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Goal, GraduationCap, School, Sparkles, X, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { CatalogAutocompleteInput } from './CatalogAutocompleteInput';
 import { CatalogMultiSelectInput } from './CatalogMultiSelectInput';
 import {
   isEducationCatalogLoaded,
-  isMajorInUniversity,
   searchMajors,
   searchUniversities,
 } from '../lib/educationCatalog';
@@ -25,35 +24,22 @@ interface OnboardingModalProps {
 }
 
 const TEXT = {
-  chip: '초기 목표 설정',
-  title: '원하는 대학과 학과를 먼저 맞춥니다',
-  description:
-    '목표 대학과 전공이 있어야 진단, 로드맵, 추천 과제 방향을 더 정확하게 맞출 수 있습니다.',
-  step1: '목표 대학 설정',
-  step2: '희망 학과 설정',
-  universityLabel: '어느 대학을 목표로 하고 있나요?',
-  universityPlaceholder: '예: 숭실대학교, 건국대학교',
-  universityHelperLoaded: '초성 검색을 지원합니다.',
-  universityHelperFallback:
-    '아직 대학 목록을 불러오기 전이라도 직접 입력해서 저장할 수 있습니다.',
-  universityEmpty:
-    '일치하는 대학이 없어도 직접 입력해서 저장할 수 있습니다.',
-  majorLabel: '어느 학과를 목표로 하고 있나요?',
-  majorPlaceholder: '예: 건축학과, 컴퓨터공학과',
-  majorHelperDefault:
-    '선택한 대학의 학과를 우선 추천합니다.',
-  majorHelperFallback: '학과도 직접 입력해서 저장할 수 있습니다.',
-  majorEmpty:
-    '일치하는 학과가 없어도 직접 입력해서 저장할 수 있습니다.',
-  previous: '이전 단계',
-  next: '다음',
-  addGoal: '이 목표 추가하기',
+  chip: '목표 대학 설정',
+  title: '가고 싶은 대학을 최대 6개까지 담아보세요',
+  description: '순서대로 배치하면 가장 가고 싶은 대학을 중심으로 탐구 플랜이 맞춰집니다.',
+  step1: '대학 선택',
+  step2: '학과 선택',
+  universityLabel: '어느 대학인가요?',
+  majorLabel: '희망하는 학과는요?',
+  addGoal: '이 목표 추가',
   saving: '저장 중...',
-  submit: '설정 완료 및 저장',
-  goalListTitle: '설정된 목표 목록',
+  submit: '모든 정보 저장하기',
+  goalListTitle: '나의 목표 대학 (최대 6개)',
+  emptyGoals: '아직 추가된 대학이 없습니다.',
 };
 
 interface GoalItem {
+  id: string;
   university: string;
   major: string;
 }
@@ -80,30 +66,36 @@ export function OnboardingModal({
     setCurrentMajor('');
     setUnivInput('');
     
-    const initialGoals: GoalItem[] = [];
+    const generateId = () => {
+      try {
+        return crypto.randomUUID();
+      } catch {
+        return Math.random().toString(36).substring(2) + Date.now().toString(36);
+      }
+    };
+
+    const initialList: GoalItem[] = [];
     if (initialUniversity && initialMajor) {
-      initialGoals.push({ university: initialUniversity, major: initialMajor });
+      initialList.push({ id: generateId(), university: initialUniversity, major: initialMajor });
     }
     
     if (initialInterests && initialInterests.length > 0) {
       initialInterests.forEach(interest => {
-        // Try to parse "University (Major)"
         const match = interest.match(/^(.+)\s\((.+)\)$/);
         if (match) {
-          initialGoals.push({ university: match[1], major: match[2] });
+          initialList.push({ id: generateId(), university: match[1], major: match[2] });
         } else {
-          initialGoals.push({ university: interest, major: '전공 미지정' });
+          initialList.push({ id: generateId(), university: interest, major: '전공 미지정' });
         }
       });
     }
     
-    setGoals(initialGoals);
+    // Limit to 6
+    setGoals(initialList.slice(0, 6));
   }, [initialInterests, initialMajor, initialUniversity, isOpen]);
 
   if (!isOpen) return null;
 
-  const catalogLoaded = isEducationCatalogLoaded();
-  
   const universitySuggestions = searchUniversities(univInput, {
     excludeNames: [currentUniv, ...goals.map(g => g.university)],
     limit: 100
@@ -111,215 +103,139 @@ export function OnboardingModal({
 
   const majorSuggestions = searchMajors(currentMajor, currentUniv, 20);
   
-  const canMoveNext = currentUniv.trim().length >= 2 || univInput.trim().length >= 2;
-  const canAddGoal = (currentUniv.trim().length >= 2 || univInput.trim().length >= 2) && currentMajor.trim().length >= 2;
+  const canAddMore = goals.length < 6;
+  const canAddThis = (currentUniv.trim().length >= 2 || univInput.trim().length >= 2) && currentMajor.trim().length >= 2;
 
   const handleAddGoal = () => {
     const univ = currentUniv || univInput.trim();
-    if (!univ || currentMajor.trim().length < 2) return;
+    if (!univ || currentMajor.trim().length < 2 || !canAddMore) return;
     
-    setGoals(prev => [...prev, { university: univ, major: currentMajor.trim() }]);
+    const generateId = () => {
+      try {
+        return crypto.randomUUID();
+      } catch {
+        return Math.random().toString(36).substring(2) + Date.now().toString(36);
+      }
+    };
+    
+    setGoals(prev => [...prev, { id: generateId(), university: univ, major: currentMajor.trim() }]);
     setCurrentUniv('');
     setCurrentMajor('');
     setUnivInput('');
     setStep(1);
   };
 
-  const handleRemoveGoal = (index: number) => {
-    setGoals(prev => prev.filter((_, i) => i !== index));
+  const removeGoal = (id: string) => setGoals(prev => prev.filter(g => g.id !== id));
+  
+  const moveGoal = (index: number, direction: 'up' | 'down') => {
+    const newGoals = [...goals];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= goals.length) return;
+    [newGoals[index], newGoals[targetIndex]] = [newGoals[targetIndex], newGoals[index]];
+    setGoals(newGoals);
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 30 }}
-        className="relative w-full rounded-t-[32px] bg-white p-6 shadow-2xl sm:max-w-xl sm:rounded-[32px] sm:p-8"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 z-10 rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 sm:right-6 sm:top-6"
-        >
-          <X size={20} />
-        </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative w-full max-w-2xl rounded-[32px] bg-white p-8 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute right-6 top-6 text-slate-400 hover:text-slate-600"><X size={24}/></button>
 
-        <div className="mb-8 flex items-start gap-4 pr-12">
-          <div className="flex-1">
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[11px] font-extrabold text-blue-600">
-              <Sparkles size={12} />
-              {TEXT.chip}
-            </div>
-            <h2 className="text-2xl font-black tracking-tight text-slate-800 sm:text-3xl">{TEXT.title}</h2>
+        <div className="mb-6">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-black text-blue-600">
+            <Sparkles size={12}/> {TEXT.chip}
           </div>
-          <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 sm:flex">
-            <GraduationCap size={28} />
-          </div>
+          <h2 className="text-3xl font-black text-slate-900">{TEXT.title}</h2>
+          <p className="mt-2 text-sm text-slate-500">{TEXT.description}</p>
         </div>
 
-        {/* Goals List Display */}
-        {goals.length > 0 && (
-          <div className="mb-6">
-            <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-slate-400">{TEXT.goalListTitle}</h3>
-            <div className="flex flex-wrap gap-2">
-              {goals.map((goal, idx) => (
-                <div key={idx} className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-sm">
-                  <span className="font-bold text-blue-700">{goal.university}</span>
-                  <span className="text-blue-400">|</span>
-                  <span className="font-medium text-blue-600">{goal.major}</span>
-                  <button 
-                    onClick={() => handleRemoveGoal(idx)}
-                    className="ml-1 text-blue-300 hover:text-blue-500"
-                  >
-                    <X size={14} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left: Current Selection */}
+          <div className="space-y-6">
+            <div className="p-5 border-2 border-slate-100 rounded-3xl space-y-4">
+              <div className="flex items-center gap-2 text-xs font-black text-blue-600">
+                <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center">{step}</div>
+                {step === 1 ? TEXT.step1 : TEXT.step2}
+              </div>
+              
+              {step === 1 ? (
+                <CatalogMultiSelectInput
+                  label={TEXT.universityLabel}
+                  selectedUniversities={currentUniv ? [currentUniv] : []}
+                  representativeUniversity={currentUniv}
+                  suggestions={universitySuggestions}
+                  inputValue={univInput}
+                  onInputChange={setUnivInput}
+                  onAdd={name => { setCurrentUniv(name); setUnivInput(''); setStep(2); }}
+                  onRemove={() => setCurrentUniv('')}
+                  placeholder="예: 서울대학교"
+                  onSetRepresentative={()=>{}}
+                  emptyText="목록에 없어도 직접 입력 가능합니다."
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-700">{currentUniv || univInput}</span>
+                    <button onClick={()=>setStep(1)} className="text-[10px] font-black text-blue-600 underline">변경</button>
+                  </div>
+                  <CatalogAutocompleteInput
+                    label={TEXT.majorLabel}
+                    value={currentMajor}
+                    onChange={setCurrentMajor}
+                    placeholder="예: 경영학과"
+                    suggestions={majorSuggestions}
+                    onSelect={s => setCurrentMajor(s.label)}
+                    autoFocus
+                  />
+                  <button onClick={handleAddGoal} disabled={!canAddThis || !canAddMore} className="w-full py-3 bg-blue-600 text-white rounded-2xl font-black text-sm disabled:opacity-30">
+                    {TEXT.addGoal} (+{goals.length}/6)
                   </button>
                 </div>
-              ))}
+              )}
             </div>
           </div>
-        )}
 
-        <div className="mb-6 grid grid-cols-2 gap-3">
-          <div
-            className={`rounded-2xl border px-4 py-3 transition-colors ${
-              step === 1 ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 bg-slate-50'
-            }`}
-          >
-            <div className={`mb-1 flex items-center gap-2 text-xs font-black ${step === 1 ? 'text-blue-600' : 'text-slate-500'}`}>
-              <School size={14} />
-              Step 1
-            </div>
-            <p className={`text-sm font-bold ${step === 1 ? 'text-slate-800' : 'text-slate-400'}`}>{TEXT.step1}</p>
-          </div>
-          <div
-            className={`rounded-2xl border px-4 py-3 transition-colors ${
-              step === 2 ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 bg-slate-50'
-            }`}
-          >
-            <div className={`mb-1 flex items-center gap-2 text-xs font-black ${step === 2 ? 'text-blue-600' : 'text-slate-500'}`}>
-              <Goal size={14} />
-              Step 2
-            </div>
-            <p className={`text-sm font-bold ${step === 2 ? 'text-slate-800' : 'text-slate-400'}`}>{TEXT.step2}</p>
+          {/* Right: Goals List & Reorder */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">{TEXT.goalListTitle}</h3>
+            {goals.length === 0 ? (
+              <div className="h-40 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-3xl text-slate-300 text-sm font-medium">
+                <School size={32} className="mb-2 opacity-20"/> {TEXT.emptyGoals}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {goals.map((g, idx) => (
+                  <motion.div key={g.id} layout className="group flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl">
+                    <div className="flex flex-col gap-1">
+                      <button onClick={()=>moveGoal(idx, 'up')} disabled={idx===0} className="text-slate-300 hover:text-blue-500 disabled:opacity-0"><ChevronUp size={16}/></button>
+                      <button onClick={()=>moveGoal(idx, 'down')} disabled={idx===goals.length-1} className="text-slate-300 hover:text-blue-500 disabled:opacity-0"><ChevronDown size={16}/></button>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-black text-slate-400">Target {idx+1}</p>
+                      <p className="text-sm font-black text-slate-800 truncate">{g.university}</p>
+                      <p className="text-[11px] font-medium text-slate-500 truncate">{g.major}</p>
+                    </div>
+                    <img src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/assets/univ-logo?name=${encodeURIComponent(g.university)}`} 
+                         className="w-10 h-10 object-contain p-1 bg-white rounded-lg shadow-sm" alt="Logo" 
+                         onError={(e)=>(e.currentTarget.style.display='none')}/>
+                    <button onClick={()=>removeGoal(g.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        <AnimatePresence mode="wait">
-          {step === 1 ? (
-            <motion.div
-              key="univ-selection"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-            >
-              <CatalogMultiSelectInput
-                label={TEXT.universityLabel}
-                selectedUniversities={currentUniv ? [currentUniv] : []}
-                representativeUniversity={currentUniv}
-                suggestions={universitySuggestions}
-                inputValue={univInput}
-                onInputChange={setUnivInput}
-                onAdd={(name) => {
-                  setCurrentUniv(name);
-                  setUnivInput('');
-                  setStep(2);
-                }}
-                onRemove={() => {
-                  setCurrentUniv('');
-                }}
-                onSetRepresentative={() => {}}
-                placeholder={TEXT.universityPlaceholder}
-                helperText={
-                  catalogLoaded ? TEXT.universityHelperLoaded : TEXT.universityHelperFallback
-                }
-                emptyText={TEXT.universityEmpty}
-              />
-              <div className="mt-4 flex justify-end">
-                <button
-                  disabled={!canMoveNext}
-                  onClick={() => {
-                    if (!currentUniv && univInput.trim()) {
-                      setCurrentUniv(univInput.trim());
-                      setUnivInput('');
-                    }
-                    setStep(2);
-                  }}
-                  className="flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200"
-                >
-                  {TEXT.next} <ArrowRight size={14} />
-                </button>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="major-selection"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-            >
-              <div className="mb-4 rounded-2xl bg-slate-50 p-4 border border-slate-100">
-                <span className="text-xs font-bold text-slate-400 block mb-1">선택된 대학</span>
-                <span className="text-lg font-black text-slate-700">{currentUniv || univInput}</span>
-              </div>
-              <CatalogAutocompleteInput
-                label={TEXT.majorLabel}
-                value={currentMajor}
-                placeholder={TEXT.majorPlaceholder}
-                suggestions={majorSuggestions}
-                onChange={setCurrentMajor}
-                onSelect={(suggestion) => {
-                  setCurrentMajor(suggestion.label);
-                }}
-                helperText={
-                  catalogLoaded
-                    ? `${currentUniv || univInput} 기준으로 학과 후보를 보여줍니다.`
-                    : TEXT.majorHelperFallback
-                }
-                emptyText={TEXT.majorEmpty}
-                autoFocus
-              />
-              <div className="mt-4 flex gap-3">
-                <button
-                  onClick={() => setStep(1)}
-                  className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-500"
-                >
-                  {TEXT.previous}
-                </button>
-                <button
-                  disabled={!canAddGoal}
-                  onClick={handleAddGoal}
-                  className="flex-[2] rounded-xl bg-blue-600 py-3 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-40"
-                >
-                  {TEXT.addGoal}
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="mt-8 border-t border-slate-100 pt-6">
-          <button
-            type="button"
+        <div className="mt-10 pt-6 border-t">
+          <button 
             disabled={goals.length === 0 || isSubmitting}
             onClick={() => {
-              const mainGoal = goals[0];
-              const others = goals.slice(1).map((g) => `${g.university} (${g.major})`);
-              void onSubmit({
-                targetUniversity: mainGoal.university,
-                targetMajor: mainGoal.major,
-                interestUniversities: others,
-              });
+              const main = goals[0];
+              const others = goals.slice(1).map(g => `${g.university} (${g.major})`);
+              void onSubmit({ targetUniversity: main.university, targetMajor: main.major, interestUniversities: others });
             }}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-4 text-base font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-2 hover:bg-black transition-all disabled:opacity-40"
           >
-            {isSubmitting ? TEXT.saving : TEXT.submit}
-            <ArrowRight size={18} />
+            {isSubmitting ? TEXT.saving : TEXT.submit} <ArrowRight size={20}/>
           </button>
         </div>
       </motion.div>

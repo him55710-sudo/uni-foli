@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from polio_api.api.routes import (
+    answers,
     auth,
     blueprints,
     diagnosis,
@@ -15,11 +16,13 @@ from polio_api.api.routes import (
     uploads,
     users,
     workshops,
+    assets,
 )
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(answers.router, prefix="/projects", tags=["answers"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(drafts.chat_router, prefix="/drafts", tags=["chat"])
@@ -33,3 +36,4 @@ api_router.include_router(blueprints.router, prefix="/blueprints", tags=["bluepr
 api_router.include_router(quests.router, prefix="/quests", tags=["quests"])
 api_router.include_router(workshops.router, prefix="/workshops", tags=["workshops"])
 api_router.include_router(render_jobs.router, tags=["render-jobs"])
+api_router.include_router(assets.router, prefix="/assets", tags=["assets"])

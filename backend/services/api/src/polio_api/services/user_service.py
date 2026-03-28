@@ -52,10 +52,11 @@ def update_user_goals(
         print(f"DEBUG: updating interest_universities to {interest_universities}")
         user.interest_universities = _normalize_interest_universities(interest_universities, user.target_university)
     
+    print(f"DEBUG: Before commit - user.target_university={user.target_university}, user.target_major={user.target_major}")
     db.add(user)
     db.commit()
     db.refresh(user)
-    print(f"DEBUG: user goals updated and committed. Database now has target_university={user.target_university}")
+    print(f"DEBUG: After commit - user.target_university={user.target_university}, user.target_major={user.target_major}")
     return user
 
 

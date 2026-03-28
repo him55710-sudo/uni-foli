@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 import uvicorn
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
         debug=settings.app_debug,
         lifespan=lifespan,
         description=(
-            "Beginner-friendly backend skeleton for polio. "
+            "Beginner-friendly backend skeleton for Uni Folia. "
             "Create projects, upload files, write drafts, and queue render jobs."
         ),
     )
@@ -50,10 +50,24 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
-        print(f"DEBUG: Incoming {request.method} request to {request.url.path}")
-        response = await call_next(request)
-        print(f"DEBUG: Response status: {response.status_code}")
-        return response
+        try:
+            print(f"DEBUG: Incoming {request.method} request to {request.url.path}")
+            response = await call_next(request)
+            print(f"DEBUG: Response status: {response.status_code}")
+            
+            # Simple error logging without body consumption
+            if response.status_code >= 400:
+                 with open("backend_400.log", "a", encoding="utf-8") as f:
+                    f.write(f"HTTP {response.status_code} on {request.method} {request.url.path}\n")
+                    
+            return response
+        except Exception as e:
+            import traceback
+            with open("backend_error.log", "a", encoding="utf-8") as f:
+                f.write(f"Exception during {request.method} {request.url.path}:\n")
+                traceback.print_exc(file=f)
+                f.write("\n")
+            raise
 
     app.include_router(api_router, prefix=settings.api_prefix)
 
@@ -65,7 +79,7 @@ def create_app() -> FastAPI:
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>polio Backend</title>
+    <title>Uni Folia Backend</title>
     <style>
       :root {
         color-scheme: light;
@@ -165,10 +179,10 @@ def create_app() -> FastAPI:
   <body>
     <main>
       <section class="hero">
-        <span class="eyebrow">polio backend</span>
+        <span class="eyebrow">Uni Folia backend</span>
         <h1>Upload, parse, draft, and render from one backend.</h1>
         <p>
-          This local service powers the beginner-friendly backend blueprint for polio.
+          This local service powers the beginner-friendly backend blueprint for Uni Folia.
           Start from the API docs, confirm health, and inspect available render formats.
         </p>
         <div class="actions">

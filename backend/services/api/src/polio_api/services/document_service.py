@@ -199,7 +199,18 @@ def ingest_upload_asset(
         } and parsed.warnings:
             document.last_error = parsed.warnings[0]
 
-        for chunk in parsed.chunks:
+        from polio_shared.embeddings import get_embedding_service
+
+        embedding_service = get_embedding_service(
+            settings.retrieval_embedding_model,
+            dimensions=settings.vector_dimensions,
+        )
+        embedding_metadata = embedding_service.metadata()
+        chunk_texts = [c.content_text for c in parsed.chunks]
+        embeddings = embedding_service.generate_embeddings(chunk_texts) if chunk_texts else []
+
+        for i, chunk in enumerate(parsed.chunks):
+            chunk_embedding = embeddings[i] if i < len(embeddings) else None
             db.add(
                 DocumentChunk(
                     document_id=document.id,
@@ -210,6 +221,8 @@ def ingest_upload_asset(
                     char_end=chunk.char_end,
                     token_estimate=chunk.token_estimate,
                     content_text=chunk.content_text,
+                    embedding=chunk_embedding,
+                    embedding_model=embedding_metadata.model_name,
                 )
             )
 

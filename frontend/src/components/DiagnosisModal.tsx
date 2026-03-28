@@ -39,7 +39,7 @@ interface DiagnosisRunResponse {
   error_message: string | null;
 }
 
-const DIAGNOSIS_STORAGE_KEY = 'polio_last_diagnosis';
+const DIAGNOSIS_STORAGE_KEY = 'folia_last_diagnosis';
 
 export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
   const [step, setStep] = useState(1);
@@ -391,7 +391,7 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                 <div className="absolute bottom-0 left-0 w-full border-t border-slate-200 bg-white/90 p-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] backdrop-blur-md sm:px-8">
                   <div className="mb-4 flex items-start gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500 font-extrabold text-white shadow-md">
-                      P
+                      F
                     </div>
                     <div className="flex-1 rounded-2xl rounded-tl-sm border border-blue-100 bg-blue-50 p-4">
                       <p className="text-sm font-extrabold leading-snug text-blue-900 sm:text-base">

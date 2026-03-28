@@ -471,7 +471,7 @@ async def sse_events(
     # Build RAG config if advanced mode is detected
     rag_cfg = RAGConfig(
         enabled=requested_advanced_mode and len(full_session.pinned_references) > 0,
-        source=rag_source if rag_source in {"semantic", "kci", "both"} else "semantic",
+        source=rag_source if rag_source in {"semantic", "kci", "both", "internal"} else "semantic",
         max_papers=3,
         pin_required=True,
     )
@@ -482,7 +482,9 @@ async def sse_events(
         quality_control_meta: dict[str, object] = {}
         try:
             async for sse_bytes in stream_render(
+                db=db,
                 session_id=workshop_id,
+                project_id=full_session.project_id,
                 turns=full_session.turns,
                 references=full_session.pinned_references,
                 target_major=getattr(project, "target_major", None),
