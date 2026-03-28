@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Thread
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
@@ -256,22 +255,30 @@ def parse_document_by_id(
 
 
 def enqueue_document_parse(document_id: str) -> None:
-    worker = Thread(
-        target=_parse_document_worker,
-        args=(document_id,),
-        daemon=True,
-        name=f"polio-document-parse-{document_id}",
-    )
-    worker.start()
-
-
-def _parse_document_worker(document_id: str) -> None:
     db = SessionLocal()
     try:
-        parse_document_by_id(db, document_id, force=True, prepared=True)
-    except Exception:
-        # The document state is already persisted by ingest_upload_asset.
-        pass
+        document = get_document(db, document_id)
+        if document is None:
+            return
+        from polio_api.services.async_job_service import create_async_job, dispatch_job_if_enabled
+        from polio_domain.enums import AsyncJobType
+
+        job = create_async_job(
+            db,
+            job_type=AsyncJobType.DOCUMENT_PARSE.value,
+            resource_type="parsed_document",
+            resource_id=document_id,
+            project_id=document.project_id,
+            payload={"document_id": document_id, "prepared": True},
+        )
+        document.parse_metadata = {
+            **(document.parse_metadata or {}),
+            "latest_async_job_id": job.id,
+            "latest_async_job_status": job.status,
+        }
+        db.add(document)
+        db.commit()
+        dispatch_job_if_enabled(job.id)
     finally:
         db.close()
 

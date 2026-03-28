@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_current_user, get_db
+from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
 from polio_api.schemas.document import ParsedDocumentRead
 from polio_api.schemas.project import ProjectCreate
@@ -19,7 +20,7 @@ from polio_api.services.document_service import (
     upload_supports_ingest,
 )
 from polio_api.services.project_service import create_project, get_project
-from polio_api.services.upload_service import store_upload
+from polio_api.services.upload_service import UploadValidationError, store_upload
 
 router = APIRouter()
 
@@ -35,6 +36,7 @@ async def upload_global_document(
     auto_parse: bool = Form(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="global_document_uploads", limit=10, window_seconds=60)),
 ) -> ParsedDocumentRead:
     active_project_id = project_id
     if active_project_id:
@@ -55,7 +57,10 @@ async def upload_global_document(
         )
         active_project_id = project.id
 
-    upload = await store_upload(db, project_id=active_project_id, upload=file, auto_ingest=False)
+    try:
+        upload = await store_upload(db, project_id=active_project_id, upload=file, auto_ingest=False)
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     document = ensure_document_placeholder(db, upload)
 
     if auto_parse and upload_supports_ingest(upload):

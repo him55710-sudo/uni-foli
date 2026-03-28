@@ -15,6 +15,7 @@ import {
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import foliDuoMascot from '../assets/foli-duo.png';
+import { B2BPartnershipModal } from './B2BPartnershipModal';
 
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -23,6 +24,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 const navItems = [
   { path: '/', name: '홈', icon: Home, sub: '대시보드' },
   { path: '/record', name: '내 생기부', icon: FolderOpen, sub: '데이터 관리' },
+  { path: '/diagnosis', name: 'AI 진단', icon: TrendingUp, sub: '합격 가능성 분석' },
   { path: '/workshop', name: 'Foli 작업실', icon: PenTool, sub: 'AI 멘토' },
   { path: '/archive', name: '내 보관함', icon: Archive, sub: '결과물' },
   { path: '/trends', name: '입시 트렌드', icon: TrendingUp, sub: '리소스' },
@@ -31,10 +33,15 @@ const navItems = [
 
 export function Layout() {
   const { user, isGuestSession, logout } = useAuth();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.innerWidth >= 768;
+  });
+  const [isB2BModalOpen, setIsB2BModalOpen] = useState(false);
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-50 overflow-hidden">
+      <B2BPartnershipModal isOpen={isB2BModalOpen} onClose={() => setIsB2BModalOpen(false)} />
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-100 z-30 shadow-sm">
         <div className="flex items-center gap-2">
@@ -43,6 +50,8 @@ export function Layout() {
         </div>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          aria-label={isSidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          data-testid="layout-sidebar-toggle"
           className="p-2 rounded-xl hover:bg-slate-50 text-slate-500 transition-colors"
         >
           {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
@@ -51,6 +60,7 @@ export function Layout() {
 
       {/* Sidebar (LNB) */}
       <aside 
+        data-testid="layout-sidebar"
         className={cn(
           "flex flex-col bg-white border-r border-slate-100 transition-all duration-300 z-20 absolute md:relative h-full shadow-sm pt-[73px] md:pt-0",
           isSidebarOpen ? "w-64 translate-x-0" : "w-20 -translate-x-full md:translate-x-0"
@@ -65,6 +75,8 @@ export function Layout() {
           )}
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            aria-label={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            data-testid="layout-sidebar-toggle-desktop"
             className="p-2 rounded-xl hover:bg-slate-50 text-slate-400 hover:text-slate-600 transition-colors mx-auto"
           >
             {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
@@ -155,19 +167,56 @@ export function Layout() {
           </div>
           
           {/* Footer */}
-          <footer className="mt-16 py-8 border-t border-slate-200 bg-white rounded-3xl px-8 shadow-sm">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500 font-medium">
-              <div className="flex flex-wrap justify-center md:justify-start gap-x-4 gap-y-2">
-                <span className="font-bold text-slate-700">상호명: Uni Folia (유니 폴리아)</span>
-                <span className="hidden md:inline text-slate-300">|</span>
-                <span>대표: 임현수</span>
-                <span className="hidden md:inline text-slate-300">|</span>
-                <span>전화번호: 010-7614-2633</span>
-                <span className="hidden md:inline text-slate-300">|</span>
-                <span>문의: mongben@naver.com</span>
+          <footer className="mt-16 py-12 border-t border-slate-200 bg-white rounded-3xl px-8 shadow-sm">
+            <div className="flex flex-col md:flex-row items-start justify-between gap-12 text-sm text-slate-500 font-medium">
+              <div className="space-y-6 flex-1">
+                <div className="flex items-center gap-2 mb-4">
+                  <img src={foliDuoMascot} alt="Uni Folia mascot" className="w-8 h-8 rounded-xl object-cover" />
+                  <span className="font-extrabold text-lg text-slate-800 tracking-tight">Uni Folia</span>
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-3 text-xs">
+                  <div className="space-y-2">
+                    <p className="font-black text-slate-700 text-[11px] uppercase tracking-widest bg-slate-100 w-fit px-2 py-0.5 rounded">Trust & Legal</p>
+                    <div className="flex gap-4">
+                      <NavLink to="/terms" className="hover:text-blue-600 transition-colors font-extrabold">이용약관</NavLink>
+                      <NavLink to="/privacy" className="hover:text-blue-600 transition-colors font-extrabold">개인정보처리방침</NavLink>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="font-black text-slate-700 text-[11px] uppercase tracking-widest bg-blue-50 w-fit px-2 py-0.5 rounded">General Support</p>
+                    <p>문의: <a href="mailto:mongben@naver.com" className="font-bold text-slate-600 underline decoration-slate-200 hover:decoration-blue-400">mongben@naver.com</a></p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="font-black text-blue-700 text-[11px] uppercase tracking-widest bg-blue-100/50 w-fit px-2 py-0.5 rounded">Partnership</p>
+                    <p className="flex items-center gap-2">
+                      학교/학원 도입문의: <span className="font-bold text-blue-600">010-7614-2633</span> 
+                      <button 
+                        onClick={() => setIsB2BModalOpen(true)}
+                        className="ml-1 px-2 py-0.5 rounded-lg bg-blue-600 text-white text-[10px] font-black hover:bg-blue-700 transition-colors shadow-sm"
+                      >
+                        상담 신청
+                      </button>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                  <span>상호명: Uni Folia (유니 폴리아)</span>
+                  <span className="md:inline text-slate-200">|</span>
+                  <span>대표: 임현수</span>
+                  <span className="md:inline text-slate-200">|</span>
+                  <span>등록번호: [준비중]</span>
+                </div>
               </div>
-              <div className="text-xs text-slate-400 font-semibold">
-                © 2026 Uni Folia. All rights reserved.
+              <div className="md:text-right space-y-2">
+                <div className="text-xs text-slate-300 font-black uppercase tracking-[0.2em] mb-4">
+                  Evidence-Grounded Drafting
+                </div>
+                <div className="text-[11px] text-slate-400 font-semibold">
+                  © 2026 Uni Folia. All rights reserved.
+                </div>
+                <p className="text-[10px] text-slate-300 max-w-[200px] md:ml-auto leading-relaxed">
+                  Uni Folia는 인공지능을 활용한 학업 기록 성찰 도구로, 최종 입시 결과를 보장하지 않습니다.
+                </p>
               </div>
             </div>
           </footer>

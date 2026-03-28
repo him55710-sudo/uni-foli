@@ -13,6 +13,7 @@ class GroundedAnswerRequest(BaseModel):
 class GroundedAnswerProvenance(BaseModel):
     document_id: str
     chunk_id: str
+    provenance_type: str
     source_label: str
     page_number: int | None = None
     char_start: int

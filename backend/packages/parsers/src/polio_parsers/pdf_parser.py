@@ -4,6 +4,7 @@ import fitz  # PyMuPDF
 from polio_domain.enums import BlockType
 from .base import DocumentParser, ParserContext
 from .schemas import CanonicalBlock, CanonicalParseResult
+from .errors import EmptyDocumentError, EncryptedDocumentError
 
 
 class PdfDocumentParser(DocumentParser):
@@ -18,6 +19,9 @@ class PdfDocumentParser(DocumentParser):
 
     def parse(self, payload: bytes, context: ParserContext) -> CanonicalParseResult:
         doc = fitz.open(stream=payload, filetype="pdf")
+        if doc.is_encrypted:
+            raise EncryptedDocumentError("The PDF is password protected. Please remove the password and try again.")
+            
         blocks: list[CanonicalBlock] = []
         raw_pages: list[str] = []
         offset = 0
@@ -43,6 +47,9 @@ class PdfDocumentParser(DocumentParser):
                 offset += len(p) + 1
 
         raw_text = "\n".join(raw_pages)
+        if not raw_text.strip() and len(doc) > 0:
+            raise EmptyDocumentError("No extractable text found. This may be an image-only PDF. Please use a text-based PDF or OCR the file before uploading.")
+            
         title = doc.metadata.get("title")
         if not title:
             title = next((b.cleaned_text for b in blocks if len(b.cleaned_text) > 5), None)

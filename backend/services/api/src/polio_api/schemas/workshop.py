@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from polio_domain.enums import QualityLevel, TurnType, WorkshopStatus
+from polio_domain.enums import QualityLevel, TurnType, VisualApprovalStatus, WorkshopStatus
 
 
 class StarterChoice(BaseModel):
@@ -93,6 +93,14 @@ class WorkshopChoiceRequest(BaseModel):
 
 class WorkshopMessageRequest(BaseModel):
     message: str
+
+class WorkshopSaveDraftRequest(BaseModel):
+    document_content: str
+
+
+class WorkshopUpdateVisualRequest(BaseModel):
+    approval_status: VisualApprovalStatus
+    user_note: str | None = None
 
 
 class QualityLevelInfo(BaseModel):

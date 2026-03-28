@@ -9,6 +9,7 @@ from reportlab.pdfgen import canvas
 
 from polio_api.core.database import engine
 from polio_api.main import app
+from backend.tests.auth_helpers import auth_headers
 
 
 def _build_sample_pdf_bytes() -> bytes:
@@ -74,6 +75,7 @@ def test_grounded_answer_returns_provenance_with_sqlite_fallback(monkeypatch) ->
         "polio_api.services.vector_service.get_reranker_service",
         lambda *args, **kwargs: fake_reranker,
     )
+    headers = auth_headers("grounded-answer-user")
 
     with TestClient(app) as client:
         project_response = client.post(
@@ -83,6 +85,7 @@ def test_grounded_answer_returns_provenance_with_sqlite_fallback(monkeypatch) ->
                 "description": "Ensure provenance-backed answers are returned.",
                 "target_major": "Computer Science",
             },
+            headers=headers,
         )
         assert project_response.status_code == 201
         project_id = project_response.json()["id"]
@@ -90,12 +93,14 @@ def test_grounded_answer_returns_provenance_with_sqlite_fallback(monkeypatch) ->
         upload_response = client.post(
             f"/api/v1/projects/{project_id}/uploads",
             files={"file": ("record.pdf", _build_sample_pdf_bytes(), "application/pdf")},
+            headers=headers,
         )
         assert upload_response.status_code == 201
 
         answer_response = client.post(
             f"/api/v1/projects/{project_id}/grounded-answer",
             json={"question": "What evidence exists about robotics and hackathon work?"},
+            headers=headers,
         )
         assert answer_response.status_code == 200
         payload = answer_response.json()
@@ -121,6 +126,7 @@ def test_grounded_answer_returns_provenance_with_sqlite_fallback(monkeypatch) ->
             "excerpt",
             "lexical_overlap_score",
             "page_number",
+            "provenance_type",
             "rerank_score",
             "score",
             "similarity_score",
@@ -129,6 +135,7 @@ def test_grounded_answer_returns_provenance_with_sqlite_fallback(monkeypatch) ->
         assert payload["provenance"][0]["document_id"]
         assert payload["provenance"][0]["chunk_id"]
         assert payload["provenance"][0]["excerpt"]
+        assert payload["provenance"][0]["provenance_type"] == "STUDENT_RECORD"
         assert payload["provenance"][0]["similarity_score"] is not None
 
 
@@ -147,6 +154,7 @@ def test_grounded_answer_refuses_when_evidence_is_weak_and_keeps_contract(monkey
         "polio_api.services.vector_service.get_reranker_service",
         lambda *args, **kwargs: fake_reranker,
     )
+    headers = auth_headers("grounded-answer-refusal-user")
 
     with TestClient(app) as client:
         project_response = client.post(
@@ -156,6 +164,7 @@ def test_grounded_answer_refuses_when_evidence_is_weak_and_keeps_contract(monkey
                 "description": "Ensure unsupported claims are refused.",
                 "target_major": "Computer Science",
             },
+            headers=headers,
         )
         assert project_response.status_code == 201
         project_id = project_response.json()["id"]
@@ -163,12 +172,14 @@ def test_grounded_answer_refuses_when_evidence_is_weak_and_keeps_contract(monkey
         upload_response = client.post(
             f"/api/v1/projects/{project_id}/uploads",
             files={"file": ("record.pdf", _build_sample_pdf_bytes(), "application/pdf")},
+            headers=headers,
         )
         assert upload_response.status_code == 201
 
         answer_response = client.post(
             f"/api/v1/projects/{project_id}/grounded-answer",
             json={"question": "What evidence proves violin competition leadership?"},
+            headers=headers,
         )
         assert answer_response.status_code == 200
         payload = answer_response.json()

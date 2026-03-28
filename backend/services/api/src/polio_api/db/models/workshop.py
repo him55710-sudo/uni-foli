@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -9,6 +10,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from polio_api.core.database import Base
 from polio_domain.enums import WorkshopStatus, TurnType, QualityLevel
+
+if TYPE_CHECKING:
+    from polio_api.db.models.project import Project
 
 
 json_type = JSON().with_variant(JSONB, "postgresql")
@@ -22,7 +26,7 @@ class WorkshopSession(Base):
     __tablename__ = "workshop_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
     quest_id: Mapped[str | None] = mapped_column(String, ForeignKey("quests.id"), index=True, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default=WorkshopStatus.IDLE.value)
     context_score: Mapped[int] = mapped_column(Integer, default=0)
@@ -33,6 +37,7 @@ class WorkshopSession(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     # Relationships
+    project: Mapped["Project"] = relationship(back_populates="workshop_sessions")
     turns: Mapped[list["WorkshopTurn"]] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
@@ -89,6 +94,8 @@ class DraftArtifact(Base):
     teacher_record_summary_500: Mapped[str | None] = mapped_column(Text(), nullable=True)  # 세특 500자 요약
     student_submission_note: Mapped[str | None] = mapped_column(Text(), nullable=True)   # 학생 제출용 노트
     evidence_map: Mapped[dict | None] = mapped_column(json_type, nullable=True)              # 증거 맵 (설명 가능성)
+    visual_specs: Mapped[list[dict]] = mapped_column(json_type, default=list, nullable=False)
+    math_expressions: Mapped[list[dict]] = mapped_column(json_type, default=list, nullable=False)
 
     render_status: Mapped[str] = mapped_column(String(32), default="pending")  # pending/streaming/completed/failed
     error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)

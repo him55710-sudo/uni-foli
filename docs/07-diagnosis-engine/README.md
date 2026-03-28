@@ -28,6 +28,13 @@ Produce:
 - retrieved official evidence
 - prior draft state
 
+## Async execution note
+
+- Diagnosis runs now persist their own async job state.
+- The diagnosis API remains pollable through the diagnosis run itself, while `/api/v1/jobs/{job_id}` exposes retry and failure details.
+- Cached diagnosis responses are scoped to the owning project and the current evidence fingerprint.
+- The primary diagnosis UX should surface job status, failure reason, retry affordances, and the citations that support the final diagnosis.
+
 ## Explainable scoring
 
 Every score must include:

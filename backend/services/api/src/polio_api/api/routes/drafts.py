@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_current_user, get_db
+from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
 from polio_api.core.llm import get_llm_client
 from polio_api.schemas.draft import DraftCreate, DraftRead
@@ -20,6 +21,15 @@ genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "DUMMY_KEY"))
 
 router = APIRouter()
 chat_router = APIRouter()
+
+BASE_DRAFT_CHAT_INSTRUCTION = """
+당신은 uni folia의 초안 도우미다.
+- 학생이 실제로 했다고 확인되지 않은 활동, 성과, 수치, 인터뷰, 실험 결과를 만들어내지 마라.
+- 학생 작성 내용과 AI 제안을 혼동시키지 말고, 제안은 항상 수정 가능한 후보안으로 제시하라.
+- 근거가 약하면 단정하지 말고 불확실성을 밝히며 다음으로 확인할 안전한 행동을 제안하라.
+- 외부 참고자료는 맥락 설명에만 사용하고 학생 행동의 증거처럼 말하지 마라.
+- 답변은 간결하고 학생이 직접 다듬을 수 있는 문장 중심으로 작성하라.
+""".strip()
 
 
 class ReferenceMaterial(BaseModel):
@@ -67,8 +77,8 @@ def _build_system_instruction(
 
 
     if reference_context:
-        return f"{reference_context}\n\n[학생 맥락]\n{profile_context}\n\n{base_instruction}"
-    return f"[학생 맥락]\n{profile_context}\n\n{base_instruction}"
+        return f"{reference_context}\n\n[학생 맥락]\n{profile_context}\n\n{BASE_DRAFT_CHAT_INSTRUCTION}"
+    return f"[학생 맥락]\n{profile_context}\n\n{BASE_DRAFT_CHAT_INSTRUCTION}"
 
 
 
@@ -99,15 +109,11 @@ def _build_streaming_response(
     async def save_chat_to_db(user_message: str, ai_response: str, user: User) -> None:
         try:
             if project_id:
-                project = get_project(db, project_id)
+                project = get_project(db, project_id, owner_user_id=user.id)
                 if project:
                     append_project_discussion_log(db, project, user_message)
-            print(
-                f"[DB Save] User: {user.id} | Message: {user_message[:30]}... | "
-                f"AI Response: {ai_response[:30]}..."
-            )
-        except Exception as exc:  # noqa: BLE001
-            print(f"[DB Save Error] {exc}")
+        except Exception:  # noqa: BLE001
+            return
 
     async def event_stream():
         full_response = ""
@@ -122,9 +128,9 @@ def _build_streaming_response(
 
             await save_chat_to_db(payload.message, full_response, current_user)
             yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             error_data = json.dumps(
-                {"error": f"AI 생성 도중 오류가 발생했습니다: {str(exc)}"},
+                {"error": "AI 생성 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."},
                 ensure_ascii=False,
             )
             yield f"data: {error_data}\n\n"
@@ -141,8 +147,9 @@ def create_draft_route(
     project_id: str,
     payload: DraftCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> DraftRead:
-    project = get_project(db, project_id)
+    project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
@@ -151,12 +158,27 @@ def create_draft_route(
 
 
 @router.get("/{project_id}/drafts", response_model=list[DraftRead])
-def list_drafts_route(project_id: str, db: Session = Depends(get_db)) -> list[DraftRead]:
+def list_drafts_route(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[DraftRead]:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     return [DraftRead.model_validate(item) for item in list_drafts_for_project(db, project_id)]
 
 
 @router.get("/{project_id}/drafts/{draft_id}", response_model=DraftRead)
-def get_draft_route(project_id: str, draft_id: str, db: Session = Depends(get_db)) -> DraftRead:
+def get_draft_route(
+    project_id: str,
+    draft_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DraftRead:
+    project = get_project(db, project_id, owner_user_id=current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     draft = get_draft(db, draft_id)
     if not draft or draft.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found.")
@@ -169,8 +191,9 @@ async def handle_chat_stream_route(
     payload: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="project_draft_chat", limit=30, window_seconds=300, guest_limit=20)),
 ) -> StreamingResponse:
-    project = get_project(db, project_id)
+    project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
@@ -190,12 +213,13 @@ async def handle_drafts_chat_stream_route(
     payload: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="draft_chat", limit=30, window_seconds=300, guest_limit=20)),
 ) -> StreamingResponse:
     _validate_reference_limit(payload.reference_materials)
 
     target_major: str | None = None
     if payload.project_id:
-        project = get_project(db, payload.project_id)
+        project = get_project(db, payload.project_id, owner_user_id=current_user.id)
         if not project:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
         target_major = project.target_major

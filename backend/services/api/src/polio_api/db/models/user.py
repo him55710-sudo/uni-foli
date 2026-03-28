@@ -30,7 +30,10 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
 
-    projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+    projects: Mapped[list["Project"]] = relationship(
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
     policy_flags: Mapped[list["PolicyFlag"]] = relationship(back_populates="user")
     review_tasks: Mapped[list["ReviewTask"]] = relationship(back_populates="user")
     response_traces: Mapped[list["ResponseTrace"]] = relationship(back_populates="user")

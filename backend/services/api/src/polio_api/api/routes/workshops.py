@@ -27,7 +27,9 @@ from polio_api.schemas.workshop import (
     WorkshopQualityUpdateRequest,
     WorkshopSessionCreate,
     WorkshopSessionResponse,
+    WorkshopSaveDraftRequest,
     WorkshopStateResponse,
+    WorkshopUpdateVisualRequest,
 )
 from polio_api.services.quality_control import (
     build_choice_acknowledgement,
@@ -41,6 +43,7 @@ from polio_api.services.quality_control import (
     normalize_quality_level,
     serialize_quality_level_info,
 )
+from polio_api.services.project_service import get_project
 from polio_api.services.rag_service import RAGConfig
 from polio_api.services.workshop_render_service import SSEEvent, _parse_artifact, _sse_line, stream_render
 from polio_domain.enums import QualityLevel, TurnType, WorkshopStatus
@@ -57,6 +60,23 @@ def _get_session_loaded(workshop_id: str, db: Session) -> WorkshopSession:
             joinedload(WorkshopSession.draft_artifacts),
         )
         .filter(WorkshopSession.id == workshop_id)
+    )
+    session = db.execute(stmt).unique().scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workshop session not found.")
+    return session
+
+
+def _get_session_loaded_for_user(workshop_id: str, db: Session, owner_user_id: str) -> WorkshopSession:
+    stmt = (
+        select(WorkshopSession)
+        .join(Project, Project.id == WorkshopSession.project_id)
+        .options(
+            joinedload(WorkshopSession.turns),
+            joinedload(WorkshopSession.pinned_references),
+            joinedload(WorkshopSession.draft_artifacts),
+        )
+        .where(WorkshopSession.id == workshop_id, Project.owner_user_id == owner_user_id)
     )
     session = db.execute(stmt).unique().scalar_one_or_none()
     if session is None:
@@ -174,8 +194,7 @@ def create_workshop_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkshopStateResponse:
-    del current_user
-    project = db.execute(select(Project).filter(Project.id == payload.project_id)).scalar_one_or_none()
+    project = get_project(db, payload.project_id, owner_user_id=current_user.id)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
@@ -211,8 +230,7 @@ def get_workshop_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkshopStateResponse:
-    del current_user
-    session = _get_session_loaded(workshop_id, db)
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     _sync_session_status(session)
     db.commit()
     return _build_state_response(session=session, db=db)
@@ -225,8 +243,7 @@ def update_quality_level_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkshopStateResponse:
-    del current_user
-    session = _get_session_loaded(workshop_id, db)
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     session.quality_level = normalize_quality_level(payload.quality_level)
     _sync_session_status(session)
     db.commit()
@@ -239,6 +256,124 @@ def update_quality_level_route(
         message=f"[{profile.label}] 수준을 변경했습니다. starter/follow-up 제안과 렌더 조건도 함께 조정됩니다.",
     )
 
+@router.put("/{workshop_id}/drafts/latest", response_model=dict)
+def update_latest_draft_content(
+    workshop_id: str,
+    payload: WorkshopSaveDraftRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
+    latest = _latest_artifact(session)
+    if latest:
+        latest.report_markdown = payload.document_content
+        latest.visual_specs = []
+        latest.math_expressions = []
+        db.commit()
+    else:
+        # Create an artifact manually so the session has a persistence layer for the user's manual drafts
+        artifact = DraftArtifact(
+            session_id=session.id,
+            render_status="completed",
+            report_markdown=payload.document_content,
+            visual_specs=[],
+            math_expressions=[],
+        )
+        db.add(artifact)
+        db.commit()
+    return {"status": "ok", "message": "Draft auto-saved successfully."}
+
+
+@router.patch("/{workshop_id}/artifacts/{artifact_id}/visuals/{visual_id}", response_model=WorkshopStateResponse)
+def update_visual_approval_route(
+    workshop_id: str,
+    artifact_id: str,
+    visual_id: str,
+    payload: WorkshopUpdateVisualRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkshopStateResponse:
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
+    artifact = db.execute(
+        select(DraftArtifact).filter(DraftArtifact.id == artifact_id, DraftArtifact.session_id == workshop_id)
+    ).unique().scalar_one_or_none()
+    
+    if not artifact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found.")
+
+    # Update in visual_specs
+    updated = False
+    new_visuals = []
+    for spec in (artifact.visual_specs or []):
+        if spec.get("id") == visual_id:
+            spec["approval_status"] = payload.approval_status.value
+            if payload.user_note:
+                spec["user_note"] = payload.user_note
+            updated = True
+        new_visuals.append(spec)
+    
+    if updated:
+        artifact.visual_specs = new_visuals
+        # Sync math expressions if it's an equation
+        for expr in (artifact.math_expressions or []):
+            if expr.get("id") == visual_id:
+                 expr["approval_status"] = payload.approval_status.value
+
+    db.commit()
+    db.refresh(artifact)
+    return _build_state_response(session=session, db=db, message="시각 자료의 승인 상태를 업데이트했습니다.")
+
+
+@router.post("/{workshop_id}/artifacts/{artifact_id}/visuals/{visual_id}/replace", response_model=WorkshopStateResponse)
+def replace_visual_route(
+    workshop_id: str,
+    artifact_id: str,
+    visual_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkshopStateResponse:
+    from polio_api.services.visual_support_service import regenerate_visual_variant
+
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
+    artifact = db.execute(
+        select(DraftArtifact).filter(DraftArtifact.id == artifact_id, DraftArtifact.session_id == workshop_id)
+    ).unique().scalar_one_or_none()
+    
+    if not artifact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found.")
+
+    # Call service to find/generate a variant
+    variant = regenerate_visual_variant(
+        old_visual_id=visual_id,
+        original_specs=artifact.visual_specs or [],
+        report_markdown=artifact.report_markdown or "",
+        evidence_map=artifact.evidence_map,
+        advanced_mode=True
+    )
+
+    if not variant:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No suitable replacement found.")
+
+    # Update artifact: mark old as REPLACED and add the new one
+    new_visuals = []
+    for spec in (artifact.visual_specs or []):
+        if spec.get("id") == visual_id:
+            spec["approval_status"] = "replaced"
+        new_visuals.append(spec)
+    
+    new_visuals.append(variant)
+    artifact.visual_specs = new_visuals
+    
+    # Also handle math_expressions if it's an equation
+    if variant["type"] == "equation":
+        new_math = list(artifact.math_expressions or [])
+        new_math.append(variant)
+        artifact.math_expressions = new_math
+
+    db.commit()
+    db.refresh(artifact)
+    return _build_state_response(session=session, db=db, message="새로운 시각적 대안을 생성했습니다.")
+
 
 @router.post("/{workshop_id}/choices", response_model=WorkshopStateResponse)
 def record_choice_route(
@@ -247,8 +382,7 @@ def record_choice_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkshopStateResponse:
-    del current_user
-    session = _get_session_loaded(workshop_id, db)
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     turn_type = TurnType.STARTER.value if not session.turns else TurnType.FOLLOW_UP.value
     query_text = payload.label
     if payload.payload and payload.payload.get("prompt"):
@@ -283,8 +417,7 @@ def record_message_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkshopStateResponse:
-    del current_user
-    session = _get_session_loaded(workshop_id, db)
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     followup_choices = build_followup_choices(quality_level=session.quality_level, turn_count=len(session.turns) + 1)
     next_label = followup_choices[0]["label"] if followup_choices else None
     ai_response = build_message_acknowledgement(
@@ -316,8 +449,7 @@ def pin_reference_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkshopStateResponse:
-    del current_user
-    session = _get_session_loaded(workshop_id, db)
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
 
     reference = PinnedReference(
         session_id=workshop_id,
@@ -346,10 +478,7 @@ def create_stream_token(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> StreamTokenResponse:
-    del current_user
-    session = db.execute(select(WorkshopSession).filter(WorkshopSession.id == workshop_id)).scalar_one_or_none()
-    if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
 
     token = secrets.token_urlsafe(48)
     session.stream_token = token
@@ -364,8 +493,7 @@ def trigger_render(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
-    del current_user
-    session = _get_session_loaded(workshop_id, db)
+    session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     requirements = build_render_requirements(
         quality_level=session.quality_level,
         context_score=session.context_score,
@@ -437,8 +565,8 @@ async def sse_events(
                     "teacher_record_summary_500": artifact.teacher_record_summary_500,
                     "student_submission_note": artifact.student_submission_note,
                     "evidence_map": artifact.evidence_map or {},
-                    "visual_specs": [],
-                    "math_expressions": [],
+                    "visual_specs": artifact.visual_specs or [],
+                    "math_expressions": artifact.math_expressions or [],
                     "safety": {
                         "score": artifact.safety_score,
                         "flags": artifact.safety_flags or {},
@@ -512,6 +640,8 @@ async def sse_events(
                 artifact_db.teacher_record_summary_500 = collected.get("teacher_record_summary_500", "")
                 artifact_db.student_submission_note = collected.get("student_submission_note", "")
                 artifact_db.evidence_map = collected.get("evidence_map", {})
+                artifact_db.visual_specs = collected.get("visual_specs", [])
+                artifact_db.math_expressions = collected.get("math_expressions", [])
                 artifact_db.render_status = "completed"
                 artifact_db.quality_level_applied = str(
                     safety_meta.get("quality_level_applied") or quality_control_meta.get("applied_level") or full_session.quality_level

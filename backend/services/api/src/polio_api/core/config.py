@@ -4,7 +4,7 @@ from functools import lru_cache
 import re
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from polio_shared.paths import find_project_root
 
@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     app_env: str = "local"
     app_host: str = "127.0.0.1"
     app_port: int = 8000
-    app_debug: bool = True
+    app_debug: bool = False
     api_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./storage/runtime/polio.db?check_same_thread=False&timeout=30"
     database_echo: bool = False
@@ -24,8 +24,13 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3001"]
     )
     cors_origin_regex: str | None = None
+    cors_allow_credentials: bool = True
     allow_inline_render: bool = True
     auto_ingest_uploads: bool = True
+    upload_max_bytes: int = 15 * 1024 * 1024
+    upload_allowed_extensions: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [".pdf", ".txt", ".md"]
+    )
     upload_chunk_size_chars: int = 1200
     upload_chunk_overlap_chars: int = 180
     opendataloader_enabled: bool = True
@@ -44,6 +49,14 @@ class Settings(BaseSettings):
     semantic_scholar_timeout_seconds: float = 10.0
     semantic_scholar_api_key: str | None = None
     semantic_scholar_max_limit: int = 10
+    llm_cache_enabled: bool = True
+    llm_cache_ttl_seconds: int = 21600
+    llm_cache_version: str = "2026-03-29"
+    async_job_max_retries: int = 2
+    async_job_retry_delay_seconds: int = 15
+    async_job_stale_after_seconds: int = 300
+    async_jobs_inline_dispatch: bool = True
+    allow_inline_job_processing: bool = True
     
     # Social Auth
     kakao_client_id: str = "DUMMY_KAKAO_ID"
@@ -60,8 +73,11 @@ class Settings(BaseSettings):
     auth_jwt_issuer: str | None = None
     auth_jwt_audience: str | None = None
     auth_token_leeway_seconds: int = 30
-    auth_allow_local_dev_bypass: bool = True
+    auth_allow_local_dev_bypass: bool = False
     auth_firebase_fallback_enabled: bool = True
+    auth_social_login_enabled: bool = False
+    auth_social_state_secret: str | None = None
+    auth_social_state_ttl_seconds: int = 600
 
     # LLM Settings
     llm_provider: str = Field(default="gemini", description="LLM provider: 'gemini' or 'ollama'")
@@ -70,7 +86,10 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(
+            str(find_project_root() / ".env"),
+            str(find_project_root().parent / ".env"),
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -83,6 +102,30 @@ class Settings(BaseSettings):
             return [item.strip() for item in re.split(r"[,\s;]+", value) if item.strip()]
         return value
 
+    @field_validator("upload_allowed_extensions", mode="before")
+    @classmethod
+    def split_upload_allowed_extensions(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in re.split(r"[,\s;]+", value) if item.strip()]
+        return value
+
+    @field_validator("upload_allowed_extensions", mode="after")
+    @classmethod
+    def normalize_upload_allowed_extensions(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            cleaned = item.strip().lower()
+            if not cleaned:
+                continue
+            if not cleaned.startswith("."):
+                cleaned = f".{cleaned}"
+            if cleaned in seen:
+                continue
+            seen.add(cleaned)
+            normalized.append(cleaned)
+        return normalized or [".pdf", ".txt", ".md"]
+
     @field_validator("database_url", mode="after")
     @classmethod
     def normalize_sqlite_path(cls, value: str) -> str:
@@ -92,6 +135,31 @@ class Settings(BaseSettings):
             absolute_path = (find_project_root() / relative_path).as_posix()
             return f"sqlite:///{absolute_path}"
         return value
+
+    @model_validator(mode="after")
+    def validate_security_posture(self) -> "Settings":
+        normalized_env = (self.app_env or "").strip().lower()
+        object.__setattr__(self, "app_env", normalized_env or "production")
+
+        if self.upload_max_bytes <= 0:
+            raise ValueError("UPLOAD_MAX_BYTES must be greater than zero.")
+
+        if self.auth_social_login_enabled and not self.auth_social_state_secret:
+            raise ValueError("AUTH_SOCIAL_STATE_SECRET is required when AUTH_SOCIAL_LOGIN_ENABLED=true.")
+
+        if self.app_env != "local":
+            if self.app_debug:
+                raise ValueError("APP_DEBUG must be false outside local development.")
+            if self.auth_allow_local_dev_bypass:
+                raise ValueError("AUTH_ALLOW_LOCAL_DEV_BYPASS can only be enabled when APP_ENV=local.")
+            if self.cors_allow_credentials and "*" in self.cors_origins:
+                raise ValueError("Wildcard CORS origins cannot be combined with credentialed requests.")
+            if self.cors_allow_credentials and self.cors_origin_regex:
+                normalized_regex = self.cors_origin_regex.strip()
+                if normalized_regex in {"*", ".*", "^.*$", "https?://.*", "https?://.*$"}:
+                    raise ValueError("Wildcard CORS origin regex is not allowed with credentials outside local development.")
+
+        return self
 
 
 @lru_cache(maxsize=1)

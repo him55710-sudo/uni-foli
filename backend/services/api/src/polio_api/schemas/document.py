@@ -22,6 +22,9 @@ class ParsedDocumentSummary(BaseModel):
     parse_attempts: int
     last_error: str | None
     can_retry: bool
+    latest_async_job_id: str | None
+    latest_async_job_status: str | None
+    latest_async_job_error: str | None
     page_count: int
     word_count: int
     parse_started_at: datetime | None

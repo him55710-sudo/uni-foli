@@ -1,8 +1,29 @@
 import axios, { AxiosHeaders, type AxiosRequestConfig } from 'axios';
 import { auth } from './firebase';
 
+function normalizeBaseUrl(value: string) {
+  return value.replace(/\/+$/, '');
+}
+
+export function resolveApiBaseUrl() {
+  const configured = import.meta.env.VITE_API_URL;
+  if (configured && configured.trim()) {
+    return normalizeBaseUrl(configured.trim());
+  }
+
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname, origin } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `${protocol}//${hostname}:8000`;
+    }
+    return normalizeBaseUrl(origin);
+  }
+
+  return 'http://localhost:8000';
+}
+
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: resolveApiBaseUrl(),
 });
 
 client.interceptors.request.use(
@@ -32,6 +53,9 @@ export const api = {
   },
   patch<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig) {
     return request<T>({ ...config, method: 'PATCH', url, data });
+  },
+  put<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    return request<T>({ ...config, method: 'PUT', url, data });
   },
 };
 

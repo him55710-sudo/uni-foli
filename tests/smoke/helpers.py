@@ -29,6 +29,7 @@ def make_client(tmp_path: Path) -> TestClient:
     db_path = tmp_path / "polio-smoke.db"
     os.environ["APP_ENV"] = "local"
     os.environ["APP_DEBUG"] = "false"
+    os.environ["AUTH_ALLOW_LOCAL_DEV_BYPASS"] = "true"
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
     os.environ["DATABASE_AUTO_CREATE_TABLES"] = "true"
     os.environ["POSTGRES_ENABLE_PGVECTOR"] = "false"

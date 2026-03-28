@@ -7,6 +7,15 @@ The app should not maintain separate writing logic for every output format.
 Create and store one structured document model.
 All exports should be projections of that model.
 
+## Current visual-support slice
+
+The current workshop artifact may persist structured visual blocks alongside markdown:
+
+- `visual_specs` for tables, charts, diagrams, equations, or future external-source visuals
+- `math_expressions` as a legacy-compatible equation preview field
+
+Visuals should be planned from section context and grounding evidence. If no strong visual is justified, the artifact should keep no visual support block.
+
 ## Export order
 
 ### Phase 1
@@ -25,6 +34,9 @@ All exports should be projections of that model.
 ### Avoid
 
 - binary `.hwp` as a required early target
+- decorative visuals that do not improve comprehension
+- fake quantitative charts derived from unsupported numbers
+- hidden provenance for generated or external visuals
 
 ## Render service design
 

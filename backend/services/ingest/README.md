@@ -22,10 +22,18 @@ Normalization pipeline for user uploads and source materials.
 
 - `parsed_documents`
 - `document_chunks`
+- `research_documents`
+- `research_chunks`
 
 ## Special concern
 
 Everything here must preserve provenance and parser confidence.
+
+## Provenance boundary
+
+- Student uploads stay in `parsed_documents` / `document_chunks` and are labeled `STUDENT_RECORD`.
+- External research stays in `research_documents` / `research_chunks` and is labeled `EXTERNAL_RESEARCH`.
+- Retrieval must preserve that distinction all the way to prompt assembly and output provenance.
 
 ## Current PDF path
 

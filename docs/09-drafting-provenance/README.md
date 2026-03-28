@@ -10,6 +10,12 @@ A draft block should always know:
 - what source evidence supports it
 - which revision created it
 
+## Evidence boundary
+
+- `STUDENT_RECORD` evidence can support statements about student actions, experiences, and outcomes.
+- `EXTERNAL_RESEARCH` evidence can support context, comparative framing, trend interpretation, and recommendation rationale.
+- `EXTERNAL_RESEARCH` must never be rewritten as if the student personally did it.
+
 ## Canonical block model
 
 Suggested fields per block:
@@ -29,6 +35,15 @@ Suggested fields per block:
 - evidence drawer
 - undo and restore
 - export-time provenance stripping or inclusion by policy
+
+## Visual support rule
+
+If a draft gains a chart, table, diagram, equation block, or external image:
+
+- the visual must carry its own provenance and selection rationale
+- generated visuals must stay tied to the report section they support
+- external-source visuals must stay visibly distinct from generated visuals
+- weak or decorative visuals should be dropped instead of forced into the draft
 
 ## Why this matters
 

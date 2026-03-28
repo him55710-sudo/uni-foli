@@ -39,24 +39,17 @@ def update_user_goals(
     admission_type: str | None,
     interest_universities: list[str] | None = None,
 ) -> User:
-    print(f"DEBUG: update_user_goals for user {user.id}")
     if target_university is not None:
-        print(f"DEBUG: updating target_university to {target_university}")
         user.target_university = target_university.strip()
     if target_major is not None:
-        print(f"DEBUG: updating target_major to {target_major}")
         user.target_major = target_major.strip()
     if admission_type is not None:
         user.admission_type = admission_type.strip()
     if interest_universities is not None:
-        print(f"DEBUG: updating interest_universities to {interest_universities}")
         user.interest_universities = _normalize_interest_universities(interest_universities, user.target_university)
-    
-    print(f"DEBUG: Before commit - user.target_university={user.target_university}, user.target_major={user.target_major}")
     db.add(user)
     db.commit()
     db.refresh(user)
-    print(f"DEBUG: After commit - user.target_university={user.target_university}, user.target_major={user.target_major}")
     return user
 
 

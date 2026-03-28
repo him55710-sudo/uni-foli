@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import json
 import os
-from typing import Any, Type, TypeVar
+from typing import Any, AsyncIterator, Type, TypeVar
 
 import google.generativeai as genai
 from openai import AsyncOpenAI
@@ -79,9 +79,12 @@ class GeminiClient(LLMClient):
             ),
         )
         async for chunk in response_stream:
-            token = getattr(chunk, "text", None)
-            if token:
-                yield token
+            try:
+                if chunk.text:
+                    yield chunk.text
+            except (ValueError, AttributeError):
+                # Handle cases where chunk.text is blocked by safety filters or not available
+                continue
 
 
 class OllamaClient(LLMClient):

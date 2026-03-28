@@ -14,12 +14,13 @@ export function AuthCallback() {
 
   useEffect(() => {
     const code = searchParams.get('code');
-    if (code && provider) {
-      handleSocialLogin(provider, code);
+    const state = searchParams.get('state');
+    if (code && state && provider) {
+      handleSocialLogin(provider, code, state);
     }
   }, [provider, searchParams]);
 
-  const handleSocialLogin = async (provider: string, code: string) => {
+  const handleSocialLogin = async (provider: string, code: string, state: string) => {
     try {
       if (!auth || !isFirebaseConfigured) {
         throw new Error('Social login requires Firebase configuration.');
@@ -28,6 +29,7 @@ export function AuthCallback() {
       const response = await api.post('/api/v1/auth/social', {
         provider,
         code,
+        state,
       });
 
       const { firebase_custom_token } = response;

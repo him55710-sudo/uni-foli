@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_current_user, get_db
+from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
 from polio_api.schemas.upload_asset import UploadAssetRead
 from polio_api.services.project_service import get_project
-from polio_api.services.upload_service import list_uploads_for_project, store_upload
+from polio_api.services.upload_service import UploadValidationError, list_uploads_for_project, store_upload
 
 router = APIRouter()
 
@@ -20,12 +21,16 @@ async def create_upload_route(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="project_uploads", limit=20, window_seconds=300, guest_limit=3)),
 ) -> UploadAssetRead:
     project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
-    upload = await store_upload(db, project_id=project_id, upload=file)
+    try:
+        upload = await store_upload(db, project_id=project_id, upload=file)
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return UploadAssetRead.model_validate(upload)
 
 

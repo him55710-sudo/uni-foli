@@ -13,8 +13,6 @@ class RenderJobCreate(BaseModel):
 
 
 class RenderJobRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: str
     project_id: str
     draft_id: str
@@ -23,6 +21,12 @@ class RenderJobRead(BaseModel):
     output_path: str | None
     result_message: str | None
     requested_by: str | None
+    async_job_id: str | None = None
+    async_job_status: str | None = None
+    retry_count: int = 0
+    max_retries: int = 0
+    failure_reason: str | None = None
+    dead_lettered_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

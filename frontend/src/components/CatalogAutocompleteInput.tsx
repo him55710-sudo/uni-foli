@@ -12,6 +12,8 @@ interface CatalogAutocompleteInputProps {
   emptyText?: string;
   disabled?: boolean;
   autoFocus?: boolean;
+  inputTestId?: string;
+  suggestionTestIdPrefix?: string;
 }
 
 export function CatalogAutocompleteInput({
@@ -25,6 +27,8 @@ export function CatalogAutocompleteInput({
   emptyText,
   disabled = false,
   autoFocus = false,
+  inputTestId,
+  suggestionTestIdPrefix,
 }: CatalogAutocompleteInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const shouldShowPanel = isOpen && (suggestions.length > 0 || (value.trim().length > 0 && emptyText));
@@ -37,6 +41,7 @@ export function CatalogAutocompleteInput({
         value={value}
         disabled={disabled}
         autoFocus={autoFocus}
+        data-testid={inputTestId}
         placeholder={placeholder}
         onFocus={() => setIsOpen(true)}
         onBlur={() => {
@@ -54,10 +59,11 @@ export function CatalogAutocompleteInput({
       {shouldShowPanel ? (
         <div className="absolute left-0 right-0 z-30 mt-3 max-h-72 overflow-y-auto rounded-3xl border border-slate-200 bg-white p-2 shadow-2xl">
           {suggestions.length ? (
-            suggestions.map((suggestion) => (
+            suggestions.map((suggestion, index) => (
               <button
                 key={suggestion.id}
                 type="button"
+                data-testid={suggestionTestIdPrefix ? `${suggestionTestIdPrefix}-${index}` : undefined}
                 onMouseDown={(event) => {
                   event.preventDefault();
                   onSelect(suggestion);

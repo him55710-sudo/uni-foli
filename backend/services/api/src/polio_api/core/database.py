@@ -22,15 +22,19 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 def initialize_database() -> None:
     from polio_api.db.models import (  # noqa: F401
+        async_job,
         blueprint,
         citation,
         diagnosis_run,
         document_chunk,
         draft,
+        llm_cache_entry,
         parsed_document,
         policy_flag,
         project,
         quest,
+        research_chunk,
+        research_document,
         render_job,
         response_trace,
         review_task,
@@ -80,6 +84,14 @@ def _apply_schema_evolution() -> None:
             "safety_flags": "safety_flags JSON",
             "quality_downgraded": "quality_downgraded BOOLEAN DEFAULT 0 NOT NULL",
             "quality_control_meta": "quality_control_meta JSON",
+            "visual_specs": "visual_specs JSON DEFAULT '[]' NOT NULL",
+            "math_expressions": "math_expressions JSON DEFAULT '[]' NOT NULL",
+        },
+        "research_documents": {
+            "source_classification": "source_classification VARCHAR(32) DEFAULT 'EXPERT_COMMENTARY' NOT NULL",
+            "trust_rank": "trust_rank INTEGER DEFAULT 0 NOT NULL",
+            "usage_note": "usage_note TEXT",
+            "copyright_note": "copyright_note TEXT",
         },
     }
 

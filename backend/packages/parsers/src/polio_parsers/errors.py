@@ -7,3 +7,11 @@ class ParserError(RuntimeError):
 
 class ParserNotFoundError(ParserError):
     """Raised when no parser is available for a payload."""
+
+
+class EmptyDocumentError(ParserError):
+    """Raised when the document contains no extractable text (e.g., image-only PDF)."""
+
+
+class EncryptedDocumentError(ParserError):
+    """Raised when the document is password protected."""

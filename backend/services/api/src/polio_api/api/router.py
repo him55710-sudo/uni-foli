@@ -9,6 +9,7 @@ from polio_api.api.routes import (
     drafts,
     global_documents,
     health,
+    jobs,
     projects,
     quests,
     render_jobs,
@@ -27,6 +28,7 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(drafts.chat_router, prefix="/drafts", tags=["chat"])
 api_router.include_router(research.router, prefix="/research", tags=["research"])
+api_router.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 api_router.include_router(uploads.router, prefix="/projects", tags=["uploads"])
 api_router.include_router(documents.router, prefix="/projects", tags=["documents"])
 api_router.include_router(global_documents.router, prefix="/documents", tags=["documents"])

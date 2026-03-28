@@ -16,6 +16,15 @@ This keeps transactional records and embeddings in one system.
 - `evidence_cards`
 - `retrieval_runs`
 
+## Current implementation note
+
+The current backend now keeps two retrieval stores with explicit provenance:
+
+- `parsed_documents` + `document_chunks` for `STUDENT_RECORD`
+- `research_documents` + `research_chunks` for `EXTERNAL_RESEARCH`
+
+RAG prompt assembly must preserve that boundary instead of flattening everything into one undifferentiated corpus.
+
 ## Chunking rules
 
 - chunk by semantic section, not fixed length only
@@ -29,6 +38,8 @@ This keeps transactional records and embeddings in one system.
 - filter by freshness when the topic is time-sensitive
 - run hybrid retrieval: metadata filtering + semantic search
 - rerank for citation usefulness, not only similarity
+- keep `OFFICIAL_SOURCE` ahead of commentary when relevance is comparable
+- never let `COMMUNITY_POST` or `SCRAPED_OPINION` override official guidance in prompt assembly
 
 ## Output shape for downstream services
 

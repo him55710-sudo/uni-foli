@@ -14,9 +14,10 @@ from polio_api.services.quality_control import (
 )
 from polio_api.services.safety_guard import SafetyFlag, run_safety_check
 from polio_api.services.workshop_render_service import _build_safe_artifact
+from backend.tests.auth_helpers import auth_headers
 
 
-def _create_project(client: TestClient) -> str:
+def _create_project(client: TestClient, headers: dict[str, str]) -> str:
     response = client.post(
         "/api/v1/projects",
         json={
@@ -25,12 +26,13 @@ def _create_project(client: TestClient) -> str:
             "target_university": "Quality University",
             "target_major": "Education",
         },
+        headers=headers,
     )
     assert response.status_code == 201
     return response.json()["id"]
 
 
-def _post_long_message(client: TestClient, workshop_id: str, index: int) -> None:
+def _post_long_message(client: TestClient, workshop_id: str, index: int, headers: dict[str, str]) -> None:
     message = (
         f"{index}번째 워크샵 입력입니다. 학생이 실제로 해본 활동과 교과 개념 연결을 길게 설명해서 "
         f"현재 수준에서 가능한 탐구 맥락을 충분히 확보합니다. "
@@ -39,6 +41,7 @@ def _post_long_message(client: TestClient, workshop_id: str, index: int) -> None
     response = client.post(
         f"/api/v1/workshops/{workshop_id}/messages",
         json={"message": message},
+        headers=headers,
     )
     assert response.status_code == 200
 
@@ -57,11 +60,13 @@ def _extract_event_payload(raw_stream: str, event_name: str) -> dict[str, object
 
 def test_workshop_quality_level_changes_choices_and_requirements() -> None:
     with TestClient(app) as client:
-        project_id = _create_project(client)
+        headers = auth_headers("workshop-quality-user")
+        project_id = _create_project(client, headers)
 
         create_response = client.post(
             "/api/v1/workshops",
             json={"project_id": project_id, "quality_level": "low"},
+            headers=headers,
         )
         assert create_response.status_code == 201
         create_payload = create_response.json()
@@ -74,6 +79,7 @@ def test_workshop_quality_level_changes_choices_and_requirements() -> None:
         update_response = client.patch(
             f"/api/v1/workshops/{workshop_id}/quality-level",
             json={"quality_level": "high"},
+            headers=headers,
         )
         assert update_response.status_code == 200
         update_payload = update_response.json()
@@ -85,18 +91,24 @@ def test_workshop_quality_level_changes_choices_and_requirements() -> None:
 
 def test_high_quality_render_requires_reference_before_rendering() -> None:
     with TestClient(app) as client:
-        project_id = _create_project(client)
+        headers = auth_headers("workshop-high-render-user")
+        project_id = _create_project(client, headers)
         workshop_response = client.post(
             "/api/v1/workshops",
             json={"project_id": project_id, "quality_level": "high"},
+            headers=headers,
         )
         assert workshop_response.status_code == 201
         workshop_id = workshop_response.json()["session"]["id"]
 
         for index in range(5):
-            _post_long_message(client, workshop_id, index)
+            _post_long_message(client, workshop_id, index, headers)
 
-        render_response = client.post(f"/api/v1/workshops/{workshop_id}/render", json={"force": False})
+        render_response = client.post(
+            f"/api/v1/workshops/{workshop_id}/render",
+            json={"force": False},
+            headers=headers,
+        )
         assert render_response.status_code == 422
         detail = render_response.json()["detail"]
         assert detail["minimum_reference_count"] == 1
@@ -105,22 +117,28 @@ def test_high_quality_render_requires_reference_before_rendering() -> None:
 
 def test_workshop_render_persists_quality_control_metadata() -> None:
     with TestClient(app) as client:
-        project_id = _create_project(client)
+        headers = auth_headers("workshop-render-user")
+        project_id = _create_project(client, headers)
         workshop_response = client.post(
             "/api/v1/workshops",
             json={"project_id": project_id, "quality_level": "mid"},
+            headers=headers,
         )
         assert workshop_response.status_code == 201
         workshop_id = workshop_response.json()["session"]["id"]
 
         for index in range(4):
-            _post_long_message(client, workshop_id, index)
+            _post_long_message(client, workshop_id, index, headers)
 
-        render_response = client.post(f"/api/v1/workshops/{workshop_id}/render", json={"force": False})
+        render_response = client.post(
+            f"/api/v1/workshops/{workshop_id}/render",
+            json={"force": False},
+            headers=headers,
+        )
         assert render_response.status_code == 200
         artifact_id = render_response.json()["artifact_id"]
 
-        token_response = client.post(f"/api/v1/workshops/{workshop_id}/stream-token")
+        token_response = client.post(f"/api/v1/workshops/{workshop_id}/stream-token", headers=headers)
         assert token_response.status_code == 200
         stream_token = token_response.json()["stream_token"]
 
@@ -136,7 +154,7 @@ def test_workshop_render_persists_quality_control_metadata() -> None:
         assert artifact_payload["quality_control"]["requested_level"] == "mid"
         assert artifact_payload["quality_control"]["applied_level"] in {"low", "mid"}
 
-        workshop_state = client.get(f"/api/v1/workshops/{workshop_id}")
+        workshop_state = client.get(f"/api/v1/workshops/{workshop_id}", headers=headers)
         assert workshop_state.status_code == 200
         latest_artifact = workshop_state.json()["latest_artifact"]
         assert latest_artifact["quality_control_meta"]["requested_level"] == "mid"

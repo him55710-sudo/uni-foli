@@ -308,7 +308,7 @@ export function Record() {
                 : 'border-blue-200 bg-white hover:border-blue-400 hover:bg-slate-50'
             } ${isBusy ? 'cursor-not-allowed opacity-75' : ''}`}
           >
-            <input {...getInputProps()} />
+            <input {...getInputProps({ 'aria-label': 'Upload student record PDF' })} />
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-start gap-4">
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/20">
@@ -479,7 +479,21 @@ export function Record() {
                 <h2 className="text-lg font-extrabold text-amber-900">경고 및 복구 상세 정보</h2>
               </div>
               <div className="mt-4 space-y-3 text-sm font-medium text-amber-900">
-                {document?.last_error ? <p>{document.last_error}</p> : null}
+                {document?.status === 'failed' && (
+                  <div className="mb-4 rounded-xl bg-white/50 p-4 ring-1 ring-amber-200">
+                    <p className="font-extrabold text-amber-600">💡 왜 실패했나요?</p>
+                    <ul className="mt-2 list-inside list-disc space-y-1.5 text-xs text-amber-800">
+                      <li>파일이 비밀번호로 보호되어 있어 내용을 읽을 수 없는 경우</li>
+                      <li>텍스트가 없는 이미지 전용 PDF인 경우 (OCR 필요)</li>
+                      <li>파일이 손상되었거나 지원되지 않는 PDF 버전인 경우</li>
+                    </ul>
+                  </div>
+                )}
+                {document?.last_error ? (
+                  <p className="rounded-lg bg-red-50 px-3 py-2 text-red-700 ring-1 ring-red-100">
+                    {document.last_error}
+                  </p>
+                ) : null}
                 {warnings.map((warning) => (
                   <p key={warning}>{warning}</p>
                 ))}

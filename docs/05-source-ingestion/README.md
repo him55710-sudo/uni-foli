@@ -22,13 +22,23 @@ Rank sources before indexing them.
 6. index for retrieval
 7. freshness monitoring
 
+## Current repo boundary
+
+- Student uploads and external research are stored separately.
+- External research is indexed for RAG as `EXTERNAL_RESEARCH`.
+- Student records remain the only admissible proof for student actions and achievements.
+- External research can support industry context, trend analysis, or recommendation rationale only.
+- In the current API, `source_type` means the ingestion format (`web_article`, `youtube_transcript`, `paper`, `pdf_document`).
+- Trust policy is carried separately as `source_classification` so the repo does not overload one field with two meanings.
+
 ## Required metadata
 
 - source URL
 - publisher
 - publication date
 - fetched date
-- source rank
+- source classification
+- trust rank
 - content type
 - usage notes
 - jurisdiction or target school

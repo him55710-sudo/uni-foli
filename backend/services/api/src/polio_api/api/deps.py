@@ -59,8 +59,6 @@ def _get_jwt_key(settings) -> str | None:
         return settings.auth_jwt_public_key
     if settings.auth_jwt_secret:
         return settings.auth_jwt_secret
-    if settings.app_env == "local":
-        return LOCAL_DEV_JWT_SECRET
     return None
 
 
@@ -189,9 +187,10 @@ def get_current_user(
 ) -> User:
     from polio_api.core.config import get_settings
     settings = get_settings()
+    local_bypass_enabled = settings.app_env == "local" and settings.auth_allow_local_dev_bypass
 
     if not credentials:
-        if settings.app_env == "local" and settings.auth_allow_local_dev_bypass:
+        if local_bypass_enabled:
             user = _get_or_create_local_dev_user(db)
             request.state.current_user_id = user.id
             request.state.tenant_user_id = user.id
@@ -213,13 +212,6 @@ def get_current_user(
                 raise
             claims = _decode_firebase_claims(token)
     except HTTPException:
-        # If in local dev and bypass is allowed, fallback to local test user
-        if settings.app_env == "local" and settings.auth_allow_local_dev_bypass:
-            user = _get_or_create_local_dev_user(db)
-            request.state.current_user_id = user.id
-            request.state.tenant_user_id = user.id
-            request.state.auth_claims = {"sub": user.firebase_uid, "email": user.email, "name": user.name}
-            return user
         raise
 
     user = _sync_user_from_claims(db, claims)

@@ -8,6 +8,7 @@ from polio_api.db.models.project import Project
 from polio_api.db.models.render_job import RenderJob
 from polio_api.schemas.render_job import RenderFormatInfo, RenderJobCreate
 from polio_api.services.project_service import list_project_discussion_log
+from polio_domain.enums import AsyncJobType
 from polio_domain.enums import RenderFormat, RenderStatus
 from polio_render.dispatcher import dispatch_render
 from polio_render.models import RenderBuildContext
@@ -49,15 +50,40 @@ def create_render_job(db: Session, payload: RenderJobCreate) -> RenderJob | None
     db.add(job)
     db.commit()
     db.refresh(job)
+    from polio_api.services.async_job_service import create_async_job
+
+    create_async_job(
+        db,
+        job_type=AsyncJobType.RENDER.value,
+        resource_type="render_job",
+        resource_id=job.id,
+        project_id=job.project_id,
+        payload={"render_job_id": job.id},
+    )
     return job
 
 
-def list_render_jobs(db: Session) -> list[RenderJob]:
-    return list(db.scalars(select(RenderJob).order_by(RenderJob.created_at.desc())))
+def list_render_jobs_for_owner(db: Session, owner_user_id: str) -> list[RenderJob]:
+    stmt = (
+        select(RenderJob)
+        .join(Project, Project.id == RenderJob.project_id)
+        .where(Project.owner_user_id == owner_user_id)
+        .order_by(RenderJob.created_at.desc())
+    )
+    return list(db.scalars(stmt))
 
 
 def get_render_job(db: Session, job_id: str) -> RenderJob | None:
     return db.get(RenderJob, job_id)
+
+
+def get_render_job_for_owner(db: Session, job_id: str, owner_user_id: str) -> RenderJob | None:
+    stmt = (
+        select(RenderJob)
+        .join(Project, Project.id == RenderJob.project_id)
+        .where(RenderJob.id == job_id, Project.owner_user_id == owner_user_id)
+    )
+    return db.scalar(stmt)
 
 
 def get_next_queued_render_job(db: Session) -> RenderJob | None:
@@ -79,10 +105,25 @@ def process_render_job(db: Session, job_id: str) -> RenderJob | None:
     db.refresh(job)
 
     try:
+        from polio_api.db.models.workshop import DraftArtifact
         draft = db.get(Draft, job.draft_id)
         project = db.get(Project, job.project_id)
         if not draft or not project:
             raise ValueError("Project or draft missing while processing render job.")
+
+        visual_specs = []
+        math_expressions = []
+        
+        # Check if this draft is linked to a workshop session for visuals
+        # Currently, workshop produces artifacts directly, but the render job path might refer to a Draft model.
+        # Since 'visual_specs' exist in 'DraftArtifact', we filter them if this draft was derived from a workshop.
+        stmt = select(DraftArtifact).where(DraftArtifact.id == draft.id).limit(1)
+        artifact = db.execute(stmt).scalars().first()
+        
+        if artifact:
+            # Filter ONLY approved items
+            visual_specs = [v for v in (artifact.visual_specs or []) if v.get("approval_status") == "approved"]
+            math_expressions = [m for m in (artifact.math_expressions or []) if m.get("approval_status") == "approved"]
 
         context = RenderBuildContext(
             project_id=project.id,
@@ -93,6 +134,8 @@ def process_render_job(db: Session, job_id: str) -> RenderJob | None:
             content_markdown=draft.content_markdown,
             requested_by=job.requested_by,
             job_id=job.id,
+            visual_specs=visual_specs,
+            math_expressions=math_expressions,
             authenticity_log_lines=list_project_discussion_log(project),
         )
         artifact = dispatch_render(context)
@@ -107,3 +150,27 @@ def process_render_job(db: Session, job_id: str) -> RenderJob | None:
     db.commit()
     db.refresh(job)
     return job
+
+
+def build_render_job_payload(db: Session, job: RenderJob) -> dict[str, object]:
+    from polio_api.services.async_job_service import get_latest_job_for_resource
+
+    async_job = get_latest_job_for_resource(db, resource_type="render_job", resource_id=job.id)
+    return {
+        "id": job.id,
+        "project_id": job.project_id,
+        "draft_id": job.draft_id,
+        "render_format": job.render_format,
+        "status": job.status,
+        "output_path": job.output_path,
+        "result_message": job.result_message,
+        "requested_by": job.requested_by,
+        "async_job_id": async_job.id if async_job else None,
+        "async_job_status": async_job.status if async_job else None,
+        "retry_count": async_job.retry_count if async_job else 0,
+        "max_retries": async_job.max_retries if async_job else 0,
+        "failure_reason": async_job.failure_reason if async_job else None,
+        "dead_lettered_at": async_job.dead_lettered_at if async_job else None,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+    }

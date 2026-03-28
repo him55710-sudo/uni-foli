@@ -58,6 +58,7 @@ class RenderFormat(StrEnum):
 class RenderStatus(StrEnum):
     QUEUED = "queued"
     PROCESSING = "processing"
+    RETRYING = "retrying"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -90,3 +91,46 @@ class QualityLevel(StrEnum):
     LOW  = "low"
     MID  = "mid"
     HIGH = "high"
+
+
+class BlockType(StrEnum):
+    TITLE = "title"
+    HEADING = "heading"
+    PARAGRAPH = "paragraph"
+    TABLE = "table"
+
+
+class EvidenceProvenance(StrEnum):
+    STUDENT_RECORD = "STUDENT_RECORD"
+    EXTERNAL_RESEARCH = "EXTERNAL_RESEARCH"
+
+
+class ResearchSourceClassification(StrEnum):
+    OFFICIAL_SOURCE = "OFFICIAL_SOURCE"
+    STUDENT_OWNED_SOURCE = "STUDENT_OWNED_SOURCE"
+    EXPERT_COMMENTARY = "EXPERT_COMMENTARY"
+    COMMUNITY_POST = "COMMUNITY_POST"
+    SCRAPED_OPINION = "SCRAPED_OPINION"
+
+
+class AsyncJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    RETRYING = "retrying"
+
+
+class AsyncJobType(StrEnum):
+    DIAGNOSIS = "diagnosis"
+    DOCUMENT_PARSE = "document_parse"
+    RENDER = "render"
+    RESEARCH_INGEST = "research_ingest"
+
+
+class VisualApprovalStatus(StrEnum):
+    PROPOSED = "proposed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REPLACED = "replaced"
+    REMOVED = "removed"

@@ -13,6 +13,8 @@ class RenderBuildContext:
     content_markdown: str
     requested_by: str | None
     job_id: str
+    visual_specs: list[dict] = field(default_factory=list)
+    math_expressions: list[dict] = field(default_factory=list)
     authenticity_log_lines: list[str] = field(default_factory=list)
 
 

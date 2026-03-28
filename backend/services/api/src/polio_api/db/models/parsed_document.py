@@ -89,3 +89,18 @@ class ParsedDocument(Base):
             DocumentProcessingStatus.FAILED.value,
             DocumentProcessingStatus.PARTIAL.value,
         }
+
+    @property
+    def latest_async_job_id(self) -> str | None:
+        value = (self.parse_metadata or {}).get("latest_async_job_id")
+        return str(value) if value else None
+
+    @property
+    def latest_async_job_status(self) -> str | None:
+        value = (self.parse_metadata or {}).get("latest_async_job_status")
+        return str(value) if value else None
+
+    @property
+    def latest_async_job_error(self) -> str | None:
+        value = (self.parse_metadata or {}).get("latest_async_job_error")
+        return str(value) if value else None

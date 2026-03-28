@@ -71,6 +71,9 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 If your Windows PowerShell execution policy blocks `.ps1` files, use the `.cmd` wrappers in
 `scripts/` instead of calling the PowerShell files directly.
 
+Security note:
+`APP_ENV` defaults to `production` in the backend config. If you want the local auth bypass for development, set both `APP_ENV=local` and `AUTH_ALLOW_LOCAL_DEV_BYPASS=true` explicitly in your local `.env`. Production must not enable that bypass.
+
 ### Frontend
 
 ```powershell

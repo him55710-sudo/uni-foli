@@ -112,7 +112,7 @@ function statusTone(status: string) {
   }
 }
 
-function QuestCard({ quest, onStart, isStarting }: { quest: BlueprintQuest; onStart: (quest: BlueprintQuest) => void; isStarting: boolean; }) {
+const QuestCard = React.memo(function QuestCard({ quest, onStart, isStarting }: { quest: BlueprintQuest; onStart: (quest: BlueprintQuest) => void; isStarting: boolean; }) {
   return (
     <div className="flex h-full flex-col rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm transition-all hover:shadow-md">
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -145,7 +145,7 @@ function QuestCard({ quest, onStart, isStarting }: { quest: BlueprintQuest; onSt
       </div>
     </div>
   );
-}
+});
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -248,7 +248,7 @@ export function Dashboard() {
               Uni Folia는 단순한 성적 진단을 넘어, 목표 대학의 인재상에 맞춘 <span className="font-black text-slate-900">구체적 탐구 주제와 생기부 반영 전략</span>을 제안합니다.
             </p>
             <div className="flex flex-wrap gap-4">
-              <button onClick={() => setIsDiagnosisOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-8 py-4 text-base font-black text-white transition-all hover:bg-black hover:scale-[1.02]">
+              <button onClick={() => navigate('/diagnosis')} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-8 py-4 text-base font-black text-white transition-all hover:bg-black hover:scale-[1.02]">
                 진단 시작하기 <ArrowRight size={20} />
               </button>
               <button onClick={() => document.getElementById('research-plan')?.scrollIntoView({ behavior: 'smooth' })} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-8 py-4 text-base font-black text-slate-700 hover:bg-slate-50">
@@ -386,7 +386,7 @@ export function Dashboard() {
               학생 생활 기록부를 진단하면 목표 대학과 전공에 맞춘 이번 학기 최적의 탐구 경로를 만들어 드립니다.
             </p>
             {blueprintError && <p className="mt-4 text-red-500 font-bold">{blueprintError}</p>}
-            <button onClick={() => setIsDiagnosisOpen(true)} className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-8 py-4 text-base font-black text-white hover:bg-blue-700 hover:scale-105 transition-all">
+            <button onClick={() => navigate('/diagnosis')} className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-8 py-4 text-base font-black text-white hover:bg-blue-700 hover:scale-105 transition-all">
               진단하고 탐구 플랜 만들기 <ArrowRight size={20} />
             </button>
           </div>

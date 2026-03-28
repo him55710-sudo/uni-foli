@@ -11,6 +11,7 @@ from polio_api.services.quality_control import (
     get_quality_profile,
     resolve_advanced_features,
 )
+from polio_api.services.llm_cache_service import CacheRequest, fetch_cached_response, store_cached_response
 from polio_api.services.rag_service import (
     RAGConfig,
     RAGContext,
@@ -19,6 +20,7 @@ from polio_api.services.rag_service import (
     extract_query_keywords,
 )
 from polio_api.services.safety_guard import SafetyFlag, run_safety_check
+from polio_api.services.visual_support_service import build_visual_support_plan
 from polio_domain.enums import QualityLevel
 
 
@@ -73,6 +75,15 @@ def _supports_live_generation() -> bool:
         return True
     api_key = os.environ.get("GEMINI_API_KEY")
     return bool(api_key and api_key != "DUMMY_KEY")
+
+
+def _current_model_name() -> str:
+    from polio_api.core.config import get_settings
+
+    settings = get_settings()
+    if settings.llm_provider == "ollama":
+        return settings.ollama_model
+    return "gemini-1.5-pro"
 
 
 def _clip(text: str, *, length: int = 160) -> str:
@@ -423,6 +434,29 @@ async def stream_render(
         advanced_mode=effective_advanced_mode,
         rag_injection=rag_injection,
     )
+    from polio_api.core.config import get_settings
+
+    settings = get_settings()
+    cache_request = CacheRequest(
+        feature_name="workshop_render.stream_render",
+        model_name=_current_model_name(),
+        scope_key=f"project:{project_id}",
+        config_version=settings.llm_cache_version,
+        ttl_seconds=settings.llm_cache_ttl_seconds if settings.llm_cache_enabled else 0,
+        bypass=not settings.llm_cache_enabled,
+        response_format="text",
+        evidence_keys=[
+            *(f"turn:{getattr(turn, 'id', '')}" for turn in turns),
+            *(f"reference:{getattr(reference, 'id', '')}" for reference in references),
+            *((rag_context.evidence_keys if rag_context else [])),
+        ],
+        payload={
+            "prompt": prompt,
+            "quality_level": profile.level,
+            "advanced_mode_requested": requested_advanced_mode,
+            "advanced_mode": effective_advanced_mode,
+        },
+    )
 
     yield _sse_line(
         SSEEvent.RENDER_STARTED,
@@ -453,8 +487,12 @@ async def stream_render(
     full_text = ""
     buffer = ""
     used_fallback = not _supports_live_generation()
+    cached_text = fetch_cached_response(db, cache_request)
+    if cached_text:
+        full_text = cached_text
+        used_fallback = False
 
-    if _supports_live_generation():
+    if not full_text and _supports_live_generation():
         try:
             chunk_count = 0
             async for token in _generate_with_llm(prompt=prompt, quality_level=profile.level):
@@ -492,8 +530,14 @@ async def stream_render(
             },
         )
 
+    if full_text:
+        store_cached_response(db, cache_request, response_payload=full_text)
+
     if buffer:
         yield _sse_line(SSEEvent.DRAFT_DELTA, {"delta": buffer})
+    elif cached_text:
+        for start in range(0, len(full_text), 240):
+            yield _sse_line(SSEEvent.DRAFT_DELTA, {"delta": full_text[start : start + 240]})
 
     yield _sse_line(SSEEvent.DRAFT_COMPLETED, {"total_chars": len(full_text)})
 
@@ -536,6 +580,18 @@ async def stream_render(
             turns_text=turns_text,
             references_text=references_text,
         )
+
+    planned_visual_support = build_visual_support_plan(
+        report_markdown=str(parsed.get("report_markdown", "") or ""),
+        evidence_map=parsed.get("evidence_map") or {},
+        student_submission_note=str(parsed.get("student_submission_note", "") or ""),
+        turns=turns,
+        references=references,
+        advanced_mode=effective_advanced_mode and not repair_applied,
+        target_major=target_major,
+    )
+    parsed["visual_specs"] = planned_visual_support.get("visual_specs", [])
+    parsed["math_expressions"] = planned_visual_support.get("math_expressions", [])
 
     advanced_features_applied = bool(parsed.get("visual_specs") or parsed.get("math_expressions"))
     if requested_advanced_mode and repair_applied:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,8 @@ from polio_api.api.router import api_router
 from polio_api.core.config import get_settings
 from polio_api.core.database import initialize_database
 from polio_shared.paths import ensure_app_directories
+
+logger = logging.getLogger("polio.api")
 
 
 @asynccontextmanager
@@ -43,30 +46,40 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_origin_regex=allow_origin_regex,
-        allow_credentials=True,
+        allow_credentials=settings.cors_allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
+        import time
+        start_time = time.monotonic()
         try:
-            print(f"DEBUG: Incoming {request.method} request to {request.url.path}")
             response = await call_next(request)
-            print(f"DEBUG: Response status: {response.status_code}")
+            duration = time.monotonic() - start_time
             
-            # Simple error logging without body consumption
+            # Simple structured log
+            log_data = {
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": int(duration * 1000),
+                "client": request.client.host if request.client else "unknown",
+            }
             if response.status_code >= 400:
-                 with open("backend_400.log", "a", encoding="utf-8") as f:
-                    f.write(f"HTTP {response.status_code} on {request.method} {request.url.path}\n")
-                    
+                logger.warning("Request completed: %s", log_data)
+            else:
+                logger.info("Request completed: %s", log_data)
+                
             return response
-        except Exception as e:
-            import traceback
-            with open("backend_error.log", "a", encoding="utf-8") as f:
-                f.write(f"Exception during {request.method} {request.url.path}:\n")
-                traceback.print_exc(file=f)
-                f.write("\n")
+        except Exception as exc:
+            duration = time.monotonic() - start_time
+            logger.error(
+                "Request failed: %s %s | duration: %dms | error: %s", 
+                request.method, request.url.path, int(duration * 1000), str(exc),
+                exc_info=True
+            )
             raise
 
     app.include_router(api_router, prefix=settings.api_prefix)

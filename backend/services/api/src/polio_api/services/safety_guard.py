@@ -19,6 +19,7 @@ class SafetyFlag(str, Enum):
     FABRICATION_RISK = "fabrication_risk"
     AI_SMELL_HIGH = "ai_smell_high"
     REFERENCE_UNSUPPORTED = "reference_unsupported"
+    GHOSTWRITING_RISK = "ghostwriting_risk"
 
 
 @dataclass(frozen=True)
@@ -287,6 +288,31 @@ def run_safety_check(
     if checks["references"].status != "ok":
         flags[SafetyFlag.REFERENCE_UNSUPPORTED.value] = reference_detail
 
+    # Ghostwriting Prevention: Input Grounding Ratio
+    input_char_count = len(grounding_text)
+    output_char_count = len(full_text)
+    expansion_ratio = output_char_count / max(input_char_count, 100)  # Min 100 chars
+    
+    ghostwriting_score = 100
+    if expansion_ratio > 8 and output_char_count > 400:
+        ghostwriting_score -= round((expansion_ratio - 8) * 12)
+    
+    ghostwriting_detail = (
+        "학생 맥락에 기반한 적절한 분량의 결과입니다."
+        if ghostwriting_score >= 80
+        else f"학생이 제공한 단서({input_char_count}자)에 비해 AI가 생성한 내용({output_char_count}자)이 지나치게 많아 대필 위험이 있습니다."
+    )
+    checks["ownership"] = _build_dimension(
+        key=SafetyFlag.GHOSTWRITING_RISK.value,
+        label="대필 및 주체성 위험",
+        score=ghostwriting_score,
+        detail=ghostwriting_detail,
+        matched_count=round(expansion_ratio),
+        unsupported_count=max(0, output_char_count - (input_char_count * 8)),
+    )
+    if checks["ownership"].status != "ok":
+        flags[SafetyFlag.GHOSTWRITING_RISK.value] = ghostwriting_detail
+
     safety_score = round(
         sum(
             [
@@ -295,9 +321,10 @@ def run_safety_check(
                 checks["fabrication"].score,
                 checks["style"].score,
                 checks["references"].score,
+                checks["ownership"].score,
             ]
         )
-        / 5
+        / 6
     )
 
     recommended_level = requested_level

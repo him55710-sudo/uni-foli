@@ -7,11 +7,14 @@ from sqlalchemy.orm import Session
 from polio_api.core.config import get_settings
 from polio_api.db.models.project import Project
 from polio_api.schemas.grounded_answer import GroundedAnswerProvenance, GroundedAnswerResponse
+from polio_api.services.document_service import list_documents_for_project
+from polio_api.services.llm_cache_service import CacheRequest, fetch_cached_response, store_cached_response
 from polio_api.services.vector_service import (
     RetrievedChunk,
     extract_meaningful_terms,
     retrieve_relevant_chunks,
 )
+from polio_domain.enums import EvidenceProvenance
 
 
 def answer_project_question(
@@ -23,11 +26,30 @@ def answer_project_question(
 ) -> GroundedAnswerResponse:
     settings = get_settings()
     limit = top_k or settings.grounded_answer_top_k
+    document_keys = [
+        f"{document.id}:{document.updated_at.isoformat() if document.updated_at else ''}:{document.sha256 or ''}"
+        for document in list_documents_for_project(db, project.id)
+    ]
+    cache_request = CacheRequest(
+        feature_name="grounded_answer.answer_project_question",
+        model_name="grounded-answer.extractive.v1",
+        scope_key=f"project:{project.id}",
+        config_version=settings.llm_cache_version,
+        ttl_seconds=settings.llm_cache_ttl_seconds if settings.llm_cache_enabled else 0,
+        bypass=not settings.llm_cache_enabled,
+        response_format="json",
+        evidence_keys=document_keys,
+        payload={"question": question, "top_k": limit},
+    )
+    cached = fetch_cached_response(db, cache_request)
+    if cached:
+        return GroundedAnswerResponse.model_validate_json(cached)
+
     retrieved = retrieve_relevant_chunks(db, project.id, question, limit=limit)
     provenance = [_serialize_provenance(item) for item in retrieved]
 
     if _has_insufficient_evidence(question, retrieved):
-        return GroundedAnswerResponse(
+        response = GroundedAnswerResponse(
             status="insufficient_evidence",
             answer=(
                 "I do not have enough direct support in the uploaded documents to answer that safely "
@@ -41,8 +63,10 @@ def answer_project_question(
             missing_information=_build_missing_information(question, retrieved),
             provenance=provenance,
         )
+        store_cached_response(db, cache_request, response_payload=response.model_dump_json())
+        return response
 
-    return GroundedAnswerResponse(
+    response = GroundedAnswerResponse(
         status="answered",
         answer=_compose_extractive_answer(question, retrieved),
         insufficient_evidence=False,
@@ -52,6 +76,8 @@ def answer_project_question(
         ),
         provenance=provenance,
     )
+    store_cached_response(db, cache_request, response_payload=response.model_dump_json())
+    return response
 
 
 def _has_insufficient_evidence(question: str, retrieved: list[RetrievedChunk]) -> bool:
@@ -108,6 +134,7 @@ def _serialize_provenance(item: RetrievedChunk) -> GroundedAnswerProvenance:
     return GroundedAnswerProvenance(
         document_id=item.chunk.document_id,
         chunk_id=item.chunk.id,
+        provenance_type=EvidenceProvenance.STUDENT_RECORD.value,
         source_label=source_label,
         page_number=item.chunk.page_number,
         char_start=item.chunk.char_start,

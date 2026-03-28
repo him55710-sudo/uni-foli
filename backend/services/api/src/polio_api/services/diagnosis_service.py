@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from polio_api.core.llm import get_llm_client
 from polio_api.db.models.citation import Citation
 from polio_api.db.models.diagnosis_run import DiagnosisRun
 from polio_api.db.models.document_chunk import DocumentChunk
@@ -18,7 +19,9 @@ from polio_api.db.models.project import Project
 from polio_api.db.models.response_trace import ResponseTrace
 from polio_api.db.models.review_task import ReviewTask
 from polio_api.db.models.user import User
+from polio_api.services.llm_cache_service import CacheRequest, fetch_cached_response, store_cached_response
 from polio_ingest.masking import MaskingPipeline
+from polio_domain.enums import EvidenceProvenance
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "DUMMY_KEY"))
 
@@ -27,18 +30,31 @@ class DiagnosisCitation(BaseModel):
     id: str | None = None
     document_id: str | None = None
     document_chunk_id: str | None = None
+    provenance_type: str = EvidenceProvenance.STUDENT_RECORD.value
     source_label: str
     page_number: int | None = None
     excerpt: str
     relevance_score: float
 
 
+class DiagnosisGap(BaseModel):
+    title: str = Field(description="Gap title")
+    description: str = Field(description="Why this is a gap and what evidence is missing")
+    difficulty: Literal["low", "medium", "high"] = "medium"
+
+class DiagnosisQuest(BaseModel):
+    title: str = Field(description="Actionable task title")
+    description: str = Field(description="Steps the student can take right now")
+    priority: Literal["low", "medium", "high"] = "medium"
+
 class DiagnosisResult(BaseModel):
     headline: str = Field(description="Short diagnosis summary headline")
     strengths: list[str] = Field(description="Current grounded strengths in the record")
     gaps: list[str] = Field(description="Visible evidence or inquiry gaps to close next")
-    risk_level: Literal["safe", "warning", "danger"] = Field(description="Risk tier")
+    detailed_gaps: list[DiagnosisGap] = Field(default_factory=list, description="Structured gap analysis")
     recommended_focus: str = Field(description="Most important next focus")
+    action_plan: list[DiagnosisQuest] = Field(default_factory=list, description="Concrete next quests")
+    risk_level: Literal["safe", "warning", "danger"] = Field(description="Risk tier")
     citations: list[DiagnosisCitation] = Field(default_factory=list)
     policy_codes: list[str] = Field(default_factory=list)
     review_required: bool = False
@@ -162,7 +178,12 @@ async def evaluate_student_record(
     masked_text: str,
     target_university: str | None = None,
     target_major: str | None = None,
+    scope_key: str = "global",
+    evidence_keys: list[str] | None = None,
+    bypass_cache: bool = False,
 ) -> DiagnosisResult:
+    from polio_api.core.config import get_settings
+
     system_instruction = (
         "You are 'Uni Folia', a rigorous admissions-oriented school record analyst and mentor. "
         "Your expertise is strictly limited to high school student records (생기부), university admissions, "
@@ -170,22 +191,56 @@ async def evaluate_student_record(
         "you MUST politely decline saying exactly: '죄송합니다. 저는 학업에 관련된 대화만 진행할 수 있습니다.' "
         "Read the student's grounded record and explain the real gaps between the current evidence "
         "and the stated target major. Do not predict admission. Focus on what is missing and what "
-        "the next action should be."
+        "the next action should be. Output all text fields in Korean (한국어)."
     )
     target_context = (
         f"Target University: {target_university or 'Not set'}\n"
         f"Target Major: {target_major or user_major}"
     )
 
+    settings = get_settings()
     llm = get_llm_client()
+    model_name = _current_model_name()
+    cache_request = CacheRequest(
+        feature_name="diagnosis.evaluate_student_record",
+        model_name=model_name,
+        scope_key=scope_key,
+        config_version=settings.llm_cache_version,
+        ttl_seconds=settings.llm_cache_ttl_seconds if settings.llm_cache_enabled else 0,
+        bypass=bypass_cache or not settings.llm_cache_enabled,
+        response_format="json",
+        evidence_keys=evidence_keys or [],
+        payload={
+            "target_context": target_context,
+            "user_major": user_major,
+            "masked_text": masked_text,
+            "system_instruction": system_instruction,
+            "temperature": 0.2,
+        },
+    )
 
     try:
-        return await llm.generate_json(
-            prompt=f"{target_context}\nPrimary Major Context: {user_major}\n\n[Masked Record]\n{masked_text}",
+        prompt = f"{target_context}\nPrimary Major Context: {user_major}\n\n[Masked Record]\n{masked_text}"
+        from polio_api.core.database import SessionLocal
+
+        with SessionLocal() as cache_db:
+            cached = fetch_cached_response(cache_db, cache_request)
+        if cached:
+            return DiagnosisResult.model_validate_json(cached)
+
+        result = await llm.generate_json(
+            prompt=prompt,
             response_model=DiagnosisResult,
             system_instruction=system_instruction,
             temperature=0.2,
         )
+        with SessionLocal() as cache_db:
+            store_cached_response(
+                cache_db,
+                cache_request,
+                response_payload=result.model_dump_json(),
+            )
+        return result
     except Exception as exc:  # noqa: BLE001
         return DiagnosisResult(
             headline=f"Diagnosis request failed: {exc}",
@@ -332,6 +387,7 @@ def build_diagnosis_citations(
             DiagnosisCitation(
                 document_id=chunk.document_id,
                 document_chunk_id=chunk.id,
+                provenance_type=EvidenceProvenance.STUDENT_RECORD.value,
                 source_label=source_label or f"Document chunk {chunk.chunk_index + 1}",
                 page_number=chunk.page_number,
                 excerpt=_trim_excerpt(chunk.content_text),
@@ -424,3 +480,12 @@ def latest_response_trace(run: DiagnosisRun) -> ResponseTrace | None:
     if not run.response_traces:
         return None
     return max(run.response_traces, key=lambda item: item.created_at)
+
+
+def _current_model_name() -> str:
+    from polio_api.core.config import get_settings
+
+    settings = get_settings()
+    if settings.llm_provider == "ollama":
+        return settings.ollama_model
+    return "gemini-1.5-pro"
