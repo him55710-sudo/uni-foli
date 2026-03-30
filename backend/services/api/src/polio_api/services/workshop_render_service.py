@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, AsyncIterator
 
+from polio_api.core.config import get_settings
 from polio_api.core.llm import get_llm_client
 
 from polio_api.services.quality_control import (
@@ -69,11 +69,10 @@ _GUARDRAILS: dict[str, str] = {
 
 
 def _supports_live_generation() -> bool:
-    from polio_api.core.config import get_settings
     settings = get_settings()
     if settings.llm_provider == "ollama":
         return True
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = settings.gemini_api_key
     return bool(api_key and api_key != "DUMMY_KEY")
 
 
@@ -434,8 +433,6 @@ async def stream_render(
         advanced_mode=effective_advanced_mode,
         rag_injection=rag_injection,
     )
-    from polio_api.core.config import get_settings
-
     settings = get_settings()
     cache_request = CacheRequest(
         feature_name="workshop_render.stream_render",

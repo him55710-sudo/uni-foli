@@ -1,6 +1,7 @@
 from polio_api.db.models.async_job import AsyncJob
 from polio_api.db.models.document_chunk import DocumentChunk
 from polio_api.db.models.draft import Draft
+from polio_api.db.models.inquiry import Inquiry
 from polio_api.db.models.llm_cache_entry import LLMCacheEntry
 from polio_api.db.models.parsed_document import ParsedDocument
 from polio_api.db.models.project import Project
@@ -25,6 +26,7 @@ __all__ = [
     "DiagnosisRun",
     "DocumentChunk",
     "Draft",
+    "Inquiry",
     "DraftArtifact",
     "LLMCacheEntry",
     "ParsedDocument",

@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 import re
 from typing import Annotated
+from urllib.parse import urlparse
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -11,11 +12,12 @@ from polio_shared.paths import find_project_root
 
 class Settings(BaseSettings):
     app_name: str = "polio Backend"
-    app_env: str = "local"
+    app_env: str = "production"
     app_host: str = "127.0.0.1"
     app_port: int = 8000
     app_debug: bool = False
     api_prefix: str = "/api/v1"
+    api_docs_enabled: bool = False
     database_url: str = "sqlite:///./storage/runtime/polio.db?check_same_thread=False&timeout=30"
     database_echo: bool = False
     database_auto_create_tables: bool = True
@@ -49,6 +51,8 @@ class Settings(BaseSettings):
     semantic_scholar_timeout_seconds: float = 10.0
     semantic_scholar_api_key: str | None = None
     semantic_scholar_max_limit: int = 10
+    kci_api_key: str | None = None
+    research_fetch_max_bytes: int = 2 * 1024 * 1024
     llm_cache_enabled: bool = True
     llm_cache_ttl_seconds: int = 21600
     llm_cache_version: str = "2026-03-29"
@@ -143,6 +147,8 @@ class Settings(BaseSettings):
 
         if self.upload_max_bytes <= 0:
             raise ValueError("UPLOAD_MAX_BYTES must be greater than zero.")
+        if self.research_fetch_max_bytes <= 0:
+            raise ValueError("RESEARCH_FETCH_MAX_BYTES must be greater than zero.")
 
         if self.auth_social_login_enabled and not self.auth_social_state_secret:
             raise ValueError("AUTH_SOCIAL_STATE_SECRET is required when AUTH_SOCIAL_LOGIN_ENABLED=true.")
@@ -158,8 +164,41 @@ class Settings(BaseSettings):
                 normalized_regex = self.cors_origin_regex.strip()
                 if normalized_regex in {"*", ".*", "^.*$", "https?://.*", "https?://.*$"}:
                     raise ValueError("Wildcard CORS origin regex is not allowed with credentials outside local development.")
+            if self.auth_social_login_enabled:
+                redirect_uris: list[tuple[str, str]] = []
+                if _oauth_provider_is_configured(self.kakao_client_id):
+                    redirect_uris.append(("kakao", self.kakao_redirect_uri))
+                if _oauth_provider_is_configured(self.naver_client_id, self.naver_client_secret):
+                    redirect_uris.append(("naver", self.naver_redirect_uri))
+                if _oauth_provider_is_configured(self.google_client_id, self.google_client_secret):
+                    redirect_uris.append(("google", self.google_redirect_uri))
+                for provider, redirect_uri in redirect_uris:
+                    if _is_local_redirect(redirect_uri):
+                        raise ValueError(
+                            f"{provider.upper()} redirect URI must not target localhost outside local development."
+                        )
 
         return self
+
+
+def _oauth_provider_is_configured(client_id: str | None, client_secret: str | None = None) -> bool:
+    def _is_real(value: str | None) -> bool:
+        normalized = (value or "").strip()
+        return bool(normalized) and not normalized.startswith("DUMMY_")
+
+    if not _is_real(client_id):
+        return False
+    if client_secret is None:
+        return True
+    return _is_real(client_secret)
+
+
+def _is_local_redirect(value: str | None) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").strip().lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
 
 
 @lru_cache(maxsize=1)

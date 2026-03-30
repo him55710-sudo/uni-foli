@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from polio_api.core.config import get_settings
 from polio_api.db.models.draft import Draft
 from polio_api.db.models.project import Project
 from polio_api.db.models.render_job import RenderJob
@@ -12,6 +15,8 @@ from polio_domain.enums import AsyncJobType
 from polio_domain.enums import RenderFormat, RenderStatus
 from polio_render.dispatcher import dispatch_render
 from polio_render.models import RenderBuildContext
+
+logger = logging.getLogger("polio.api.render_jobs")
 
 
 def get_render_format_catalog() -> list[RenderFormatInfo]:
@@ -144,8 +149,9 @@ def process_render_job(db: Session, job_id: str) -> RenderJob | None:
         job.output_path = artifact.relative_path
         job.result_message = artifact.message
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Render job failed: %s", job.id)
         job.status = RenderStatus.FAILED.value
-        job.result_message = str(exc)
+        job.result_message = "Render job failed. Review the draft content and retry."
 
     db.commit()
     db.refresh(job)
@@ -155,6 +161,7 @@ def process_render_job(db: Session, job_id: str) -> RenderJob | None:
 def build_render_job_payload(db: Session, job: RenderJob) -> dict[str, object]:
     from polio_api.services.async_job_service import get_latest_job_for_resource
 
+    settings = get_settings()
     async_job = get_latest_job_for_resource(db, resource_type="render_job", resource_id=job.id)
     return {
         "id": job.id,
@@ -162,7 +169,7 @@ def build_render_job_payload(db: Session, job: RenderJob) -> dict[str, object]:
         "draft_id": job.draft_id,
         "render_format": job.render_format,
         "status": job.status,
-        "output_path": job.output_path,
+        "download_url": f"{settings.api_prefix}/render-jobs/{job.id}/download" if job.output_path else None,
         "result_message": job.result_message,
         "requested_by": job.requested_by,
         "async_job_id": async_job.id if async_job else None,

@@ -178,7 +178,12 @@ async def search_kci_papers(query: str, limit: int = 5) -> ScholarSearchResult:
         connect=min(5.0, settings.semantic_scholar_timeout_seconds),
     )
 
-    kci_api_key = getattr(settings, "kci_api_key", "16578589")
+    kci_api_key = (settings.kci_api_key or "").strip()
+    if not kci_api_key or kci_api_key.startswith("DUMMY_") or kci_api_key == "16578589":
+        raise ScholarServiceError(
+            status_code=503,
+            detail="KCI search is not configured for this environment.",
+        )
     params = {
         "apiCode": "articleSearch",
         "key": kci_api_key,

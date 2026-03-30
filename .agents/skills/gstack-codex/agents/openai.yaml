@@ -1,0 +1,6 @@
+interface:
+  display_name: "gstack-codex"
+  short_description: "Use Codex as an independent second opinion for review, challenge, or consultation."
+  default_prompt: "Use gstack-codex for this task."
+policy:
+  allow_implicit_invocation: true

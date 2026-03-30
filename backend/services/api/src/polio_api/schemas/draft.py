@@ -1,17 +1,17 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DraftCreate(BaseModel):
-    title: str
-    content_markdown: str = ""
+    title: str = Field(min_length=1, max_length=200)
+    content_markdown: str = Field(default="", max_length=100000)
     source_document_id: str | None = None
 
 
 class DraftFromDocumentCreate(BaseModel):
-    title: str | None = None
-    include_excerpt_limit: int = 4000
+    title: str | None = Field(default=None, max_length=200)
+    include_excerpt_limit: int = Field(default=4000, ge=500, le=20000)
 
 
 class DraftRead(BaseModel):

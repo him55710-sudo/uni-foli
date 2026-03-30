@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import json
+import logging
 import secrets
 from typing import AsyncIterator
 
@@ -10,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from polio_api.api.deps import get_current_user, get_db
+from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.project import Project
 from polio_api.db.models.quest import Quest
 from polio_api.db.models.user import User
@@ -49,6 +52,20 @@ from polio_api.services.workshop_render_service import SSEEvent, _parse_artifact
 from polio_domain.enums import QualityLevel, TurnType, WorkshopStatus
 
 router = APIRouter()
+logger = logging.getLogger("polio.api.workshops")
+_STREAM_TOKEN_TTL_SECONDS = 300
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _is_expired(expires_at: datetime | None) -> bool:
+    if expires_at is None:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= _utc_now()
 
 
 def _get_session_loaded(workshop_id: str, db: Session) -> WorkshopSession:
@@ -477,13 +494,19 @@ def create_stream_token(
     workshop_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="workshop_stream_token", limit=20, window_seconds=300)),
 ) -> StreamTokenResponse:
     session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
 
     token = secrets.token_urlsafe(48)
     session.stream_token = token
+    session.stream_token_expires_at = _utc_now() + timedelta(seconds=_STREAM_TOKEN_TTL_SECONDS)
     db.commit()
-    return StreamTokenResponse(stream_token=token, workshop_id=workshop_id, expires_in=300)
+    return StreamTokenResponse(
+        stream_token=token,
+        workshop_id=workshop_id,
+        expires_in=_STREAM_TOKEN_TTL_SECONDS,
+    )
 
 
 @router.post("/{workshop_id}/render", response_model=dict[str, str])
@@ -492,6 +515,7 @@ def trigger_render(
     payload: RenderRequest = RenderRequest(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="workshop_render", limit=10, window_seconds=300)),
 ) -> dict[str, str]:
     session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     requirements = build_render_requirements(
@@ -543,10 +567,13 @@ async def sse_events(
     rag_source: str = Query("semantic"),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    session = db.execute(
-        select(WorkshopSession).filter(WorkshopSession.id == workshop_id, WorkshopSession.stream_token == stream_token)
-    ).scalar_one_or_none()
-    if session is None:
+    session = db.execute(select(WorkshopSession).filter(WorkshopSession.id == workshop_id)).scalar_one_or_none()
+    if session is None or session.stream_token != stream_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired stream token.")
+    if _is_expired(session.stream_token_expires_at):
+        session.stream_token = None
+        session.stream_token_expires_at = None
+        db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired stream token.")
 
     artifact = db.execute(
@@ -632,7 +659,11 @@ async def sse_events(
                     except Exception:
                         collected = {}
         except Exception as exc:  # noqa: BLE001
-            yield _sse_line(SSEEvent.ERROR, {"message": str(exc)})
+            logger.exception("Workshop stream failed: workshop=%s artifact=%s", workshop_id, artifact_id)
+            yield _sse_line(
+                SSEEvent.ERROR,
+                {"message": "Render stream failed. Retry after checking the current draft context."},
+            )
         finally:
             artifact_db = db.execute(select(DraftArtifact).filter(DraftArtifact.id == artifact_id)).scalar_one_or_none()
             if artifact_db is not None and collected:
@@ -662,6 +693,7 @@ async def sse_events(
                 full_session.status = WorkshopStatus.COLLECTING_CONTEXT.value
 
             full_session.stream_token = None
+            full_session.stream_token_expires_at = None
             db.commit()
 
     return StreamingResponse(

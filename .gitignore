@@ -33,3 +33,16 @@ references/open-source/*
 firebase-applet-config.json
 frontend/test-results/
 frontend/__playwright-*.png
+.agents/tools/
+.agents/skills/gstack/node_modules/
+.agents/skills/gstack/.agents/
+# Test and Quality Assurance Outputs
+frontend/playwright-report/
+frontend/screenshots/
+frontend/qa_test_output.txt
+frontend/refined_qa_output.txt
+frontend/ui_pattern_output.txt
+frontend/test_output.txt
+frontend/stats.html
+*.txt
+*.log

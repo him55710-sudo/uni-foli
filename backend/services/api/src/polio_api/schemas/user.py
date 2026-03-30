@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserProfileRead(BaseModel):
@@ -22,14 +22,14 @@ class UserProfileRead(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    grade: str | None = None
-    track: str | None = None
-    career: str | None = None
-    interest_universities: list[str] | None = None
+    grade: str | None = Field(default=None, max_length=50)
+    track: str | None = Field(default=None, max_length=100)
+    career: str | None = Field(default=None, max_length=200)
+    interest_universities: list[str] | None = Field(default=None, max_length=20)
 
 
 class UserGoalsUpdate(BaseModel):
-    target_university: str | None = None
-    target_major: str | None = None
-    admission_type: str | None = None
-    interest_universities: list[str] | None = None
+    target_university: str | None = Field(default=None, max_length=200)
+    target_major: str | None = Field(default=None, max_length=200)
+    admission_type: str | None = Field(default=None, max_length=100)
+    interest_universities: list[str] | None = Field(default=None, max_length=20)

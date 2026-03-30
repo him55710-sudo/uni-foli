@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from polio_api.core.config import get_settings
 from polio_api.core.database import SessionLocal
+from polio_api.core.security import sanitize_public_error
 from polio_api.db.models.document_chunk import DocumentChunk
 from polio_api.db.models.draft import Draft
 from polio_api.db.models.parsed_document import ParsedDocument
@@ -26,6 +27,7 @@ IN_PROGRESS_DOCUMENT_STATUSES = {
     DocumentProcessingStatus.PARSING.value,
     DocumentProcessingStatus.RETRYING.value,
 }
+DOCUMENT_FAILURE_FALLBACK = "Document processing failed. Retry after checking the uploaded file."
 
 
 def utc_now() -> datetime:
@@ -111,18 +113,19 @@ def _mark_document_failed(
     *,
     masking_failed: bool = False,
 ) -> None:
+    public_message = sanitize_public_error(message, fallback=DOCUMENT_FAILURE_FALLBACK)
     document.status = DocumentProcessingStatus.FAILED.value
     if masking_failed:
         document.masking_status = DocumentMaskingStatus.FAILED.value
-    document.last_error = message
+    document.last_error = public_message
     document.parse_completed_at = utc_now()
     document.parse_metadata = {
         **(document.parse_metadata or {}),
-        "warnings": [message],
+        "warnings": [public_message],
     }
 
     upload_asset.status = UploadStatus.FAILED.value
-    upload_asset.ingest_error = message
+    upload_asset.ingest_error = public_message
     db.add(document)
     db.add(upload_asset)
     db.commit()
@@ -178,7 +181,11 @@ def ingest_upload_asset(
         document.parse_completed_at = utc_now()
         document.parse_metadata = {
             **parsed.metadata,
-            "warnings": parsed.warnings,
+            "warnings": [
+                sanitize_public_error(str(item), fallback=DOCUMENT_FAILURE_FALLBACK)
+                for item in parsed.warnings
+                if str(item).strip()
+            ],
             "chunk_count": len(parsed.chunks),
             "chunk_evidence_map": {
                 str(chunk.chunk_index): chunk.metadata
@@ -196,7 +203,10 @@ def ingest_upload_asset(
             DocumentProcessingStatus.PARTIAL.value,
             DocumentProcessingStatus.FAILED.value,
         } and parsed.warnings:
-            document.last_error = parsed.warnings[0]
+            document.last_error = sanitize_public_error(
+                parsed.warnings[0],
+                fallback=DOCUMENT_FAILURE_FALLBACK,
+            )
 
         from polio_shared.embeddings import get_embedding_service
 

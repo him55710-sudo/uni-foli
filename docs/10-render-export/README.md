@@ -46,7 +46,7 @@ Use a separate render service because output generation has different runtime ne
 - fetch canonical draft
 - map to target template
 - store artifact
-- return signed download link
+- return an authenticated owner-scoped download URL instead of exposing filesystem paths
 
 ## PPTX strategy
 

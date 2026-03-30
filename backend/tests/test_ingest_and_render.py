@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-from pathlib import Path
 import shutil
 
 from fastapi.testclient import TestClient
@@ -9,6 +8,7 @@ from reportlab.pdfgen import canvas
 
 from polio_api.main import app
 from backend.tests.auth_helpers import auth_headers
+from polio_shared.paths import get_export_root, get_upload_root
 
 
 def _build_sample_pdf_bytes() -> bytes:
@@ -23,8 +23,7 @@ def _build_sample_pdf_bytes() -> bytes:
 
 
 def test_pdf_ingest_and_selected_render_flow() -> None:
-    output_paths: list[Path] = []
-    upload_paths: list[Path] = []
+    project_ids: list[str] = []
     headers = auth_headers("render-flow-user")
 
     try:
@@ -41,6 +40,7 @@ def test_pdf_ingest_and_selected_render_flow() -> None:
             )
             assert project_response.status_code == 201
             project_id = project_response.json()["id"]
+            project_ids.append(project_id)
 
             upload_response = client.post(
                 f"/api/v1/projects/{project_id}/uploads",
@@ -50,7 +50,7 @@ def test_pdf_ingest_and_selected_render_flow() -> None:
             assert upload_response.status_code == 201
             upload_payload = upload_response.json()
             assert upload_payload["status"] == "parsed"
-            upload_paths.append(Path(upload_payload["stored_path"]))
+            assert "stored_path" not in upload_payload
 
             documents_response = client.get(f"/api/v1/projects/{project_id}/documents", headers=headers)
             assert documents_response.status_code == 200
@@ -61,8 +61,9 @@ def test_pdf_ingest_and_selected_render_flow() -> None:
             document_response = client.get(f"/api/v1/projects/{project_id}/documents/{document_id}", headers=headers)
             assert document_response.status_code == 200
             document_payload = document_response.json()
-            assert document_payload["parse_metadata"]["student_artifact_parse"]["schema_version"] == "student_artifact_parse.v1"
-            assert "chunk_evidence_map" in document_payload["parse_metadata"]
+            assert document_payload["parse_metadata"]["chunk_count"] >= 1
+            assert "chunk_evidence_map" not in document_payload["parse_metadata"]
+            assert "raw_artifact" not in document_payload["parse_metadata"]
 
             chunks_response = client.get(f"/api/v1/projects/{project_id}/documents/{document_id}/chunks", headers=headers)
             assert chunks_response.status_code == 200
@@ -94,18 +95,8 @@ def test_pdf_ingest_and_selected_render_flow() -> None:
                 assert process_response.status_code == 200
                 processed = process_response.json()
                 assert processed["status"] == "completed"
-                assert processed["output_path"]
-                output_paths.append(Path(processed["output_path"]))
+                assert processed["download_url"] == f"/api/v1/render-jobs/{job_id}/download"
     finally:
-        for output_path in output_paths:
-            absolute_output = Path.cwd() / output_path
-            if absolute_output.exists():
-                absolute_output.unlink()
-            parent = absolute_output.parent
-            if parent.exists():
-                shutil.rmtree(parent, ignore_errors=True)
-
-        for upload_path in upload_paths:
-            absolute_upload = Path.cwd() / upload_path
-            if absolute_upload.exists():
-                absolute_upload.unlink()
+        for project_id in project_ids:
+            shutil.rmtree(get_export_root() / project_id, ignore_errors=True)
+            shutil.rmtree(get_upload_root() / project_id, ignore_errors=True)

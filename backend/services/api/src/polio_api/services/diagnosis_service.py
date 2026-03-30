@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from typing import Literal
 
-import google.generativeai as genai
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,8 +20,6 @@ from polio_api.db.models.user import User
 from polio_api.services.llm_cache_service import CacheRequest, fetch_cached_response, store_cached_response
 from polio_ingest.masking import MaskingPipeline
 from polio_domain.enums import EvidenceProvenance
-
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "DUMMY_KEY"))
 
 
 class DiagnosisCitation(BaseModel):

@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProjectCreate(BaseModel):
-    title: str
-    description: str | None = None
-    target_university: str | None = None
-    target_major: str | None = None
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    target_university: str | None = Field(default=None, max_length=200)
+    target_major: str | None = Field(default=None, max_length=200)
 
 
 class ProjectRead(BaseModel):

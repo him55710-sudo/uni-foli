@@ -148,6 +148,7 @@ def get_llm_client() -> LLMClient:
             base_url=settings.ollama_base_url,
             model=settings.ollama_model,
         )
-    # Default to Gemini
-    api_key = settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "DUMMY_KEY")
+    api_key = settings.gemini_api_key or os.environ.get("GEMINI_API_KEY")
+    if not api_key or api_key == "DUMMY_KEY":
+        raise RuntimeError("Gemini API key is not configured.")
     return GeminiClient(api_key=api_key)

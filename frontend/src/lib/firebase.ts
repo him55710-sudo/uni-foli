@@ -13,6 +13,8 @@ const firebaseConfig: FirebaseOptions = {
 };
 
 const firestoreDatabaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
+export const isGuestModeAllowed =
+  import.meta.env.DEV || import.meta.env.VITE_ALLOW_GUEST_MODE === 'true';
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey &&
@@ -34,7 +36,9 @@ if (isFirebaseConfigured) {
   googleProvider.setCustomParameters({ prompt: 'select_account' });
 } else {
   console.warn(
-    'Firebase config is missing. Running in local guest mode without Firebase Auth/Firestore.',
+    isGuestModeAllowed
+      ? 'Firebase config is missing. Guest mode is allowed for local development.'
+      : 'Firebase config is missing. Guest mode is disabled in this environment.',
   );
 }
 

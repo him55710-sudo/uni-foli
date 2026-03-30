@@ -151,19 +151,61 @@ function clipForFallback(text: string, length = 140) {
   return `${normalized.slice(0, length).trimEnd()}...`;
 }
 
-function buildDemoFallbackReply(message: string) {
+function isKorean(text: string) {
+  return /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(text);
+}
+
+function buildFoliFallback(message: string) {
+  const isKO = isKorean(message);
+  const cleanMsg = message.toLowerCase().trim();
+  
+  // Intent: Greeting
+  const koGreetings = ["안녕", "반가워", "하이", "안녕하세요"];
+  const enGreetings = ["hi", "hello", "hey", "greetings"];
+  const isGreeting = koGreetings.some(g => cleanMsg.includes(g)) || enGreetings.some(g => cleanMsg.includes(g));
+
+  if (isGreeting) {
+    if (isKO) {
+      return [
+        "안녕하세요! Uni Folia 방문을 환영해요.",
+        "",
+        "지금은 시스템 점검 등으로 일부 고급 분석 기능이 제한될 수 있지만, 대화실에서 주제를 함께 고민하거나 보고서의 뼈대를 잡는 일은 도와드릴 수 있어요. 무엇부터 시작해볼까요?",
+      ].join('\n');
+    }
+    return [
+      "Hello! Welcome to Uni Folia.",
+      "",
+      "Some advanced analysis features are currently limited, but I can still help you organize your thoughts or structure your report right here. How can I assist you today?",
+    ].join('\n');
+  }
+
+  // Intent: Evidence-heavy or Task-based
+  const koTaskKeywords = ["근거", "증명", "데이터", "작성", "주제", "연구"];
+  const enTaskKeywords = ["evidence", "data", "write", "draft", "topic", "research"];
+  const isTask = koTaskKeywords.some(k => cleanMsg.includes(k)) || enTaskKeywords.some(k => cleanMsg.includes(k));
+
+  if (isKO) {
+    return [
+      "지금은 데이터베이스 연결이 원활하지 않아 근거 자료의 논리적 검증이나 자동 초안 작성이 일시적으로 어려워요.",
+      "",
+      "하지만 다음 작업들은 바로 도와드릴 수 있어요:",
+      "1. 탐구 주제를 구체적인 질문으로 좁히기",
+      "2. 필요한 추가 근거 리스트 정리하기",
+      "3. 보고서의 전체적인 목차 구성하기",
+      "",
+      "어떤 작업을 먼저 도와드릴까요?",
+    ].join('\n');
+  }
+
   return [
-    '### Demo fallback',
-    '',
-    'The backend chat connection is unavailable right now, so I switched to a local safe response.',
-    'I cannot verify evidence or generate a grounded paragraph in this mode, but I can still help with structure and next-safe actions.',
-    '',
-    `Your prompt: "${clipForFallback(message)}"`,
-    '',
-    'Try one of these next-safe actions:',
-    '1. Ask me to narrow the topic into one research question.',
-    '2. Ask me to list the evidence you still need.',
-    '3. Ask me to build a comparison table outline.',
+    "I'm currently unable to verify evidence or generate automatic drafts due to a temporary database connection issue.",
+    "",
+    "However, I can still help you with these steps:",
+    "1. Narrowing your research topic into a specific question.",
+    "2. Listing the types of evidence you still need to collect.",
+    "3. Outlining the overall structure of your report.",
+    "",
+    "Which one should we work on first?",
   ].join('\n');
 }
 
@@ -180,14 +222,14 @@ async function streamFoliReply(projectId: string | undefined, message: string, o
     });
   } catch (error) {
     if (!projectId) {
-      return buildDemoFallbackReply(message);
+      return buildFoliFallback(message);
     }
     throw new Error('NETWORK_FAIL');
   }
 
   if (!res.ok || !res.body) {
     if (!projectId) {
-      return buildDemoFallbackReply(message);
+      return buildFoliFallback(message);
     }
     if (res.status === 429) throw new Error('RATE_LIMIT');
     if (res.status === 401 || res.status === 403) throw new Error('AUTH_REQUIRED');

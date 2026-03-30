@@ -42,9 +42,9 @@ class WorkshopTurnResponse(WorkshopTurnBase):
 
 
 class PinnedReferenceBase(BaseModel):
-    text_content: str
-    source_type: str | None = None
-    source_id: str | None = None
+    text_content: str = Field(min_length=1, max_length=6000)
+    source_type: str | None = Field(default=None, max_length=32)
+    source_id: str | None = Field(default=None, max_length=128)
 
 
 class PinnedReferenceCreate(PinnedReferenceBase):
@@ -86,16 +86,16 @@ class WorkshopSessionResponse(WorkshopSessionBase):
 
 
 class WorkshopChoiceRequest(BaseModel):
-    choice_id: str
-    label: str
+    choice_id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=300)
     payload: dict[str, Any] | None = None
 
 
 class WorkshopMessageRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=5000)
 
 class WorkshopSaveDraftRequest(BaseModel):
-    document_content: str
+    document_content: str = Field(min_length=1, max_length=100000)
 
 
 class WorkshopUpdateVisualRequest(BaseModel):

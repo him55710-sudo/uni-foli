@@ -66,13 +66,15 @@ PostgreSQL mode:
 .\scripts\start-api.cmd
 ```
 
-Swagger UI: `http://127.0.0.1:8000/docs`
+Swagger UI: `http://127.0.0.1:8000/docs` when `APP_ENV=local` or `API_DOCS_ENABLED=true`
 
 If your Windows PowerShell execution policy blocks `.ps1` files, use the `.cmd` wrappers in
 `scripts/` instead of calling the PowerShell files directly.
 
 Security note:
 `APP_ENV` defaults to `production` in the backend config. If you want the local auth bypass for development, set both `APP_ENV=local` and `AUTH_ALLOW_LOCAL_DEV_BYPASS=true` explicitly in your local `.env`. Production must not enable that bypass.
+`/docs` is also hidden by default outside local development unless `API_DOCS_ENABLED=true` is set explicitly.
+If social login is enabled, production redirect URIs must not point at localhost. KCI-backed research search also now requires an explicit `KCI_API_KEY`.
 
 ### Frontend
 
@@ -80,8 +82,9 @@ Security note:
 .\scripts\start-frontend.cmd
 ```
 
-The frontend defaults to `http://localhost:8000` and can run in guest mode when Firebase
-variables are absent.
+The frontend defaults to `http://localhost:8000`.
+Guest mode is intended for local development and only stays enabled automatically in `npm run dev`.
+To force guest mode in a non-dev environment, set `VITE_ALLOW_GUEST_MODE=true` explicitly.
 
 If you prefer to run it manually:
 
@@ -97,6 +100,12 @@ Use the real-runtime smoke suite at the repo root:
 
 ```powershell
 python -m pytest tests/smoke -q
+```
+
+Security regression suite:
+
+```powershell
+.\scripts\security-regression.cmd
 ```
 
 Frontend build check:

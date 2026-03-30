@@ -201,7 +201,7 @@ export function Trends() {
                 </button>
                 <button
                   onClick={() => {
-                    navigate(`/workshop?major=${encodeURIComponent(selectedTrend.type)}`);
+                    navigate(`/app/workshop?major=${encodeURIComponent(selectedTrend.type)}`);
                     toast.success('선택한 주제로 워크숍을 열었습니다.');
                     setSelectedTrend(null);
                   }}

@@ -1,8 +1,9 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from polio_api.core.security import sanitize_public_error
 from polio_api.schemas.async_job import AsyncJobRead
 from polio_domain.enums import ResearchSourceClassification
 
@@ -12,13 +13,13 @@ class ResearchSourceCreate(BaseModel):
     source_classification: ResearchSourceClassification = ResearchSourceClassification.EXPERT_COMMENTARY
     title: str | None = Field(default=None, max_length=500)
     canonical_url: str | None = Field(default=None, max_length=1000)
-    text: str | None = None
-    html_content: str | None = None
-    transcript_segments: list[str] = Field(default_factory=list)
-    abstract: str | None = None
-    extracted_text: str | None = None
+    text: str | None = Field(default=None, max_length=100000)
+    html_content: str | None = Field(default=None, max_length=200000)
+    transcript_segments: list[str] = Field(default_factory=list, max_length=200)
+    abstract: str | None = Field(default=None, max_length=10000)
+    extracted_text: str | None = Field(default=None, max_length=100000)
     publisher: str | None = Field(default=None, max_length=255)
-    author_names: list[str] = Field(default_factory=list)
+    author_names: list[str] = Field(default_factory=list, max_length=20)
     published_on: date | None = None
     external_id: str | None = Field(default=None, max_length=255)
     usage_note: str | None = Field(default=None, max_length=500)
@@ -58,6 +59,16 @@ class ResearchDocumentRead(BaseModel):
     ingested_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("last_error", mode="before")
+    @classmethod
+    def sanitize_last_error(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return sanitize_public_error(
+            str(value),
+            fallback="Research ingestion failed. Retry after checking the provided source data.",
+        )
 
 
 class ResearchChunkRead(BaseModel):

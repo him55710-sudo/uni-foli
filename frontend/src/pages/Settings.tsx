@@ -128,7 +128,7 @@ export function Settings() {
   };
 
   const handleContact = () => {
-    window.location.href = 'mailto:mongben@naver.com?subject=polio%20문의';
+    navigate('/contact');
   };
 
   return (
@@ -237,7 +237,7 @@ export function Settings() {
             className="flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 font-bold text-blue-700 transition-colors hover:bg-blue-100"
           >
             <Mail size={18} />
-            문의 메일 보내기
+            문의 허브 열기
           </button>
         </div>
       </section>

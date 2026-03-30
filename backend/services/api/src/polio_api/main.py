@@ -30,12 +30,16 @@ def create_app() -> FastAPI:
     allow_origin_regex = settings.cors_origin_regex
     if settings.app_env == "local" and not allow_origin_regex:
         allow_origin_regex = r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    docs_enabled = settings.api_docs_enabled or settings.app_env == "local"
 
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
         debug=settings.app_debug,
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
         description=(
             "Beginner-friendly backend skeleton for Uni Folia. "
             "Create projects, upload files, write drafts, and queue render jobs."
@@ -71,13 +75,16 @@ def create_app() -> FastAPI:
                 logger.warning("Request completed: %s", log_data)
             else:
                 logger.info("Request completed: %s", log_data)
-                
+
+            response.headers.setdefault("X-Content-Type-Options", "nosniff")
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault("Referrer-Policy", "no-referrer")
             return response
         except Exception as exc:
             duration = time.monotonic() - start_time
             logger.error(
-                "Request failed: %s %s | duration: %dms | error: %s", 
-                request.method, request.url.path, int(duration * 1000), str(exc),
+                "Request failed: %s %s | duration: %dms",
+                request.method, request.url.path, int(duration * 1000),
                 exc_info=True
             )
             raise
@@ -86,6 +93,22 @@ def create_app() -> FastAPI:
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def home_page() -> str:
+        docs_card = (
+            """
+          <a class="card" href="/docs">
+            <strong>Open API Docs</strong>
+            Browse and execute every route from Swagger UI.
+            <code>/docs</code>
+          </a>
+            """.strip()
+            if docs_enabled
+            else """
+          <div class="info">
+            <strong>API Docs Hidden</strong>
+            Interactive API docs are disabled by default outside local development.
+          </div>
+            """.strip()
+        )
         return """
 <!doctype html>
 <html lang="en">
@@ -196,14 +219,11 @@ def create_app() -> FastAPI:
         <h1>Upload, parse, draft, and render from one backend.</h1>
         <p>
           This local service powers the beginner-friendly backend blueprint for Uni Folia.
-          Start from the API docs, confirm health, and inspect available render formats.
+          Confirm health, inspect available render formats, and use interactive docs only when
+          they are explicitly enabled for the current environment.
         </p>
         <div class="actions">
-          <a class="card" href="/docs">
-            <strong>Open API Docs</strong>
-            Browse and execute every route from Swagger UI.
-            <code>/docs</code>
-          </a>
+          __DOCS_CARD__
           <a class="card" href="/api/v1/health">
             <strong>Check Server Health</strong>
             Confirm the backend is responding correctly.
@@ -233,7 +253,7 @@ def create_app() -> FastAPI:
     </main>
   </body>
 </html>
-        """.strip()
+        """.replace("__DOCS_CARD__", docs_card).strip()
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> Response:

@@ -394,7 +394,7 @@ export function Record() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate(`/workshop/${document.project_id}?major=${encodeURIComponent(targetMajor.trim())}`)}
+                  onClick={() => navigate(`/app/workshop/${document.project_id}?major=${encodeURIComponent(targetMajor.trim())}`)}
                   disabled={!canContinue}
                   className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >

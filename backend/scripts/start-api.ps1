@@ -11,4 +11,4 @@ if (-not (Test-Path $uvicornPath)) {
   throw "Unable to find $uvicornPath even after setup."
 }
 
-& .\.venv\Scripts\uvicorn.exe polio_api.main:app --reload --host 127.0.0.1 --port 8000
+& .\.venv\Scripts\uvicorn.exe polio_api.main:app --reload --host 0.0.0.0 --port 8000

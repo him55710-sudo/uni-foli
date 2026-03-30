@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
 from polio_api.core.config import get_settings
+from polio_api.core.security import sanitize_public_error
 from polio_api.db.models.research_chunk import ResearchChunk
 from polio_api.db.models.research_document import ResearchDocument
 from polio_api.schemas.research import ResearchSourceCreate
@@ -103,7 +104,10 @@ def ingest_research_document(
         )
     except ResearchPipelineError as exc:
         document.status = "failed"
-        document.last_error = str(exc)
+        document.last_error = sanitize_public_error(
+            str(exc),
+            fallback="Research ingestion failed. Retry after checking the provided source data.",
+        )
         db.add(document)
         db.commit()
         db.refresh(document)

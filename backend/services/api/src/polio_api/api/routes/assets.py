@@ -1,40 +1,54 @@
+from __future__ import annotations
+
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
-import os
-import glob
+
+from polio_shared.paths import get_runtime_root, slugify
 
 router = APIRouter()
 
-# Local path for university logos
-LOGO_BASE_DIR = r"c:\Users\임현수\Downloads\대학로고"
+LOGO_BASE_DIR = (get_runtime_root() / "university-logos").resolve()
+ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+
+
+def _find_logo_path(name: str) -> Path | None:
+    raw_name = name.strip()
+    if "/" in raw_name or "\\" in raw_name or ".." in raw_name:
+        raise HTTPException(status_code=400, detail="University name is invalid.")
+
+    normalized_name = slugify(name)
+    if normalized_name in {"", ".", ".."}:
+        raise HTTPException(status_code=400, detail="University name is invalid.")
+
+    if not LOGO_BASE_DIR.exists():
+        return None
+
+    for file_path in LOGO_BASE_DIR.iterdir():
+        if not file_path.is_file():
+            continue
+        if file_path.suffix.lower() not in ALLOWED_LOGO_EXTENSIONS:
+            continue
+        if slugify(file_path.stem) != normalized_name:
+            continue
+        resolved = file_path.resolve()
+        if resolved.parent != LOGO_BASE_DIR:
+            continue
+        return resolved
+    return None
+
 
 @router.get("/univ-logo")
 async def get_univ_logo(name: str):
-    """
-    Finds and returns a university logo file from the local downloads directory.
-    Searches recursively for 'name.*'.
-    """
-    if not name:
-        raise HTTPException(status_code=400, detail="University name is required")
-        
-    # Search for files matching the name in any of the subdirectories
-    # Extensions could be .png, .jpg, .gif, etc.
-    search_pattern = os.path.join(LOGO_BASE_DIR, "**", f"{name}.*")
-    matches = glob.glob(search_pattern, recursive=True)
-    
-    if not matches:
-        # Try a substring match if exact full name fails (e.g. "서울대" -> "서울대학교")
-        search_pattern_partial = os.path.join(LOGO_BASE_DIR, "**", f"{name}*.*")
-        matches = glob.glob(search_pattern_partial, recursive=True)
-        
-    if not matches:
-        raise HTTPException(status_code=404, detail=f"Logo for {name} not found")
-        
-    # Pick the first match
-    file_path = matches[0]
-    
-    # Check if it's a file
-    if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="Found match is not a file")
-        
-    return FileResponse(file_path)
+    if not name or not name.strip():
+        raise HTTPException(status_code=400, detail="University name is required.")
+
+    file_path = _find_logo_path(name)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="Logo not found.")
+
+    return FileResponse(
+        file_path,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

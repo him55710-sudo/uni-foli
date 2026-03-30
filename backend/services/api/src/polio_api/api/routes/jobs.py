@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_current_user, get_db
 from polio_api.core.config import get_settings
+from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
 from polio_api.schemas.async_job import AsyncJobRead
 from polio_api.services.async_job_service import (
@@ -70,6 +71,7 @@ def retry_job_route(
     job_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="async_job_retry", limit=10, window_seconds=300)),
 ) -> AsyncJobRead:
     job = get_async_job(db, job_id)
     _authorize_job_access(db, job, current_user)
@@ -85,6 +87,7 @@ def process_job_route(
     job_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="async_job_process", limit=20, window_seconds=300)),
 ) -> AsyncJobRead:
     settings = get_settings()
     if not settings.allow_inline_job_processing:

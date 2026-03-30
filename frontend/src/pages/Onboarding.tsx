@@ -109,7 +109,7 @@ export function Onboarding() {
     });
     
     const success = await submitGoals();
-    if (success) navigate('/');
+    if (success) navigate('/app');
   };
 
   return (

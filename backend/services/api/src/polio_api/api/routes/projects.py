@@ -2,14 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import uuid
+import logging
 
 from polio_api.api.deps import get_db, get_current_user
+from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
 from polio_api.schemas.project import ProjectCreate, ProjectRead
 from polio_api.services.blueprint_service import create_blueprint_from_project_diagnosis
 from polio_api.services.document_service import list_documents_for_project
 from polio_api.services.project_service import create_project, get_project, list_project_discussion_log, list_projects
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Try to import from the render service
 try:
@@ -30,6 +32,7 @@ except ImportError:
     from polio_domain.enums import RenderFormat
 
 router = APIRouter()
+logger = logging.getLogger("polio.api.projects")
 
 
 class DiagnosisOverall(BaseModel):
@@ -235,14 +238,15 @@ def get_user_stats(
     )
 
 class ExportRequest(BaseModel):
-    content_markdown: str
+    content_markdown: str = Field(min_length=1, max_length=100000)
 
 @router.post("/{project_id}/export")
 def export_project_hwpx(
     project_id: str,
     payload: ExportRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="project_export", limit=10, window_seconds=300, guest_limit=2)),
 ):
     project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
@@ -268,5 +272,9 @@ def export_project_hwpx(
             filename=f"Research_Report_{project_id}.hwpx",
             media_type="application/vnd.hancom.hwpx"
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+    except Exception as exc:
+        logger.exception("Project export failed: %s", project_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Export failed. Review the draft content and retry.",
+        ) from exc

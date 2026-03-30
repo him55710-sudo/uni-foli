@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 from threading import Thread
 from typing import Any
 
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from polio_api.core.config import get_settings
 from polio_api.core.database import SessionLocal
+from polio_api.core.security import sanitize_public_error
 from polio_api.db.models.async_job import AsyncJob
 from polio_api.db.models.diagnosis_run import DiagnosisRun
 from polio_api.db.models.parsed_document import ParsedDocument
@@ -20,9 +22,11 @@ from polio_api.services.render_job_service import process_render_job
 from polio_api.services.research_service import ingest_research_document
 from polio_domain.enums import AsyncJobStatus, AsyncJobType, RenderStatus
 
+logger = logging.getLogger("polio.api.async_jobs")
+
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def create_async_job(
@@ -221,16 +225,18 @@ def _requeue_stale_jobs(db: Session) -> None:
 
 
 def _handle_job_failure(db: Session, *, job: AsyncJob, reason: str) -> AsyncJob:
+    public_reason = _public_failure_reason(job, reason)
+    logger.warning("Async job failed: %s %s -> %s", job.job_type, job.id, public_reason)
     settings = get_settings()
     if job.retry_count >= job.max_retries:
         job.status = AsyncJobStatus.FAILED.value
-        job.failure_reason = reason
+        job.failure_reason = public_reason
         job.completed_at = utc_now()
         job.dead_lettered_at = utc_now()
-        _mark_resource_failed(db, job, reason)
+        _mark_resource_failed(db, job, public_reason)
     else:
-        job.schedule_retry(delay_seconds=settings.async_job_retry_delay_seconds, reason=reason)
-        _mark_resource_retrying(db, job, reason)
+        job.schedule_retry(delay_seconds=settings.async_job_retry_delay_seconds, reason=public_reason)
+        _mark_resource_retrying(db, job, public_reason)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -398,3 +404,13 @@ def _opt_str(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _public_failure_reason(job: AsyncJob, reason: str) -> str:
+    if job.job_type == AsyncJobType.DOCUMENT_PARSE.value:
+        return "Document parsing failed. Verify the file is still available and retry."
+    if job.job_type == AsyncJobType.RENDER.value:
+        return "Render job failed. Review the draft content and retry."
+    if job.job_type == AsyncJobType.DIAGNOSIS.value:
+        return "Diagnosis job failed. Retry after checking the project evidence."
+    return sanitize_public_error(reason, fallback="Async job failed.")

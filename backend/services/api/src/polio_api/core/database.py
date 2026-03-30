@@ -28,6 +28,7 @@ def initialize_database() -> None:
         diagnosis_run,
         document_chunk,
         draft,
+        inquiry,
         llm_cache_entry,
         parsed_document,
         policy_flag,
@@ -77,6 +78,7 @@ def _apply_schema_evolution() -> None:
         "workshop_sessions": {
             "quality_level": "quality_level VARCHAR(8) DEFAULT 'mid' NOT NULL",
             "stream_token": "stream_token VARCHAR(128)",
+            "stream_token_expires_at": "stream_token_expires_at DATETIME",
         },
         "draft_artifacts": {
             "quality_level_applied": "quality_level_applied VARCHAR(8)",

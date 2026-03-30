@@ -9,6 +9,7 @@ from polio_api.api.routes import (
     drafts,
     global_documents,
     health,
+    inquiries,
     jobs,
     projects,
     quests,
@@ -37,5 +38,6 @@ api_router.include_router(diagnosis.router, prefix="/diagnosis", tags=["diagnosi
 api_router.include_router(blueprints.router, prefix="/blueprints", tags=["blueprints"])
 api_router.include_router(quests.router, prefix="/quests", tags=["quests"])
 api_router.include_router(workshops.router, prefix="/workshops", tags=["workshops"])
+api_router.include_router(inquiries.router, prefix="/inquiries", tags=["inquiries"])
 api_router.include_router(render_jobs.router, tags=["render-jobs"])
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])

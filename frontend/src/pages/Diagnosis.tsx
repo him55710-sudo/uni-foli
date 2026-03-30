@@ -692,7 +692,7 @@ export function Diagnosis() {
                  목표 다시 수정하기
               </button>
               <button 
-                onClick={() => navigate(`/workshop/${projectId}`)}
+                onClick={() => navigate(`/app/workshop/${projectId}`)}
                 className="w-full sm:w-auto px-12 py-5 bg-slate-900 text-white rounded-[24px] font-black text-xl flex items-center gap-3 hover:bg-black transition-all shadow-2xl"
               >
                 이 진단을 토대로 탐구 시작하기 <ArrowRight />

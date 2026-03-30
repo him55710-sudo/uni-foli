@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from polio_api.core.config import get_settings
 from polio_api.db.models.diagnosis_run import DiagnosisRun
 from polio_api.db.models.project import Project
 from polio_api.db.models.response_trace import ResponseTrace
@@ -113,7 +112,8 @@ async def run_diagnosis_run(
 
     target_major = fallback_target_major or project.target_major
     user_major = project.target_major or fallback_target_major or "General Studies"
-    has_real_gemini_key = bool(os.environ.get("GEMINI_API_KEY")) and os.environ.get("GEMINI_API_KEY") != "DUMMY_KEY"
+    settings = get_settings()
+    has_real_gemini_key = bool(settings.gemini_api_key and settings.gemini_api_key != "DUMMY_KEY")
     evidence_keys = [
         document.sha256 or document.id
         for document in documents

@@ -22,7 +22,8 @@ npm run build
 - Start from [`frontend/.env.example`](./.env.example).
 - `VITE_API_URL` should point to the backend API, usually `http://localhost:8000`.
 - Firebase variables are optional for local development.
-- When Firebase config is absent, the app can fall back to local guest mode instead of crashing.
+- Local guest mode is auto-enabled only during local development.
+- In a non-dev environment, guest mode stays off unless `VITE_ALLOW_GUEST_MODE=true` is set explicitly.
 
 ## Firebase Console Checklist
 

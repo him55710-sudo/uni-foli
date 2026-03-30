@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from polio_domain.enums import RenderFormat
 
@@ -9,7 +9,7 @@ class RenderJobCreate(BaseModel):
     project_id: str
     draft_id: str
     render_format: RenderFormat
-    requested_by: str | None = None
+    requested_by: str | None = Field(default=None, max_length=120)
 
 
 class RenderJobRead(BaseModel):
@@ -18,7 +18,7 @@ class RenderJobRead(BaseModel):
     draft_id: str
     render_format: str
     status: str
-    output_path: str | None
+    download_url: str | None
     result_message: str | None
     requested_by: str | None
     async_job_id: str | None = None

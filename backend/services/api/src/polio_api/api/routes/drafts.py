@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
 
-import google.generativeai as genai
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -16,8 +14,6 @@ from polio_api.core.llm import get_llm_client
 from polio_api.schemas.draft import DraftCreate, DraftRead
 from polio_api.services.draft_service import create_draft, get_draft, list_drafts_for_project
 from polio_api.services.project_service import append_project_discussion_log, get_project
-
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "DUMMY_KEY"))
 
 router = APIRouter()
 chat_router = APIRouter()

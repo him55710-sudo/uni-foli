@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_current_user, get_db
+from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
 from polio_api.schemas.async_job import AsyncJobRead
 from polio_api.schemas.research import (
@@ -38,7 +39,10 @@ async def search_research_papers(
     query: Annotated[str, Query(min_length=2, max_length=200, description="Paper search keyword")],
     limit: Annotated[int, Query(ge=1, le=20, description="Number of results to return")] = 5,
     source: Annotated[str, Query(description="Search source: semantic or kci")] = "semantic",
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="research_papers", limit=30, window_seconds=300)),
 ) -> ScholarSearchResult:
+    del current_user
     try:
         if source == "kci":
             return await search_kci_papers(query=query, limit=limit)
@@ -53,6 +57,7 @@ def ingest_research_sources(
     payload: ResearchIngestRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit(bucket="research_ingest", limit=10, window_seconds=300)),
 ) -> ResearchIngestResponse:
     project = get_project(db, payload.project_id, owner_user_id=current_user.id)
     if project is None:

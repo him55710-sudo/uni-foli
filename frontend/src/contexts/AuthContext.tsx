@@ -9,12 +9,13 @@ import {
   signInWithRedirect,
   signOut,
 } from 'firebase/auth';
-import { auth, googleProvider, isFirebaseConfigured } from '../lib/firebase';
+import { auth, googleProvider, isFirebaseConfigured, isGuestModeAllowed } from '../lib/firebase';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   isGuestSession: boolean;
+  guestModeAvailable: boolean;
   isAuthenticated: boolean;
   signInWithGoogle: () => Promise<void>;
   signInAsGuest: () => Promise<void>;
@@ -41,16 +42,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isGuestSession, setIsGuestSession] = useState(false);
+  const guestModeAvailable = isGuestModeAllowed;
 
   useEffect(() => {
-    const savedGuestSession = localStorage.getItem(GUEST_SESSION_KEY) === '1';
-    
-    // Auto-login as guest for "Uni Folia" rebranding and to bypass landing page
-    if (!savedGuestSession && !user) {
-      setIsGuestSession(true);
-      localStorage.setItem(GUEST_SESSION_KEY, '1');
-    } else if (savedGuestSession) {
-      setIsGuestSession(true);
+    const savedGuestSession = guestModeAvailable && localStorage.getItem(GUEST_SESSION_KEY) === '1';
+
+    if (!guestModeAvailable) {
+      localStorage.removeItem(GUEST_SESSION_KEY);
+      setIsGuestSession(false);
+    } else {
+      setIsGuestSession(savedGuestSession);
     }
 
     if (!auth || !isFirebaseConfigured) {
@@ -68,17 +69,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           localStorage.removeItem(GUEST_SESSION_KEY);
         }
-        
+
         // Fetch backend profile and sync with zustand
         await useAuthStore.getState().fetchProfile();
       } else {
-        setIsGuestSession(savedGuestSession);
+        if (guestModeAvailable && savedGuestSession) {
+          setIsGuestSession(true);
+        } else {
+          setIsGuestSession(false);
+          localStorage.removeItem(GUEST_SESSION_KEY);
+        }
         useAuthStore.getState().setUser(null);
       }
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [guestModeAvailable]);
 
   const signInWithGoogle = async () => {
     if (!auth || !googleProvider || !isFirebaseConfigured) {
@@ -98,6 +104,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInAsGuest = async () => {
+    if (!guestModeAvailable) {
+      throw new Error('Guest mode is disabled in this environment.');
+    }
+
     if (!auth || !isFirebaseConfigured) {
       setIsGuestSession(true);
       localStorage.setItem(GUEST_SESSION_KEY, '1');
@@ -110,10 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(GUEST_SESSION_KEY, '1');
     } catch (error) {
       const authError = error as Partial<AuthError>;
-      // In local dev, always fallback to guest mode if Firebase setup is problematic
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-      if (isLocal || (authError.code && GUEST_FALLBACK_ERROR_CODES.has(authError.code))) {
+      if (guestModeAvailable && authError.code && GUEST_FALLBACK_ERROR_CODES.has(authError.code)) {
         console.warn('Firebase Auth guest login failed, falling back to local guest mode:', authError.code);
         setIsGuestSession(true);
         localStorage.setItem(GUEST_SESSION_KEY, '1');
@@ -143,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         loading,
         isGuestSession,
+        guestModeAvailable,
         isAuthenticated,
         signInWithGoogle,
         signInAsGuest,

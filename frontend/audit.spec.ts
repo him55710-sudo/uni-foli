@@ -15,7 +15,7 @@ test.describe('uni folia frontend audit smoke', () => {
   });
 
   test('record page removes critical unlabeled-control issues', async ({ page }) => {
-    await page.goto(`${APP_ORIGIN}/record`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${APP_ORIGIN}/app/record`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
 
     const axe = await new AxeBuilder({ page }).analyze();
@@ -43,7 +43,7 @@ test.describe('uni folia frontend audit smoke', () => {
       });
     });
 
-    await page.goto(`${APP_ORIGIN}/workshop`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${APP_ORIGIN}/app/workshop`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
 
     const input = page.locator('input').last();
@@ -75,21 +75,73 @@ test.describe('uni folia frontend audit smoke', () => {
     expect(archiveRaw).toContain('Student-authored evidence paragraph draft');
   });
 
-  test('demo workshop chat falls back safely when the stream request fails', async ({ page }) => {
+  test('workshop chat falls back to helpful Korean task guidance on failure', async ({ page }) => {
     await page.route('**/api/v1/drafts/chat/stream', async (route) => {
       await route.abort('failed');
     });
 
-    await page.goto(`${APP_ORIGIN}/workshop`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1500);
+    await page.goto(`${APP_ORIGIN}/app/workshop`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2000);
 
     const input = page.locator('input').last();
-    await input.fill('Help me narrow this topic.');
+    await input.fill('연구 주제 좁히는 것 좀 도와줘.'); // Korean task input
     await input.press('Enter');
     await page.waitForTimeout(1000);
 
-    await expect(page.locator('main')).toContainText('Demo fallback');
-    await expect(page.locator('main')).toContainText('next-safe actions');
+    // Should NOT contain "Demo fallback" or English robotic text
+    await expect(page.locator('main')).not.toContainText('Demo fallback');
+    await expect(page.locator('main')).toContainText('주제를 구체적인 질문으로 좁히기');
+  });
+
+  test('workshop chat handles casual Korean greetings gracefully on failure', async ({ page }) => {
+    await page.route('**/api/v1/drafts/chat/stream', async (route) => {
+      await route.abort('failed');
+    });
+
+    await page.goto(`${APP_ORIGIN}/app/workshop`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1000);
+
+    const input = page.locator('input').last();
+    await input.fill('안녕'); // Casual greeting
+    await input.press('Enter');
+    await page.waitForTimeout(1000);
+
+    await expect(page.locator('main')).toContainText('안녕하세요! Uni Folia 방문을 환영해요');
+    await expect(page.locator('main')).not.toContainText('연결이 원활하지 않아'); // Don't mention errors on greetings if possible
+  });
+
+  test('workshop chat handles casual English greetings gracefully on failure', async ({ page }) => {
+    await page.route('**/api/v1/drafts/chat/stream', async (route) => {
+      await route.abort('failed');
+    });
+
+    await page.goto(`${APP_ORIGIN}/app/workshop`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1000);
+
+    const input = page.locator('input').last();
+    await input.fill('Hello!'); // English greeting
+    await input.press('Enter');
+    await page.waitForTimeout(1000);
+
+    await expect(page.locator('main')).toContainText('Hello! Welcome to Uni Folia');
+    await expect(page.locator('main')).not.toContainText('currently limited'); // Keep greetings clean
+  });
+
+  test('workshop chat falls back to helpful English task guidance on failure', async ({ page }) => {
+    await page.route('**/api/v1/drafts/chat/stream', async (route) => {
+      await route.abort('failed');
+    });
+
+    await page.goto(`${APP_ORIGIN}/app/workshop`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1000);
+
+    const input = page.locator('input').last();
+    await input.fill('Help me with evidence.'); // English task
+    await input.press('Enter');
+    await page.waitForTimeout(1000);
+
+    await expect(page.locator('main')).toContainText('unable to verify evidence');
+    await expect(page.locator('main')).toContainText('Outlining the overall structure');
   });
 
   test('diagnosis flow shows retryable job failure and evidence-backed result', async ({ page }) => {
@@ -286,7 +338,7 @@ test.describe('uni folia frontend audit smoke', () => {
       });
     });
 
-    await page.goto(`${APP_ORIGIN}/diagnosis`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${APP_ORIGIN}/app/diagnosis`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1000);
 
     await page.getByTestId('diagnosis-edit-goals').click();

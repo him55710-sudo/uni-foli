@@ -20,7 +20,7 @@ Or from `backend/` directly:
 .\scripts\start-api.cmd
 ```
 
-Swagger UI: `http://127.0.0.1:8000/docs`
+Swagger UI: `http://127.0.0.1:8000/docs` when `APP_ENV=local` or `API_DOCS_ENABLED=true`
 
 If Windows PowerShell blocks `.ps1` execution, use the `.cmd` wrappers under `scripts/`.
 
@@ -33,10 +33,16 @@ Background worker:
 ## Security Defaults
 
 - `APP_ENV` now defaults to `production` and `APP_DEBUG` defaults to `false`.
+- Interactive API docs are hidden by default outside local development unless `API_DOCS_ENABLED=true` is set explicitly.
 - Local auth bypass is still available for local development, but only when `APP_ENV=local` and `AUTH_ALLOW_LOCAL_DEV_BYPASS=true` are both set explicitly.
 - Production must use real JWT verification settings and must not rely on dummy OAuth provider credentials.
-- Social login must remain disabled unless `AUTH_SOCIAL_LOGIN_ENABLED=true`, `AUTH_SOCIAL_STATE_SECRET` is set, and the provider credentials are real.
+- Social login must remain disabled unless `AUTH_SOCIAL_LOGIN_ENABLED=true`, `AUTH_SOCIAL_STATE_SECRET` is set, the provider credentials are real, and non-local redirect URIs do not point at localhost.
+- OAuth state is signed, TTL-bound, client-bound, and rejected on replay within the current API process.
 - Uploads are restricted to `.pdf`, `.txt`, and `.md` by default, with extension, MIME, and size validation enforced by `UPLOAD_ALLOWED_EXTENSIONS` and `UPLOAD_MAX_BYTES`.
+- Remote research URL fetches are limited to public `http`/`https` hosts and capped by `RESEARCH_FETCH_MAX_BYTES`.
+- `KCI_API_KEY` must be set explicitly before KCI search is enabled.
+- Render job responses expose an authenticated `download_url`, not internal filesystem paths.
+- Workshop render stream tokens expire server-side after five minutes and are cleared after use.
 - Credentialed wildcard CORS is rejected outside local development.
 
 ## Backend Map
@@ -95,5 +101,7 @@ Canonical docs now live at the repo root under `../docs/`.
 - `../docs/07-diagnosis-engine/README.md`
 - `../docs/08-chat-orchestration/README.md`
 - `../docs/09-drafting-provenance/README.md`
+- `../docs/12-security-compliance/README.md`
+- `../docs/reports/polio_security_hardening_20260330.md`
 
 Duplicated backend docs and old root-level backend notes were moved to `../archive/legacy/backend/`.

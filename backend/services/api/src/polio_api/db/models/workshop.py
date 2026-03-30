@@ -32,6 +32,7 @@ class WorkshopSession(Base):
     context_score: Mapped[int] = mapped_column(Integer, default=0)
     quality_level: Mapped[str] = mapped_column(String(8), default=QualityLevel.MID.value)  # low/mid/high
     stream_token: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True, index=True)
+    stream_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

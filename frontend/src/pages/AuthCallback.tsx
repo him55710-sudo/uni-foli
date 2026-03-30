@@ -15,28 +15,27 @@ export function AuthCallback() {
   useEffect(() => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
+
     if (code && state && provider) {
-      handleSocialLogin(provider, code, state);
+      void handleSocialLogin(provider, code, state);
     }
   }, [provider, searchParams]);
 
-  const handleSocialLogin = async (provider: string, code: string, state: string) => {
+  const handleSocialLogin = async (providerName: string, code: string, state: string) => {
     try {
       if (!auth || !isFirebaseConfigured) {
-        throw new Error('Social login requires Firebase configuration.');
+        throw new Error('소셜 로그인은 Firebase 설정이 필요합니다.');
       }
 
-      const response = await api.post('/api/v1/auth/social', {
-        provider,
+      const response = await api.post<{ firebase_custom_token: string }>('/api/v1/auth/social', {
+        provider: providerName,
         code,
         state,
       });
 
-      const { firebase_custom_token } = response;
-      await signInWithCustomToken(auth, firebase_custom_token);
-
-      toast.success('Poli에 오신 것을 환영합니다! 🎉');
-      navigate('/');
+      await signInWithCustomToken(auth, response.firebase_custom_token);
+      toast.success('로그인이 완료되었습니다.');
+      navigate('/app');
     } catch (error) {
       console.error('Social login failed:', error);
       toast.error('로그인에 실패했습니다. 다시 시도해 주세요.');
@@ -45,17 +44,17 @@ export function AuthCallback() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
       <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
+        initial={{ opacity: 0, scale: 0.94 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="text-center"
+        className="rounded-[32px] border border-slate-200 bg-white p-10 text-center shadow-xl"
       >
-        <div className="w-20 h-20 bg-blue-500 rounded-3xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-blue-500/20">
-          <Bot size={40} className="text-white animate-pulse" />
+        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-blue-500 shadow-lg shadow-blue-500/20">
+          <Bot size={40} className="animate-pulse text-white" />
         </div>
-        <h2 className="text-2xl font-extrabold text-slate-800 mb-2">Poli가 로그인하는 중...</h2>
-        <p className="text-slate-500 font-medium">잠시만 기다려 주세요.</p>
+        <h2 className="mt-6 text-2xl font-extrabold text-slate-800">로그인 정보를 확인하고 있습니다.</h2>
+        <p className="mt-3 text-sm font-medium text-slate-500">잠시만 기다려 주세요.</p>
       </motion.div>
     </div>
   );

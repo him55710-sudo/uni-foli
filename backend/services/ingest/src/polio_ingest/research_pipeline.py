@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
+import socket
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -17,6 +20,9 @@ from polio_ingest.models import (
 
 
 TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
+MAX_FETCH_REDIRECTS = 4
+DEFAULT_FETCH_MAX_BYTES = 2 * 1024 * 1024
+BLOCKED_HOST_SUFFIXES = (".internal", ".local", ".localhost")
 
 TRUST_RANK_BY_CLASSIFICATION = {
     ResearchSourceClassification.OFFICIAL_SOURCE.value: 400,
@@ -274,12 +280,80 @@ def _parse_html(html: str) -> tuple[str | None, str, str]:
 
 
 def _fetch_url_text(url: str) -> str:
+    current_url = url.strip()
+    for _ in range(MAX_FETCH_REDIRECTS + 1):
+        _assert_safe_public_url(current_url)
+        try:
+            response = httpx.get(
+                current_url,
+                timeout=10.0,
+                follow_redirects=False,
+                headers={
+                    "User-Agent": "uni-folia-research-fetch/1.0",
+                    "Accept": "text/html, text/plain;q=0.9",
+                },
+            )
+        except httpx.HTTPError as exc:
+            raise ResearchPipelineError(f"Unable to fetch research source from {current_url}.") from exc
+
+        if response.is_redirect:
+            redirect_target = response.headers.get("location")
+            if not redirect_target:
+                raise ResearchPipelineError("Research source redirect target is missing.")
+            current_url = urljoin(current_url, redirect_target)
+            continue
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ResearchPipelineError(f"Research source fetch failed with status {exc.response.status_code}.") from exc
+
+        max_bytes = _research_fetch_max_bytes()
+        if len(response.content) > max_bytes:
+            raise ResearchPipelineError("Research source is too large to ingest safely.")
+        return response.text
+
+    raise ResearchPipelineError("Research source redirected too many times.")
+
+
+def _research_fetch_max_bytes() -> int:
     try:
-        response = httpx.get(url, timeout=10.0, follow_redirects=True)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise ResearchPipelineError(f"Unable to fetch research source from {url}: {exc}") from exc
-    return response.text
+        from polio_api.core.config import get_settings
+
+        return max(1, int(get_settings().research_fetch_max_bytes))
+    except Exception:
+        return DEFAULT_FETCH_MAX_BYTES
+
+
+def _assert_safe_public_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ResearchPipelineError("Research source URL must use http or https.")
+    if not parsed.netloc or not parsed.hostname:
+        raise ResearchPipelineError("Research source URL must include a valid host.")
+    if parsed.username or parsed.password:
+        raise ResearchPipelineError("Research source URL must not include embedded credentials.")
+
+    hostname = parsed.hostname.strip().lower().rstrip(".")
+    if hostname == "localhost" or hostname.endswith(BLOCKED_HOST_SUFFIXES):
+        raise ResearchPipelineError("Research source URL must resolve to a public internet host.")
+
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise ResearchPipelineError("Research source URL contains an invalid port.") from exc
+    try:
+        addresses = {
+            info[4][0]
+            for info in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        }
+    except socket.gaierror as exc:
+        raise ResearchPipelineError("Unable to resolve the research source host.") from exc
+
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if not ip.is_global:
+            raise ResearchPipelineError("Research source URL must resolve to a public internet host.")
 
 
 def _slice_text(text: str, chunk_size_chars: int, overlap_chars: int) -> list[tuple[str, int, int]]:

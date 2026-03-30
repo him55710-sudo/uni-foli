@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from polio_api.api.deps import get_current_user, get_firebase_auth_client
 from polio_api.core.config import get_settings
-from polio_api.core.oauth_state import build_oauth_state, validate_oauth_state
+from polio_api.core.oauth_state import build_client_binding, build_oauth_state, validate_oauth_state
 from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
 from polio_api.schemas.user import UserProfileRead
@@ -46,7 +46,10 @@ def firebase_exchange(current_user: User = Depends(get_current_user)) -> UserPro
     response_model=SocialProviderPrepareResponse,
     dependencies=[Depends(rate_limit(bucket="social_prepare", limit=20, window_seconds=300))],
 )
-def prepare_social_login(payload: SocialProviderPrepareRequest) -> SocialProviderPrepareResponse:
+def prepare_social_login(
+    payload: SocialProviderPrepareRequest,
+    request: Request,
+) -> SocialProviderPrepareResponse:
     settings = get_settings()
     _ensure_social_login_enabled(settings)
     state_secret = settings.auth_social_state_secret
@@ -55,8 +58,15 @@ def prepare_social_login(payload: SocialProviderPrepareRequest) -> SocialProvide
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Social login is not configured.",
         )
-
-    state = build_oauth_state(provider=payload.provider, secret=state_secret)
+    client_binding = build_client_binding(
+        request.headers.get("user-agent"),
+        request.client.host if request.client else None,
+    )
+    state = build_oauth_state(
+        provider=payload.provider,
+        secret=state_secret,
+        client_binding=client_binding,
+    )
     return SocialProviderPrepareResponse(
         provider=payload.provider,
         state=state,
@@ -69,7 +79,7 @@ def prepare_social_login(payload: SocialProviderPrepareRequest) -> SocialProvide
     response_model=SocialLoginResponse,
     dependencies=[Depends(rate_limit(bucket="social_login", limit=10, window_seconds=300))],
 )
-async def social_login(payload: SocialLoginRequest) -> SocialLoginResponse:
+async def social_login(payload: SocialLoginRequest, request: Request) -> SocialLoginResponse:
     settings = get_settings()
     _ensure_social_login_enabled(settings)
     _require_provider_config(settings, payload.provider)
@@ -80,6 +90,10 @@ async def social_login(payload: SocialLoginRequest) -> SocialLoginResponse:
             provider=payload.provider,
             secret=settings.auth_social_state_secret or "",
             ttl_seconds=settings.auth_social_state_ttl_seconds,
+            client_binding=build_client_binding(
+                request.headers.get("user-agent"),
+                request.client.host if request.client else None,
+            ),
         )
     except ValueError as exc:
         raise HTTPException(
