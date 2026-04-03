@@ -292,6 +292,7 @@ export function Workshop() {
   const [docHistory, setDocHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<'chat' | 'draft'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const questStart = useMemo(() => readQuestStart(), []);
@@ -556,7 +557,7 @@ export function Workshop() {
   const diagnosisGapCount = Array.isArray(diagnosisReport?.gaps) ? diagnosisReport.gaps.length : 0;
 
   return (
-    <div className={cn("mx-auto max-w-7xl space-y-6 py-6 px-4 transition-all duration-700", advancedMode && "bg-blue-50/30 rounded-[48px] shadow-[inset_0_0_100px_rgba(37,99,235,0.03)]")}>
+    <div className={cn("mx-auto max-w-7xl space-y-5 px-3 py-4 transition-all duration-700 sm:space-y-6 sm:px-4 sm:py-6", advancedMode && "rounded-[32px] bg-blue-50/30 shadow-[inset_0_0_100px_rgba(37,99,235,0.03)] sm:rounded-[48px]")}>
       <motion.div
         animate={advancedMode ? { y: [0, -2, 0] } : {}}
         transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
@@ -598,12 +599,37 @@ export function Workshop() {
         onCancel={() => setPendingSuggestion(null)}
       />
 
-      <div className="grid gap-6 lg:grid-cols-[400px,1fr]">
+      <div className="md:hidden">
+        <div className="inline-flex w-full items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setMobileView('chat')}
+            className={cn(
+              'h-10 flex-1 rounded-xl px-3 text-sm font-bold transition-colors',
+              mobileView === 'chat' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100',
+            )}
+          >
+            대화
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileView('draft')}
+            className={cn(
+              'h-10 flex-1 rounded-xl px-3 text-sm font-bold transition-colors',
+              mobileView === 'draft' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100',
+            )}
+          >
+            초안 문서
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
         <SectionCard
           title="Foli 대화"
           description="핵심 질문으로 논리 구조, 근거 연결, 문장 완성도를 순서대로 개선해 보세요."
           eyebrow="대화"
-          className="min-h-[38rem]"
+          className={cn('min-h-[34rem] md:min-h-[38rem]', mobileView !== 'chat' && 'hidden md:flex')}
           bodyClassName="flex h-full min-h-0 flex-col gap-4 space-y-0"
           actions={<StatusBadge status={qualityMeta.status}>{qualityMeta.label}</StatusBadge>}
         >
@@ -687,7 +713,7 @@ export function Workshop() {
             )
           ) : null}
 
-          <div className="flex items-center gap-2">
+          <div className="sticky bottom-0 z-10 -mx-1 flex items-center gap-2 border-t border-slate-200 bg-white/95 px-1 pt-3 pb-[calc(0.25rem+env(safe-area-inset-bottom))] backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:pt-0 md:pb-0">
             <SecondaryButton onClick={() => toast.success('내보내기 기능은 다음 단계에서 연결됩니다.')} aria-label="초안 내보내기" size="icon">
               <Download size={16} />
             </SecondaryButton>
@@ -701,7 +727,7 @@ export function Workshop() {
                 }
               }}
               placeholder="논지 구성, 근거 연결, 문장 다듬기 등 요청을 입력해 주세요."
-              className="h-11 flex-1 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 outline-none transition focus-visible:ring-2 focus-visible:ring-blue-300"
+              className="h-11 min-w-0 flex-1 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 outline-none transition focus-visible:ring-2 focus-visible:ring-blue-300"
             />
             <PrimaryButton onClick={() => void handleSend()} disabled={!input.trim() || isTyping} aria-label="메시지 전송" size="icon">
               <Send size={16} />
@@ -713,11 +739,16 @@ export function Workshop() {
           title="초안 문서"
           description="학생 작성 문장을 중심으로 유지하고, AI 제안은 검토 후 반영하세요."
           eyebrow="문서"
-          className="min-h-[38rem]"
+          className={cn('min-h-[34rem] md:min-h-[38rem]', mobileView !== 'draft' && 'hidden md:flex')}
           bodyClassName="flex h-full min-h-0 flex-col gap-4 space-y-0"
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <SecondaryButton data-testid="workshop-open-editor" onClick={() => navigate(`/app/editor/${projectId}`)} size="sm" className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">
+              <SecondaryButton
+                data-testid="workshop-open-editor"
+                onClick={() => navigate(`/app/editor/${projectId ?? 'demo'}`, { state: { seedMarkdown: documentContent } })}
+                size="sm"
+                className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              >
                 <ExternalLink size={14} />
                 전문 에디터
               </SecondaryButton>
@@ -747,7 +778,7 @@ export function Workshop() {
             aria-label="초안 미리보기 문서"
             data-testid="workshop-draft-preview"
           >
-            <div className="mx-auto flex min-h-[720px] max-w-[210mm] flex-col rounded-xl border border-slate-200 bg-white p-8 shadow-sm sm:p-10">
+            <div className="mx-auto flex min-h-[520px] w-full max-w-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:min-h-[720px] sm:max-w-[210mm] sm:p-10">
               <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
                 <p className="truncate text-xs font-bold uppercase tracking-[0.14em] text-slate-400">{fileName}</p>
                 <StatusBadge status="neutral">실시간 미리보기</StatusBadge>

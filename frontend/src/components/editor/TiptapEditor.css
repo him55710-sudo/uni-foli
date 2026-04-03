@@ -3,6 +3,16 @@
    ═══════════════════════════════════════════════ */
 
 /* ── Base ────────────────────────────────── */
+.a4-page {
+  width: min(210mm, 100%);
+  min-height: 297mm;
+  padding: 25mm 20mm 30mm;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    0 12px 48px rgba(0, 0, 0, 0.04);
+}
+
 .tiptap-editor-content {
   min-height: 297mm;
   outline: none;
@@ -229,6 +239,31 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+}
+
+@media (max-width: 767px) {
+  .a4-page {
+    min-height: calc(100dvh - 14rem);
+    padding: 20px 14px 28px;
+    border-radius: 14px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 10px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  .tiptap-editor-content {
+    min-height: calc(100dvh - 18rem);
+    font-size: 15px;
+    line-height: 1.7;
+    word-break: break-word;
+  }
+
+  .tiptap-editor-content h1 {
+    font-size: 1.55rem;
+    margin-top: 1.1rem;
+  }
+
+  .tiptap-editor-content h2 {
+    font-size: 1.25rem;
+  }
 }
 
 /* ── Print ────────────────────────────────── */

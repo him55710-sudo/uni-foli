@@ -6,6 +6,7 @@ import { AppSidebar } from './layout/AppSidebar';
 import { AppTopbar } from './layout/AppTopbar';
 import { resolveCurrentNavSection } from './layout/nav-config';
 import { useAuth } from '../contexts/AuthContext';
+import { buildRankedGoals } from '../lib/rankedGoals';
 import { useAuthStore } from '../store/authStore';
 import { AppShell } from './primitives';
 
@@ -38,10 +39,18 @@ export function Layout() {
   }, [location.pathname]);
 
   const hasTargets = Boolean(dbUser?.target_university && dbUser?.target_major);
+  const rankedGoals = useMemo(() => buildRankedGoals(dbUser, 6), [dbUser]);
+  const primaryGoal = rankedGoals[0] ?? null;
   const currentSection = useMemo(() => resolveCurrentNavSection(location.pathname), [location.pathname]);
+
+  const isEditorRoute = location.pathname.startsWith('/app/editor/');
+  const isWorkshopRoute = location.pathname.startsWith('/app/workshop');
+  const hideGlobalChrome = isEditorRoute;
+  const shouldShowFooter = !isEditorRoute && !isWorkshopRoute;
+
   const workflowSummary = hasTargets
-    ? `${currentSection.label} 단계입니다. 현재 단계의 다음 행동을 이어서 진행해 주세요.`
-    : '먼저 목표 대학과 학과를 설정하면 준비 → 분석 → 실행 흐름이 활성화됩니다.';
+    ? `${currentSection.label} 단계입니다. 현재 단계에서 다음 행동을 이어서 진행해 주세요.`
+    : '먼저 목표 대학과 학과를 설정하면 준비와 분석을 위한 작업 흐름이 시작됩니다.';
 
   const userName = user?.displayName || dbUser?.name || (isGuestSession ? '게스트' : '사용자');
 
@@ -50,34 +59,35 @@ export function Layout() {
       <B2BPartnershipModal isOpen={isPartnershipModalOpen} onClose={() => setIsPartnershipModalOpen(false)} />
       <AppShell
         topbar={
-          <AppTopbar
-            currentSectionLabel={currentSection.label}
-            summary={workflowSummary}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={() => setIsSidebarOpen(open => !open)}
-            primaryGoal={
-              dbUser?.target_university
-                ? { university: dbUser.target_university, major: dbUser.target_major ?? '' }
-                : null
-            }
-          />
+          hideGlobalChrome ? null : (
+            <AppTopbar
+              currentSectionLabel={currentSection.label}
+              summary={workflowSummary}
+              isSidebarOpen={isSidebarOpen}
+              onToggleSidebar={() => setIsSidebarOpen(open => !open)}
+              primaryGoal={primaryGoal}
+              rankedGoals={rankedGoals}
+            />
+          )
         }
         sidebar={
-          <AppSidebar
-            pathname={location.pathname}
-            isOpen={isSidebarOpen}
-            onToggle={() => setIsSidebarOpen(open => !open)}
-            onCloseMobile={() => {
-              if (!isDesktopViewport()) setIsSidebarOpen(false);
-            }}
-            userName={userName}
-            userPhotoUrl={user?.photoURL}
-            isGuestSession={isGuestSession}
-            onLogout={logout}
-          />
+          hideGlobalChrome ? null : (
+            <AppSidebar
+              pathname={location.pathname}
+              isOpen={isSidebarOpen}
+              onToggle={() => setIsSidebarOpen(open => !open)}
+              onCloseMobile={() => {
+                if (!isDesktopViewport()) setIsSidebarOpen(false);
+              }}
+              userName={userName}
+              userPhotoUrl={user?.photoURL}
+              isGuestSession={isGuestSession}
+              onLogout={logout}
+            />
+          )
         }
         overlay={
-          isSidebarOpen && !isDesktopViewport() ? (
+          !hideGlobalChrome && isSidebarOpen && !isDesktopViewport() ? (
             <button
               type="button"
               aria-label="내비게이션 닫기"
@@ -86,7 +96,8 @@ export function Layout() {
             />
           ) : null
         }
-        footer={<AppFooter onOpenPartnership={() => setIsPartnershipModalOpen(true)} />}
+        footer={shouldShowFooter ? <AppFooter onOpenPartnership={() => setIsPartnershipModalOpen(true)} /> : null}
+        contentClassName={isEditorRoute ? 'p-0 pb-0' : undefined}
       >
         <Outlet />
       </AppShell>

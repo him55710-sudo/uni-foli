@@ -104,7 +104,7 @@ function ToolbarButton({
       disabled={disabled}
       title={title}
       className={cn(
-        'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:pointer-events-none disabled:opacity-30',
+        'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 sm:h-7 sm:w-7 disabled:pointer-events-none disabled:opacity-30',
         active && 'bg-blue-100 text-blue-700 hover:bg-blue-100',
         className,
       )}
@@ -139,7 +139,7 @@ function ColorPicker({
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => setIsOpen(!isOpen)}
         title={title}
-        className="flex h-7 w-7 flex-col items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100"
+        className="flex h-8 w-8 flex-col items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 sm:h-7 sm:w-7"
       >
         {icon}
         <div className="mt-0.5 h-[3px] w-4 rounded-full" style={{ backgroundColor: currentColor || '#000' }} />
@@ -213,7 +213,7 @@ export function EditorToolbar({ editor, onInsertTemplate }: EditorToolbarProps) 
   return (
     <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
       {/* Row 1: Primary formatting */}
-      <div className="flex flex-wrap items-center gap-0.5 px-3 py-1.5">
+      <div className="flex items-center gap-0.5 overflow-x-auto px-2 py-1.5 sm:px-3 [&::-webkit-scrollbar]:h-0">
         {/* Undo / Redo */}
         <ToolbarButton onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="실행 취소 (Ctrl+Z)">
           <Undo size={15} />

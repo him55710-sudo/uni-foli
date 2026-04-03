@@ -65,13 +65,15 @@ export function SectionCard({
   return (
     <Card className={cn('flex flex-col rounded-3xl border border-slate-200 shadow-sm', className)} {...props}>
       {(title || description || eyebrow || actions || collapsible) ? (
-        <header className="mb-5 flex shrink-0 items-start justify-between gap-4">
+        <header className="mb-4 flex shrink-0 flex-col gap-3 sm:mb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0">
             {eyebrow ? <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">{eyebrow}</p> : null}
-            {title ? <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">{title}</h2> : null}
-            {description ? <p className="mt-2 text-base font-medium leading-7 text-slate-500">{description}</p> : null}
+            {title ? <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">{title}</h2> : null}
+            {description ? <p className="mt-2 text-sm font-medium leading-6 text-slate-500 sm:text-base sm:leading-7">{description}</p> : null}
           </div>
-          {actions || collapsible ? <div className="flex shrink-0 flex-wrap items-center gap-2">{headerActions}</div> : null}
+          {actions || collapsible ? (
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">{headerActions}</div>
+          ) : null}
         </header>
       ) : null}
       {!isCollapsed ? <div className={cn('min-h-0 flex-1 space-y-5', bodyClassName)}>{children}</div> : null}
