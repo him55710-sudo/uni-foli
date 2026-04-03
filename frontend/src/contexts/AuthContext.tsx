@@ -11,7 +11,6 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider, isFirebaseConfigured, isGuestModeAllowed } from '../lib/firebase';
 import { api } from '../lib/api';
-import { readGuestProfile } from '../lib/guestProfile';
 
 interface AuthContextType {
   user: User | null;
@@ -34,14 +33,6 @@ const POPUP_FALLBACK_ERROR_CODES = new Set([
   'auth/cancelled-popup-request',
   'auth/operation-not-supported-in-this-environment',
 ]);
-const GUEST_FALLBACK_ERROR_CODES = new Set([
-  'auth/operation-not-allowed',
-  'auth/admin-restricted-operation',
-  'auth/invalid-api-key',
-  'auth/network-request-failed',
-  'auth/configuration-not-found'
-]);
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,14 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const guestModeAvailable = isGuestModeAllowed;
 
   useEffect(() => {
-    const savedGuestSession = guestModeAvailable && localStorage.getItem(GUEST_SESSION_KEY) === '1';
-
-    if (!guestModeAvailable) {
-      localStorage.removeItem(GUEST_SESSION_KEY);
-      setIsGuestSession(false);
-    } else {
-      setIsGuestSession(savedGuestSession);
-    }
+    localStorage.removeItem(GUEST_SESSION_KEY);
+    setIsGuestSession(false);
 
     if (!auth || !isFirebaseConfigured) {
       setLoading(false);
@@ -77,24 +62,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Fetch backend profile and sync with zustand
         await useAuthStore.getState().fetchProfile();
       } else {
-        if (guestModeAvailable && savedGuestSession) {
-          setIsGuestSession(true);
-          const guestProfile = readGuestProfile();
-          if (guestProfile) {
-            useAuthStore.getState().setUser(guestProfile);
-          } else {
-            useAuthStore.getState().setUser(null);
-          }
-        } else {
-          setIsGuestSession(false);
-          localStorage.removeItem(GUEST_SESSION_KEY);
-          useAuthStore.getState().setUser(null);
-        }
+        setIsGuestSession(false);
+        localStorage.removeItem(GUEST_SESSION_KEY);
+        useAuthStore.getState().setUser(null);
       }
       setLoading(false);
     });
     return unsubscribe;
-  }, [guestModeAvailable]);
+  }, []);
 
   const signInWithGoogle = async () => {
     if (!auth || !googleProvider || !isFirebaseConfigured) {
@@ -154,11 +129,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(GUEST_SESSION_KEY, '1');
     } catch (error) {
       const authError = error as Partial<AuthError>;
-      if (guestModeAvailable && authError.code && GUEST_FALLBACK_ERROR_CODES.has(authError.code)) {
-        console.warn('Firebase Auth guest login failed, falling back to local guest mode:', authError.code);
-        setIsGuestSession(true);
-        localStorage.setItem(GUEST_SESSION_KEY, '1');
-        return;
+      if (authError.code === 'auth/operation-not-allowed' || authError.code === 'auth/admin-restricted-operation') {
+        throw new Error('현재 Firebase에서 익명 로그인이 꺼져 있어요. Firebase Console > Authentication > Sign-in method에서 Anonymous를 켜 주세요.');
+      }
+      if (authError.code === 'auth/invalid-api-key') {
+        throw new Error('Firebase API 키가 올바르지 않아요. .env의 VITE_FIREBASE_API_KEY를 확인해 주세요.');
       }
       throw error;
     }

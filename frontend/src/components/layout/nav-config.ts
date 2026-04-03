@@ -22,8 +22,8 @@ export const appNavSections: AppNavSection[] = [
     label: '준비',
     hint: '목표와 자료 정리',
     items: [
-      { path: '/app', label: '대시보드', hint: '현재 진행 상태와 다음 행동', icon: Home, stage: '개요' },
-      { path: '/app/record', label: '기록 업로드', hint: '학생부 PDF 업로드 및 파싱', icon: FolderOpen, stage: '1단계' },
+      { path: '/app', label: '대시보드', hint: '현재 진행 상태 확인', icon: Home, stage: '개요' },
+      { path: '/app/record', label: '기록 업로드', hint: '학생부 PDF 올리기', icon: FolderOpen, stage: '1단계' },
     ],
   },
   {
@@ -31,33 +31,37 @@ export const appNavSections: AppNavSection[] = [
     label: '분석',
     hint: '근거 기반 점검',
     items: [
-      { path: '/app/diagnosis', label: '진단', hint: '근거 기반 강점/보완 분석', icon: FileSearch, stage: '2단계' },
-      { path: '/app/trends', label: '트렌드', hint: '참고 데이터와 흐름 확인', icon: TrendingUp, stage: '참고' },
+      { path: '/app/diagnosis', label: '진단', hint: '강점과 보완점 확인', icon: FileSearch, stage: '2단계' },
+      { path: '/app/trends', label: '트렌드', hint: '참고 데이터 확인', icon: TrendingUp, stage: '참고' },
     ],
   },
   {
     key: 'execute',
-    label: '실행',
-    hint: '초안 작성과 개선',
+    label: '작성',
+    hint: '초안 만들기와 수정',
     items: [
-      { path: '/app/workshop', label: '워크숍', hint: '초안 작성과 수정 워크플로', icon: PenTool, stage: '3단계' },
-      { path: '/app/archive', label: '아카이브', hint: '완료 결과물 보관', icon: Archive, stage: '기록' },
+      { path: '/app/workshop', label: '문서 작성', hint: '초안 작성 공간', icon: PenTool, stage: '3단계' },
+      { path: '/app/archive', label: '보관함', hint: '완료 문서 모아보기', icon: Archive, stage: '기록' },
     ],
   },
   {
     key: 'account',
     label: '계정',
-    hint: '프로필과 안전 설정',
+    hint: '프로필과 앱 설정',
     items: [
-      { path: '/app/settings', label: '설정', hint: '계정, 개인정보, 환경설정', icon: Settings, stage: '계정' },
+      { path: '/app/settings', label: '설정', hint: '계정·개인정보·환경설정', icon: Settings, stage: '계정' },
     ],
   },
 ];
 
 export function isNavItemActive(pathname: string, itemPath: string) {
+  if (itemPath === '/app') {
+    return pathname === '/app';
+  }
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
 export function resolveCurrentNavSection(pathname: string): AppNavSection {
   return appNavSections.find(section => section.items.some(item => isNavItemActive(pathname, item.path))) ?? appNavSections[0];
 }
+

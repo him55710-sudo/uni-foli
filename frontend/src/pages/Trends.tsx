@@ -19,42 +19,42 @@ const trendItems: TrendItem[] = [
     id: 1,
     type: '도서 추천',
     icon: BookOpen,
-    title: '컴퓨터공학과를 위한 AI 윤리 필독서',
+    title: 'AI 윤리 필독서',
     desc: '기술 발전 속도와 사회적 책임을 함께 다루는 도서 큐레이션입니다.',
   },
   {
     id: 2,
     type: '입시 이슈',
     icon: Newspaper,
-    title: '2026 수시 전형 변화 핵심 요약',
+    title: '수시 전형 요약',
     desc: '학생부 세부능력특기사항 반영 방식이 바뀌는 포인트를 빠르게 정리했습니다.',
   },
   {
     id: 3,
     type: '합격 가이드',
     icon: GraduationCap,
-    title: '연세대 HASS 합격생 탐구 보고서 구조',
+    title: '합격 보고서 구조',
     desc: '문제 정의부터 시사점까지 합격 사례의 문단 흐름을 분석해 제공합니다.',
   },
   {
     id: 4,
     type: '탐구 아이디어',
     icon: Lightbulb,
-    title: '기후 변화와 경제를 연결한 융합 탐구',
+    title: '기후·경제 탐구',
     desc: '탄소배출권 시장과 청소년 소비 패턴을 연계한 주제 설계를 제안합니다.',
   },
   {
     id: 5,
     type: '도서 추천',
     icon: BookOpen,
-    title: '의생명 계열 학생을 위한 추천 읽기 목록',
+    title: '추천 읽기 목록',
     desc: '생명윤리, 임상 커뮤니케이션, 데이터 해석 관점을 함께 다루는 리스트입니다.',
   },
   {
     id: 6,
     type: '입시 이슈',
     icon: Newspaper,
-    title: '첨단학과 정원 및 경쟁률 추이',
+    title: '첨단학과 경쟁률',
     desc: '반도체·AI·배터리 관련 학과의 최근 3개년 경쟁률 변화를 비교합니다.',
   },
 ];
@@ -123,7 +123,7 @@ export function Trends() {
         </button>
       </motion.div>
 
-      <div className="columns-1 gap-6 space-y-6 sm:columns-2 lg:columns-3">
+      <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {visibleItems.map((item, index) => (
           <motion.button
             type="button"
@@ -132,10 +132,10 @@ export function Trends() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: index * 0.05 }}
             onClick={() => setSelectedTrend(item)}
-            className="group flex h-full w-full cursor-pointer flex-col p-6 text-left break-inside-avoid sm:p-8 clay-card"
+            className="group flex h-[320px] w-full self-start cursor-pointer flex-col overflow-hidden p-6 text-left sm:p-8 clay-card"
           >
             <div
-              className={`mb-5 inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-extrabold ${
+              className={`mb-4 inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-extrabold ${
                 item.type === '도서 추천'
                   ? 'border-blue-100 bg-blue-50 text-blue-600'
                   : item.type === '입시 이슈'
@@ -148,15 +148,17 @@ export function Trends() {
               <item.icon size={16} />
               {item.type}
             </div>
-            <h3 className="mb-3 text-xl font-extrabold leading-snug text-slate-800 transition-colors group-hover:text-blue-600">
+            <h3 className="mb-2 h-[2.75rem] line-clamp-2 text-lg font-extrabold leading-tight text-slate-800 transition-colors group-hover:text-blue-600">
               {item.title}
             </h3>
-            <p className="flex-1 text-[15px] font-medium leading-relaxed text-slate-600">{item.desc}</p>
+            <p className="mb-4 h-[4.5rem] line-clamp-3 text-sm font-medium leading-relaxed text-slate-500">
+              {item.desc}
+            </p>
 
-            <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5">
+            <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-4">
               <span className="rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-400">조회수 1.2k</span>
               <span className="flex items-center gap-1.5 rounded-xl border border-slate-100 bg-white px-3 py-1.5 text-sm font-extrabold text-slate-800 shadow-sm transition-colors group-hover:border-blue-200 group-hover:text-blue-600">
-                자세히 보기 <span className="transition-transform group-hover:translate-x-1">→</span>
+                자세히 <span className="transition-transform group-hover:translate-x-1">→</span>
               </span>
             </div>
           </motion.button>

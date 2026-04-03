@@ -39,45 +39,45 @@ export function validateInquiry(payload: InquiryPayload): InquiryErrors {
   const errors: InquiryErrors = {};
 
   if (isBlank(payload.name)) {
-    errors.name = payload.inquiry_type === 'bug_report' ? '?대쫫 ?먮뒗 ?됰꽕?꾩쓣 ?낅젰??二쇱꽭??' : '?대쫫???낅젰??二쇱꽭??';
+    errors.name = '이름을 입력해 주세요.';
   }
   if (isBlank(payload.email) || !emailPattern.test(payload.email.trim())) {
-    errors.email = '?щ컮瑜??대찓??二쇱냼瑜??낅젰??二쇱꽭??';
+    errors.email = '올바른 이메일 주소를 입력해 주세요.';
   }
   if (isBlank(payload.message) || payload.message.trim().length < 10) {
-    errors.message = '?댁슜? 10???댁긽 ?낅젰??二쇱꽭??';
+    errors.message = '문의 내용은 10자 이상 입력해 주세요.';
   }
 
   if (payload.inquiry_type === 'one_to_one') {
     if (isBlank(payload.subject)) {
-      errors.subject = '臾몄쓽 ?쒕ぉ???낅젰??二쇱꽭??';
+      errors.subject = '문의 제목을 입력해 주세요.';
     }
     if (!isInquiryCategoryAllowedForType('one_to_one', payload.inquiry_category)) {
-      errors.inquiry_category = '臾몄쓽 ?좏삎???좏깮??二쇱꽭??';
+      errors.inquiry_category = '문의 유형을 다시 선택해 주세요.';
     }
   }
 
   if (payload.inquiry_type === 'partnership') {
     if (isBlank(payload.institution_name)) {
-      errors.institution_name = '湲곌?紐낆쓣 ?낅젰??二쇱꽭??';
+      errors.institution_name = '기관명을 입력해 주세요.';
     }
     if (isBlank(payload.phone)) {
-      errors.phone = '?곕씫泥섎? ?낅젰??二쇱꽭??';
+      errors.phone = '연락처를 입력해 주세요.';
     }
     if (!payload.institution_type) {
-      errors.institution_type = '湲곌? ?좏삎???좏깮??二쇱꽭??';
+      errors.institution_type = '기관 유형을 선택해 주세요.';
     }
     if (payload.inquiry_category && !isInquiryCategoryAllowedForType('partnership', payload.inquiry_category)) {
-      errors.inquiry_category = '?묒뾽 臾몄쓽 ?좏삎??怨좎젙媛믪쑝濡??좏깮?⑤릺???⑸땲??';
+      errors.inquiry_category = '기관 문의 유형이 올바르지 않아요.';
     }
   }
 
   if (payload.inquiry_type === 'bug_report') {
     if (!isInquiryCategoryAllowedForType('bug_report', payload.inquiry_category)) {
-      errors.inquiry_category = '踰꾧렇 ?먮뒗 湲곕뒫 ?쒖븞???좏깮??二쇱꽭??';
+      errors.inquiry_category = '오류 제보 유형을 선택해 주세요.';
     }
     if (isBlank(payload.context_location)) {
-      errors.context_location = '諛쒖깮 ?꾩튂瑜??낅젰??二쇱꽭??';
+      errors.context_location = '문제가 발생한 위치를 입력해 주세요.';
     }
   }
 
@@ -101,3 +101,4 @@ export async function submitInquiry(payload: InquiryPayload) {
 
   return api.post<InquiryResponse>('/api/v1/inquiries', normalized);
 }
+

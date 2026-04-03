@@ -150,13 +150,29 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
     [projectId, isBusy],
   );
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
     maxFiles: 1,
     multiple: false,
     disabled: isBusy || !projectId,
+    noClick: true,
+    noKeyboard: true,
+    useFsAccessApi: false,
   });
+
+  const handleOpenFileDialog = useCallback(() => {
+    if (isBusy || !projectId) return;
+    open();
+  }, [isBusy, projectId, open]);
+
+  const handleDropzoneKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isBusy || !projectId) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open();
+    }
+  }, [isBusy, projectId, open]);
 
   const handleStartWorkshop = () => {
     window.location.hash = 'action-blueprint';
@@ -229,7 +245,10 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                 </p>
 
                 <div
-                  {...getRootProps()}
+                  {...getRootProps({
+                    onClick: handleOpenFileDialog,
+                    onKeyDown: handleDropzoneKeyDown,
+                  })}
                   className={`group flex flex-1 cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed p-6 transition-all duration-300 ${
                     isDragActive
                       ? 'border-blue-500 bg-blue-100'
@@ -247,6 +266,19 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                     PDF 1개, 최대 50MB
                     {uploadedFileName ? ` · 최근 선택: ${uploadedFileName}` : ''}
                   </p>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleOpenFileDialog();
+                    }}
+                    disabled={isBusy || !projectId}
+                    className="mb-6 inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <FileText size={15} />
+                    파일 선택
+                  </button>
 
                   <div className="mt-auto flex items-center gap-1.5 rounded-full bg-white/60 px-4 py-2.5 text-center text-xs font-bold text-slate-500">
                     <ShieldCheck size={16} className="shrink-0 text-emerald-500" />

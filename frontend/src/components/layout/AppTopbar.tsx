@@ -1,24 +1,36 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Flag, Menu, X } from 'lucide-react';
+import { ArrowLeft, Menu, X } from 'lucide-react';
 import { UniFoliaLogo } from '../UniFoliaLogo';
 import { UniversityLogo } from '../UniversityLogo';
 import { Button } from '../ui';
 import { Topbar } from '../primitives';
 import { WorkflowContextHeader } from './WorkflowContextHeader';
 
+interface GoalItem {
+  university: string;
+  major?: string;
+}
+
 interface AppTopbarProps {
   currentSectionLabel: string;
   summary: string;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
-  primaryGoal?: {
-    university: string;
-    major?: string;
-  } | null;
+  primaryGoal?: GoalItem | null;
+  rankedGoals?: GoalItem[];
 }
 
-export function AppTopbar({ currentSectionLabel, summary, isSidebarOpen, onToggleSidebar, primaryGoal }: AppTopbarProps) {
+export function AppTopbar({
+  currentSectionLabel,
+  summary,
+  isSidebarOpen,
+  onToggleSidebar,
+  primaryGoal,
+  rankedGoals,
+}: AppTopbarProps) {
+  const visibleGoals = (rankedGoals?.length ? rankedGoals : primaryGoal ? [primaryGoal] : []).slice(0, 6);
+
   return (
     <>
       <Topbar mobile>
@@ -30,18 +42,25 @@ export function AppTopbar({ currentSectionLabel, summary, isSidebarOpen, onToggl
         </Button>
       </Topbar>
 
-      {primaryGoal ? (
+      {visibleGoals.length ? (
         <div className="border-b border-slate-200 bg-blue-50 px-4 py-2 md:hidden">
-          <div className="flex items-center gap-2">
-            <UniversityLogo
-              universityName={primaryGoal.university}
-              className="h-7 w-7 rounded-md bg-white object-contain p-1"
-              fallbackClassName="border border-blue-100"
-            />
-            <p className="truncate text-sm font-black text-slate-800">
-              목표: {primaryGoal.university}
-              {primaryGoal.major ? ` · ${primaryGoal.major}` : ''}
-            </p>
+          <div className="flex gap-2 overflow-x-auto pb-0.5">
+            {visibleGoals.map((goal, index) => (
+              <div
+                key={`${goal.university}-${goal.major ?? ''}-${index}`}
+                className="flex min-w-[170px] items-center gap-2 rounded-lg border border-blue-200 bg-white px-2 py-1.5"
+              >
+                <UniversityLogo
+                  universityName={goal.university}
+                  className="h-7 w-7 rounded-md bg-slate-100 object-contain p-1"
+                  fallbackClassName="border border-blue-100"
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-black text-blue-700">{index + 1}순위</p>
+                  <p className="truncate text-xs font-black text-slate-800">{goal.university}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       ) : null}
@@ -50,21 +69,24 @@ export function AppTopbar({ currentSectionLabel, summary, isSidebarOpen, onToggl
         <WorkflowContextHeader sectionLabel={currentSectionLabel} summary={summary} />
 
         <div className="flex items-center gap-3">
-          {primaryGoal ? (
-            <div className="hidden items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 lg:flex">
-              <UniversityLogo
-                universityName={primaryGoal.university}
-                className="h-8 w-8 rounded-lg bg-white object-contain p-1"
-                fallbackClassName="border border-blue-100"
-              />
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-blue-600">Dream School</p>
-                <p className="max-w-[220px] truncate text-sm font-black text-slate-800">
-                  {primaryGoal.university}
-                  {primaryGoal.major ? ` · ${primaryGoal.major}` : ''}
-                </p>
-              </div>
-              <Flag size={14} className="text-blue-600" />
+          {visibleGoals.length ? (
+            <div className="hidden max-w-[560px] items-center gap-2 overflow-x-auto rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 lg:flex">
+              {visibleGoals.map((goal, index) => (
+                <div
+                  key={`${goal.university}-${goal.major ?? ''}-${index}`}
+                  className="flex min-w-[180px] items-center gap-2 rounded-lg border border-blue-100 bg-white px-2 py-1.5"
+                >
+                  <UniversityLogo
+                    universityName={goal.university}
+                    className="h-7 w-7 rounded-md bg-slate-100 object-contain p-1"
+                    fallbackClassName="border border-blue-100"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-black text-blue-700">{index + 1}순위</p>
+                    <p className="truncate text-xs font-black text-slate-800">{goal.university}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : null}
 
@@ -73,10 +95,11 @@ export function AppTopbar({ currentSectionLabel, summary, isSidebarOpen, onToggl
             className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
           >
             <ArrowLeft size={14} />
-            공개 사이트
+            공개 페이지
           </Link>
         </div>
       </Topbar>
     </>
   );
 }
+

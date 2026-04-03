@@ -281,21 +281,38 @@ export function Diagnosis() {
         }
 
         toast.success('진단 실행을 시작했습니다.', { id: loadingId });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Diagnosis flow failed:', error);
-        toast.error('진단 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.', { id: loadingId });
+        const detail = error.response?.data?.detail || '진단 실행에 실패했습니다. 파일 형식이나 용량(50MB)을 확인해 주세요.';
+        toast.error(detail, { id: loadingId });
         setIsUploading(false);
       }
     },
     [completeDiagnosis, goalList, useSynchronousApiJobs],
   );
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
     multiple: false,
     disabled: isUploading,
+    noClick: true,
+    noKeyboard: true,
+    useFsAccessApi: false,
   });
+
+  const handleOpenFileDialog = useCallback(() => {
+    if (isUploading) return;
+    open();
+  }, [isUploading, open]);
+
+  const handleDropzoneKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isUploading) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open();
+    }
+  }, [isUploading, open]);
 
   const evidenceCitations = diagnosisResult?.citations ?? diagnosisRun?.citations ?? [];
   const reviewRequired = diagnosisResult?.review_required ?? diagnosisRun?.review_required ?? false;
@@ -512,7 +529,10 @@ export function Diagnosis() {
           <motion.div key="upload" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <SectionCard title="PDF 업로드" description="파일 1개(최대 50MB)를 업로드하면 파싱과 진단이 자동 실행됩니다.">
               <div
-                {...getRootProps()}
+                {...getRootProps({
+                  onClick: handleOpenFileDialog,
+                  onKeyDown: handleDropzoneKeyDown,
+                })}
                 className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-colors ${
                   isDragActive ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-white'
                 } ${isUploading ? 'pointer-events-none opacity-60' : ''}`}
@@ -523,6 +543,21 @@ export function Diagnosis() {
                 </div>
                 <p className="text-lg font-bold tracking-tight text-slate-900">학생부 PDF를 드래그하거나 클릭해 업로드하세요</p>
                 <p className="mt-2 text-sm font-medium text-slate-500">파싱, 마스킹, 진단이 순차적으로 진행됩니다.</p>
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleOpenFileDialog();
+                    }}
+                    disabled={isUploading}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <FileUp size={15} />
+                    파일 선택
+                  </button>
+                </div>
               </div>
             </SectionCard>
           </motion.div>

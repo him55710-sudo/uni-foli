@@ -16,12 +16,30 @@ const firestoreDatabaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
 // Guest mode is a core onboarding path and must stay available in every environment.
 export const isGuestModeAllowed = true;
 
+const requiredFirebaseKeys = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID',
+] as const;
+
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey &&
     firebaseConfig.authDomain &&
     firebaseConfig.projectId &&
     firebaseConfig.appId,
 );
+
+export function getFirebaseMissingKeys(): string[] {
+  const keyMap: Record<(typeof requiredFirebaseKeys)[number], string | undefined> = {
+    VITE_FIREBASE_API_KEY: import.meta.env.VITE_FIREBASE_API_KEY,
+    VITE_FIREBASE_AUTH_DOMAIN: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    VITE_FIREBASE_PROJECT_ID: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    VITE_FIREBASE_APP_ID: import.meta.env.VITE_FIREBASE_APP_ID,
+  };
+
+  return requiredFirebaseKeys.filter(key => !keyMap[key] || !keyMap[key]?.trim());
+}
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
@@ -43,3 +61,4 @@ if (isFirebaseConfigured) {
 }
 
 export { app, auth, db, googleProvider };
+

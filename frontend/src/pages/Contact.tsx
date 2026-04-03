@@ -25,21 +25,21 @@ const tabMeta: Record<ContactTab, { label: string; query: string; icon: typeof H
     query: 'support',
     icon: Headset,
     title: '사용 문의',
-    description: '계정, 업로드, 진단, 워크숍 사용 중 궁금한 점을 남겨 주세요.',
+    description: '계정, 업로드, 진단, 문서 작성 중 궁금한 점을 남겨 주세요.',
   },
   partnership: {
-    label: '제휴 문의',
+    label: '기관 문의',
     query: 'partnership',
     icon: Building2,
-    title: '기관/제휴 문의',
-    description: '학교·학원 단위 도입 및 운영 협업 문의를 남겨 주세요.',
+    title: '학교/학원 문의',
+    description: '학교·학원 단위 도입이나 운영 관련 문의를 남겨 주세요.',
   },
   bug_report: {
-    label: '버그 제보',
+    label: '오류 제보',
     query: 'bug',
     icon: Bug,
-    title: '버그/개선 제안',
-    description: '문제 발생 위치와 상황을 남겨 주시면 빠르게 확인하겠습니다.',
+    title: '오류/개선 제보',
+    description: '문제가 발생한 위치와 상황을 알려 주시면 빠르게 확인해 드려요.',
   },
 };
 
@@ -57,7 +57,7 @@ const institutionTypeOptions: Array<{ value: InstitutionType; label: string }> =
 ];
 
 const bugCategoryOptions: Array<{ value: BugReportInquiryCategory; label: string }> = [
-  { value: 'bug', label: '버그' },
+  { value: 'bug', label: '오류' },
   { value: 'feature_request', label: '기능 제안' },
 ];
 
@@ -140,8 +140,8 @@ export function Contact() {
   const tabs = useMemo(
     () => [
       { value: 'one_to_one', label: '1:1 문의' },
-      { value: 'partnership', label: '제휴 문의' },
-      { value: 'bug_report', label: '버그 제보' },
+      { value: 'partnership', label: '기관 문의' },
+      { value: 'bug_report', label: '오류 제보' },
     ] as const,
     [],
   );
@@ -155,17 +155,17 @@ export function Contact() {
     }
 
     setSubmittingTab(tab);
-    const loadingId = toast.loading('문의 내용을 전송하는 중입니다...');
+    const loadingId = toast.loading('문의 내용을 전송하는 중이에요...');
     try {
       await submitInquiry(payload);
-      toast.success('문의가 접수되었습니다. 남겨주신 연락처로 안내드리겠습니다.', { id: loadingId });
+      toast.success('문의가 접수됐어요. 남겨주신 연락처로 안내드릴게요.', { id: loadingId });
       setErrors(prev => ({ ...prev, [tab]: {} }));
       if (tab === 'one_to_one') setOneToOne(oneToOneInitial);
       if (tab === 'partnership') setPartnership(partnershipInitial);
       if (tab === 'bug_report') setBugReport(bugInitial);
     } catch (error) {
       console.error('Inquiry submit failed:', error);
-      toast.error('문의 접수에 실패했습니다. 잠시 후 다시 시도해 주세요.', { id: loadingId });
+      toast.error('문의 접수에 실패했어요. 잠시 후 다시 시도해 주세요.', { id: loadingId });
     } finally {
       setSubmittingTab(null);
     }
@@ -178,8 +178,8 @@ export function Contact() {
     <main className="mx-auto max-w-7xl space-y-6 py-10">
       <PageHeader
         eyebrow="문의"
-        title="문의 및 제휴 안내"
-        description="문의 유형에 맞는 폼으로 접수해 주세요. 목적에 맞는 채널로 확인 속도를 높였습니다."
+        title="문의 허브"
+        description="문의 유형에 맞는 폼으로 빠르게 접수할 수 있어요."
         evidence={
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status="active">문의 허브 운영 중</StatusBadge>
@@ -189,7 +189,7 @@ export function Contact() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard title="지원 채널" description="긴급하지 않은 문의는 폼 접수를 권장합니다." eyebrow="연락처">
+        <SectionCard title="연락 채널" description="급하지 않은 문의는 폼 접수를 권장해요." eyebrow="연락처">
           <SurfaceCard tone="muted" padding="sm">
             <p className="inline-flex items-center gap-2 text-sm font-bold text-slate-800">
               <Mail size={16} className="text-blue-700" />
@@ -213,12 +213,12 @@ export function Contact() {
           <WorkflowNotice
             tone="info"
             title="응답 안내"
-            description="문의 유형에 따라 확인 시간이 다를 수 있습니다. 제휴 문의는 기관 정보를 함께 남겨 주세요."
+            description="문의 종류에 따라 확인 시간이 다를 수 있어요. 기관 문의는 학교/학원 정보를 함께 적어 주세요."
           />
 
           <div className="flex flex-wrap gap-2">
             <Link to="/" className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700">
-              소개 페이지
+              공개 페이지
             </Link>
             <Link to="/faq" className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700">
               FAQ
@@ -432,7 +432,7 @@ function BugReportForm({
           value={payload.context_location ?? ''}
           onChange={event => onChange({ ...payload, context_location: event.target.value })}
           error={errors.context_location}
-          placeholder="예: 워크숍 메시지 전송, 기록 업로드 화면"
+          placeholder="예: 기록 업로드 화면"
         />
       </div>
 
@@ -453,7 +453,7 @@ function BugReportForm({
 function SubmitRow({ pending }: { pending: boolean }) {
   return (
     <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm font-medium text-slate-500">접수 후 담당자가 확인 가능한 연락처로 회신드립니다.</p>
+      <p className="text-sm font-medium text-slate-500 break-keep">접수 후 확인 가능한 연락처로 답변드립니다.</p>
       <PrimaryButton type="submit" disabled={pending}>
         {pending ? '전송 중...' : '문의 보내기'}
         <Send size={16} />
@@ -461,3 +461,4 @@ function SubmitRow({ pending }: { pending: boolean }) {
     </div>
   );
 }
+

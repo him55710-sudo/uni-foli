@@ -17,6 +17,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import { DIAGNOSIS_STORAGE_KEY, type DiagnosisResultPayload, type StoredDiagnosis } from '../lib/diagnosis';
 import { isGuestSessionActive, readGuestProfile, updateGuestTargets } from '../lib/guestProfile';
+import { buildRankedGoals } from '../lib/rankedGoals';
 import { updateLocalAuthTargets } from '../lib/localAuthProfile';
 import { type QuestStartPayload, saveQuestStart } from '../lib/questStart';
 import { useAuthStore } from '../store/authStore';
@@ -350,24 +351,7 @@ export function Dashboard() {
     }
   };
 
-  const allGoals = useMemo(() => {
-    const list: Array<{ university: string; major: string }> = [];
-
-    if (profile?.target_university) {
-      list.push({ university: profile.target_university, major: profile.target_major || '' });
-    }
-
-    if (Array.isArray(profile?.interest_universities)) {
-      profile.interest_universities.forEach(interest => {
-        if (typeof interest !== 'string') return;
-        const match = interest.match(/^(.+)\s\((.+)\)$/);
-        if (match) list.push({ university: match[1], major: match[2] });
-        else list.push({ university: interest, major: '' });
-      });
-    }
-
-    return list;
-  }, [profile]);
+  const allGoals = useMemo(() => buildRankedGoals(profile, 6), [profile]);
 
   const hasPrimaryGoal = Boolean(profile?.target_university && profile?.target_major);
   const hasDiagnosis = Boolean(storedDiagnosis?.projectId);
@@ -531,25 +515,46 @@ export function Dashboard() {
 
       {primaryGoal ? (
         <SurfaceCard className="border-blue-200 bg-[linear-gradient(120deg,_rgba(37,99,235,0.14),_rgba(255,255,255,1))]">
-          <div className="flex flex-wrap items-center gap-4">
-            <UniversityLogo
-              universityName={primaryGoal.university}
-              className="h-14 w-14 rounded-2xl bg-white object-contain p-2 shadow-sm"
-              fallbackClassName="border border-blue-100"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">Dream Target</p>
-              <p className="mt-1 truncate text-2xl font-black text-slate-900">{primaryGoal.university}</p>
-              <p className="mt-1 truncate text-sm font-semibold text-slate-600">{primaryGoal.major || '학과 미설정'}</p>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <UniversityLogo
+                universityName={primaryGoal.university}
+                className="h-14 w-14 rounded-2xl bg-white object-contain p-2 shadow-sm"
+                fallbackClassName="border border-blue-100"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">Dream Target</p>
+                <p className="mt-1 truncate text-2xl font-black text-slate-900">{primaryGoal.university}</p>
+                <p className="mt-1 truncate text-sm font-semibold text-slate-600">{primaryGoal.major || '학과 미정'}</p>
+              </div>
+              <StatusBadge status="active" className="px-3 py-1.5 text-sm">
+                <Flag size={14} />
+                1순위 목표
+              </StatusBadge>
             </div>
-            <StatusBadge status="active" className="px-3 py-1.5 text-sm">
-              <Flag size={14} />
-              1순위 목표
-            </StatusBadge>
+
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {allGoals.map((goal, index) => (
+                <div
+                  key={`${goal.university}-${goal.major}-${index}`}
+                  className="flex min-w-0 items-center gap-2 rounded-xl border border-blue-100 bg-white/80 px-2.5 py-2"
+                >
+                  <UniversityLogo
+                    universityName={goal.university}
+                    className="h-8 w-8 rounded-lg bg-slate-100 object-contain p-1"
+                    fallbackClassName="border border-slate-200"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-black text-blue-700">{index + 1}순위</p>
+                    <p className="truncate text-sm font-black text-slate-900">{goal.university}</p>
+                    <p className="truncate text-xs font-medium text-slate-600">{goal.major || '학과 미정'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </SurfaceCard>
       ) : null}
-
       <SectionCard
         title={nextAction.title}
         description={nextAction.description}
@@ -738,3 +743,4 @@ export function Dashboard() {
     </div>
   );
 }
+

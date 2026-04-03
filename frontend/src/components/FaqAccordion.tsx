@@ -36,7 +36,7 @@ export function FaqAccordion({ items, initialOpenId = null, compact = false }: F
                 <Badge tone="info" className="mb-2">
                   {item.category}
                 </Badge>
-                <h3 className={cn('font-extrabold text-slate-800', compact ? 'text-base' : 'text-lg')}>
+                <h3 className={cn('font-extrabold text-slate-800 break-keep', compact ? 'text-base' : 'text-lg')}>
                   {item.question}
                 </h3>
               </div>
@@ -50,17 +50,18 @@ export function FaqAccordion({ items, initialOpenId = null, compact = false }: F
               </span>
             </button>
 
-            <AnimatePresence initial={false}>
+            <AnimatePresence mode="wait" initial={false}>
               {isOpen ? (
                 <motion.div
                   id={answerId}
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
+                  className="overflow-hidden"
                 >
                   <div className="border-t border-slate-100 px-5 pb-5 pt-4 sm:px-6">
-                    <p className="text-sm font-medium leading-7 text-slate-600">{item.answer}</p>
+                    <p className="text-sm font-medium leading-7 text-slate-600 break-keep">{item.answer}</p>
                   </div>
                 </motion.div>
               ) : null}

@@ -79,7 +79,7 @@ export function AppSidebar({
   };
 
   return (
-    <Sidebar open={isOpen} aria-label="앱 주요 내비게이션">
+    <Sidebar open={isOpen} aria-label="앱 주요 메뉴">
       <div className="hidden h-20 items-center gap-2 border-b border-slate-100 px-4 md:flex">
         <Link to="/app" className="min-w-0 flex-1">
           {isOpen ? <UniFoliaLogo size="md" subtitle={null} /> : <UniFoliaLogo size="sm" subtitle={null} markOnly />}
@@ -154,7 +154,7 @@ export function AppSidebar({
         {isOpen ? (
           <Link to="/" className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">
             <ArrowLeft size={14} />
-            공개 사이트
+            공개 페이지
           </Link>
         ) : null}
 
@@ -169,3 +169,4 @@ export function AppSidebar({
     </Sidebar>
   );
 }
+

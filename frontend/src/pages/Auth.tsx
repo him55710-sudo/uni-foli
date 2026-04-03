@@ -1,40 +1,42 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { FirebaseError } from 'firebase/app';
 import { motion } from 'motion/react';
-import { ArrowRight, BookOpen, CircleCheck, Headphones, ShieldCheck, User } from 'lucide-react';
+import { ArrowRight, BookOpen, CircleCheck, Headphones, ShieldCheck, User, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { UniFoliaLogo } from '../components/UniFoliaLogo';
+import { getFirebaseMissingKeys } from '../lib/firebase';
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
-  'auth/popup-closed-by-user': 'Google 로그인 창이 닫혔습니다. 다시 시도해 주세요.',
-  'auth/popup-blocked': '브라우저에서 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.',
-  'auth/network-request-failed': '네트워크 상태를 확인해 주세요.',
-  'auth/unauthorized-domain': '현재 도메인이 Firebase 로그인 허용 목록에 없습니다.',
-  'auth/configuration-not-found': 'Google 로그인 설정이 아직 준비되지 않았습니다.',
-  'auth/operation-not-allowed': '현재 환경에서는 해당 로그인 방식이 제한되어 있습니다.',
-  'auth/admin-restricted-operation': '현재 Firebase 설정에서 접근이 제한되어 있습니다.',
-  'auth/invalid-api-key': 'Firebase 설정이 올바르지 않습니다.',
-  'auth/internal-error': '로그인 처리 중 내부 오류가 발생했습니다.',
+  'auth/popup-closed-by-user': 'Google 로그인 창이 닫혔어요. 다시 시도해 주세요.',
+  'auth/popup-blocked': '브라우저에서 팝업이 차단됐어요. 팝업 허용 후 다시 시도해 주세요.',
+  'auth/network-request-failed': '네트워크 연결 상태를 확인해 주세요.',
+  'auth/unauthorized-domain': '현재 주소가 Firebase 허용 도메인에 없습니다. Firebase Console > Authentication > Settings > Authorized domains에 현재 도메인을 추가해 주세요.',
+  'auth/configuration-not-found': 'Google 로그인 설정이 완료되지 않았어요. Firebase Console에서 Google 제공업체를 켜 주세요.',
+  'auth/operation-not-allowed': '현재 환경에서 이 로그인 방식이 비활성화되어 있어요.',
+  'auth/admin-restricted-operation': 'Firebase 보안 정책으로 요청이 차단됐어요.',
+  'auth/invalid-api-key': 'Firebase API 키가 올바르지 않아요. .env 값을 확인해 주세요.',
+  'auth/internal-error': '로그인 처리 중 내부 오류가 발생했어요.',
 };
 
-const flowSteps = ['목표 설정', '기록 업로드', 'AI 진단', '초안 실행'];
-const trustPoints = ['근거 기반 AI', '기록 중심 워크플로', '다음 행동 제안', '허위 미화 금지'];
+const flowSteps = ['목표 설정', '기록 업로드', '진단 확인', '문서 작성'];
+const trustPoints = ['근거 중심 진단', '학생부 기반 흐름', '다음 행동 제시', '허위 문장 방지'];
 
 function toAuthMessage(error: unknown): string {
   if (error instanceof FirebaseError) {
-    return AUTH_ERROR_MESSAGES[error.code] ?? `로그인에 실패했습니다. (${error.code})`;
+    return AUTH_ERROR_MESSAGES[error.code] ?? `로그인에 실패했어요. (${error.code})`;
   }
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+  return '로그인에 실패했어요. 잠시 후 다시 시도해 주세요.';
 }
 
 export function Auth() {
   const { user, isGuestSession, signInWithGoogle, signInWithKakao, signInWithNaver, signInAsGuest } = useAuth();
   const [isSigningIn, setIsSigningIn] = useState<'google' | 'kakao' | 'naver' | 'guest' | null>(null);
+  const missingFirebaseKeys = useMemo(() => getFirebaseMissingKeys(), []);
 
   if (user || isGuestSession) {
     return <Navigate to="/app" replace />;
@@ -98,7 +100,7 @@ export function Auth() {
         <section className="relative overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.18),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_100%)] px-4 py-6 sm:px-8 sm:py-8 lg:px-12 lg:py-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Link to="/" onClick={scrollToTop} className="flex items-center gap-3">
-              <UniFoliaLogo size="md" />
+              <UniFoliaLogo size="md" subtitle={null} />
             </Link>
 
             <div className="flex flex-wrap justify-end gap-2">
@@ -122,15 +124,15 @@ export function Auth() {
           >
             <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/80 px-4 py-2 text-xs font-black text-blue-600 shadow-sm sm:text-sm">
               <ShieldCheck size={16} />
-              근거 중심 기록 워크플로
+              근거 중심 준비 흐름
             </div>
-            <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:mt-6 sm:text-4xl lg:text-5xl">
-              막연한 생성보다
+            <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:mt-6 sm:text-4xl lg:text-5xl break-keep">
+              막연한 불안 대신
               <br />
-              <span className="text-blue-600">기록 중심 분석과 실행</span>
+              <span className="text-blue-600">확인 가능한 준비 순서</span>
             </h1>
-            <p className="mt-5 text-base font-medium leading-7 text-slate-600 sm:mt-6 sm:text-lg sm:leading-8">
-              Uni Folia는 실제 기록을 분석하고, 다음 행동을 제안하며, 문서 초안까지 이어지는 준비 흐름을 제공합니다.
+            <p className="mt-5 text-base font-medium leading-7 text-slate-600 sm:mt-6 sm:text-lg sm:leading-8 break-keep">
+              학생부 기반 분석, 진단 확인, 문서 작성까지 한 화면 흐름으로 이어집니다.
             </p>
 
             <div className="mt-7 flex flex-wrap gap-2 sm:mt-8 sm:gap-3">
@@ -149,7 +151,7 @@ export function Auth() {
                   </div>
                   <div>
                     <p className="text-sm font-black text-slate-900">진행 순서</p>
-                    <p className="text-xs font-medium text-slate-500">단계를 명확하게 안내합니다.</p>
+                    <p className="text-xs font-medium text-slate-500">단계를 명확히 안내해요</p>
                   </div>
                 </div>
                 <div className="mt-4 space-y-2.5 sm:mt-5 sm:space-y-3">
@@ -170,19 +172,19 @@ export function Auth() {
                     <ShieldCheck size={20} />
                   </div>
                   <div>
-                    <p className="text-sm font-black text-slate-900">안전 원칙</p>
-                    <p className="text-xs font-medium text-slate-500">과장보다 근거를 우선합니다.</p>
+                    <p className="text-sm font-black text-slate-900">안내 원칙</p>
+                    <p className="text-xs font-medium text-slate-500">근거 없는 과장은 지양해요</p>
                   </div>
                 </div>
                 <div className="mt-4 space-y-2.5 sm:mt-5 sm:space-y-3">
                   {[
-                    '실제 기록을 바탕으로만 drafting을 수행합니다.',
-                    '기록이 부족하면 보완 행동을 먼저 제안합니다.',
-                    '합격 보장이나 허위 스펙 생성을 지양합니다.',
+                    '학생부 내용에 맞는 정보만 제안해요.',
+                    '부족한 부분은 보완 행동을 먼저 알려줘요.',
+                    '합격 보장을 약속하는 서비스가 아니에요.',
                   ].map(item => (
                     <div key={item} className="flex gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
                       <CircleCheck size={18} className="mt-0.5 text-blue-600" />
-                      <p className="text-sm font-semibold leading-6 text-slate-700">{item}</p>
+                      <p className="text-sm font-semibold leading-6 text-slate-700 break-keep">{item}</p>
                     </div>
                   ))}
                 </div>
@@ -202,11 +204,23 @@ export function Auth() {
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-blue-100 bg-blue-50 sm:h-20 sm:w-20 sm:rounded-[28px]">
                 <UniFoliaLogo size="lg" markOnly />
               </div>
-              <h2 className="mt-5 text-2xl font-black tracking-tight text-slate-900 sm:mt-6 sm:text-3xl">로그인 시작하기</h2>
+              <h2 className="mt-5 text-2xl font-black tracking-tight text-slate-900 sm:mt-6 sm:text-3xl">로그인하고 시작하기</h2>
               <p className="mt-2.5 text-sm font-medium leading-7 text-slate-500 sm:mt-3 sm:text-base">
-                소셜 로그인으로 계속하거나, 게스트 로그인으로 바로 기능을 체험할 수 있습니다.
+                소셜 로그인으로 바로 시작하거나, 게스트로 먼저 둘러볼 수 있어요.
               </p>
             </div>
+
+            {missingFirebaseKeys.length ? (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="inline-flex items-center gap-2 text-sm font-bold text-amber-800">
+                  <AlertTriangle size={16} />
+                  Firebase 환경변수 확인 필요
+                </p>
+                <p className="mt-2 text-xs font-medium leading-6 text-amber-900">
+                  누락된 항목: {missingFirebaseKeys.join(', ')}
+                </p>
+              </div>
+            ) : null}
 
             <div className="mt-6 space-y-3 sm:mt-8">
               <button
@@ -246,7 +260,7 @@ export function Auth() {
                 className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-3.5 text-sm font-black text-blue-700 shadow-sm transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 sm:px-6 sm:py-4 sm:text-base"
               >
                 <User size={18} />
-                {isSigningIn === 'guest' ? '게스트 세션 준비 중...' : '게스트로 먼저 둘러보기'}
+                {isSigningIn === 'guest' ? '게스트 준비 중...' : '게스트로 둘러보기'}
                 <ArrowRight size={18} className="absolute right-5 text-blue-400 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100" />
               </button>
             </div>
@@ -254,10 +268,11 @@ export function Auth() {
             <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:mt-8 sm:rounded-[28px]">
               <div className="flex items-center gap-3">
                 <Headphones size={18} className="text-blue-600" />
-                <p className="text-sm font-black text-slate-900">로그인 전 안내</p>
+                <p className="text-sm font-black text-slate-900">로그인 문제 해결</p>
               </div>
-              <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
-                궁금한 점이 있다면 FAQ와 문의 허브에서 서비스 방향, 협업 문의, 버그 제안 경로를 먼저 확인할 수 있습니다.
+              <p className="mt-3 text-sm font-medium leading-7 text-slate-600 break-keep">
+                Google 로그인이 되지 않으면 현재 접속 주소가 Firebase 허용 도메인인지 먼저 확인해 주세요.
+                로컬에서는 `localhost`와 `127.0.0.1` 중 허용된 주소로 접속해야 합니다.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link to="/faq" onClick={scrollToTop} className="rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm">
@@ -269,8 +284,8 @@ export function Auth() {
               </div>
             </div>
 
-            <p className="mt-5 text-center text-xs font-medium leading-6 text-slate-400 sm:mt-6">
-              게스트 로그인은 항상 제공됩니다. 계정 연결 시 기록 보존과 연속 작업이 더 안정적입니다.
+            <p className="mt-5 text-center text-xs font-medium leading-6 text-slate-400 sm:mt-6 break-keep">
+              게스트는 미리보기 중심이고, 문서 업로드/저장은 로그인 상태에서 가장 안정적으로 동작해요.
             </p>
           </motion.div>
         </section>
@@ -278,3 +293,4 @@ export function Auth() {
     </div>
   );
 }
+

@@ -15,7 +15,13 @@ from polio_domain.enums import UploadStatus
 
 
 ALLOWED_UPLOAD_CONTENT_TYPES_BY_EXTENSION: dict[str, set[str]] = {
-    ".pdf": {"application/pdf"},
+    ".pdf": {
+        "application/pdf",
+        "application/x-pdf",
+        "application/acrobat",
+        "application/vnd.pdf",
+        "text/pdf",
+    },
     ".txt": {"text/plain"},
     ".md": {"text/markdown", "text/plain"},
 }
@@ -147,7 +153,10 @@ def _normalize_original_filename(filename: str | None) -> str:
 
 def _validate_upload_contents(*, suffix: str, contents: bytes) -> None:
     if suffix == ".pdf":
-        if not contents.startswith(b"%PDF-"):
+        # Some PDF producers prepend whitespace/BOM before the PDF signature.
+        # Accept files where the signature is present near the beginning.
+        header_window = contents[:2048].lstrip()
+        if b"%PDF-" not in header_window:
             raise UploadValidationError("Uploaded PDF file is malformed.", status_code=400)
         return
 
