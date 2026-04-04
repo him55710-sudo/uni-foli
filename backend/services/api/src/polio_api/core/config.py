@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     cors_allow_credentials: bool = True
     allow_inline_render: bool = True
     auto_ingest_uploads: bool = True
-    upload_max_bytes: int = 15 * 1024 * 1024
+    upload_max_bytes: int = 50 * 1024 * 1024
     upload_allowed_extensions: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [".pdf", ".txt", ".md"]
     )

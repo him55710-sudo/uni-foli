@@ -48,6 +48,9 @@ def parse_pdf_document(
     del odl_enabled
 
     document = fitz.open(file_path)
+    if document.is_encrypted:
+        raise ValueError("업로드하신 PDF 파일이 암호로 보호되어 있어 내용을 읽을 수 없습니다. 암호를 해제한 후 다시 업로드해 주세요.")
+
     masking_pipeline = MaskingPipeline()
     masking_counter: Counter[str] = Counter()
     warnings: list[str] = []

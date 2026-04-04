@@ -1,0 +1,35 @@
+# Exclude local tooling and heavyweight dev artifacts from Vercel uploads
+.agents/
+backend/
+archive/
+docs/
+eval/
+output/
+prompts/
+references/
+scripts/
+storage/
+tests/
+tmp/
+
+# Frontend local artifacts not needed for production build
+frontend/node_modules/
+frontend/dist/
+frontend/output/
+frontend/playwright-report/
+frontend/test-results/
+frontend/screenshots/
+frontend/*.log
+frontend/*.cpuprofile
+frontend/stats.html
+frontend/qa_test_output.txt
+frontend/refined_qa_output.txt
+frontend/ui_pattern_output.txt
+frontend/test_output.txt
+frontend/test_output_utf8.txt
+
+# Keep env files out of uploads
+.env
+.env.*
+frontend/.env
+frontend/.env.*

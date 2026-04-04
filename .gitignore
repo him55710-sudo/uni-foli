@@ -46,3 +46,5 @@ frontend/test_output.txt
 frontend/stats.html
 *.txt
 *.log
+
+.vercel
