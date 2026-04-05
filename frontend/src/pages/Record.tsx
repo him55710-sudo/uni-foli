@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
+import { getApiErrorMessage } from '../lib/apiError';
 import { searchMajors } from '../lib/educationCatalog';
 import { CatalogAutocompleteInput } from '../components/CatalogAutocompleteInput';
 import {
@@ -31,6 +32,7 @@ import {
 
 type DocumentStatus = 'uploaded' | 'masking' | 'parsing' | 'retrying' | 'parsed' | 'partial' | 'failed';
 type MaskingStatus = 'pending' | 'masking' | 'masked' | 'failed';
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 interface DocumentStatusResponse {
   id: string;
@@ -233,6 +235,10 @@ export function Record() {
     async (acceptedFiles: File[]) => {
       const file = acceptedFiles[0];
       if (!file || isBusy) return;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error('파일 용량이 50MB를 초과해 업로드할 수 없습니다.');
+        return;
+      }
 
       if (isGuestSession && !user) {
         toast.error('현재 게스트 체험 상태에서는 업로드가 제한돼요. 로그인 후 다시 시도해 주세요.');
@@ -251,16 +257,13 @@ export function Record() {
           formData.append('title', `${targetMajor.trim()} 준비`);
         }
 
-        const created = await api.post<DocumentStatusResponse>('/api/v1/documents/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const created = await api.post<DocumentStatusResponse>('/api/v1/documents/upload', formData);
         setDocument(created);
         toast.success('업로드 완료! 분석을 시작할게요.', { id: loadingId });
         await startParse(created.id);
       } catch (error: any) {
         console.error('Upload flow failed:', error);
-        const detail = error.response?.data?.detail || '업로드에 실패했어요. 파일 형식(PDF)과 용량(50MB 이하)을 확인해 주세요.';
-        toast.error(detail, { id: loadingId });
+        toast.error(getApiErrorMessage(error, '업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.'), { id: loadingId });
       } finally {
         setIsUploading(false);
       }
@@ -421,7 +424,7 @@ export function Record() {
               onClick: handleOpenFileDialog,
               onKeyDown: handleDropzoneKeyDown,
             })}
-            className={`cursor-pointer rounded-2xl border-2 border-dashed p-8 text-left transition-all ${
+            className={`cursor-pointer rounded-2xl border-2 border-dashed p-5 text-left transition-all sm:p-8 ${
               isDragActive ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-white'
             } ${isBusy ? 'cursor-not-allowed opacity-70' : ''}`}
           >
@@ -555,4 +558,3 @@ export function Record() {
     </div>
   );
 }
-

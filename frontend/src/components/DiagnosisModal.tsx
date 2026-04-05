@@ -17,6 +17,7 @@ import {
 import { useDropzone } from 'react-dropzone';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
+import { getApiErrorMessage } from '../lib/apiError';
 import {
   DIAGNOSIS_STORAGE_KEY,
   type DiagnosisResultPayload,
@@ -28,6 +29,7 @@ interface DiagnosisModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
   const [step, setStep] = useState(1);
@@ -128,6 +130,10 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
     async (acceptedFiles: File[]) => {
       const file = acceptedFiles[0];
       if (!file || !projectId || isBusy) return;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error('파일 용량이 50MB를 초과해 업로드할 수 없습니다.');
+        return;
+      }
 
       setIsBusy(true);
       setUploadedFileName(file.name);
@@ -136,14 +142,12 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
         const formData = new FormData();
         formData.append('file', file);
         // Note: Using the project-specific upload endpoint to bind to project 
-        await api.post(`/api/v1/projects/${projectId}/uploads`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        await api.post(`/api/v1/projects/${projectId}/uploads`, formData);
         toast.success('업로드 완료! AI 진단을 시작합니다.', { id: toastId });
         await runDiagnosis(projectId);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Upload error:', error);
-        toast.error('PDF 업로드에 실패했습니다. 파일 형식을 확인해주세요.', { id: toastId });
+        toast.error(getApiErrorMessage(error, 'PDF 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.'), { id: toastId });
         setIsBusy(false);
       }
     },

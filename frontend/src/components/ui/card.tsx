@@ -13,8 +13,8 @@ const toneClasses: Record<CardTone, string> = {
 const paddingClasses: Record<CardPadding, string> = {
   none: 'p-0',
   sm: 'p-4',
-  md: 'p-6',
-  lg: 'p-8',
+  md: 'p-4 sm:p-6',
+  lg: 'p-5 sm:p-8',
 };
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -50,4 +50,3 @@ export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDi
 export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <footer className={cn('mt-6 flex flex-wrap items-center gap-3', className)} {...props} />;
 }
-

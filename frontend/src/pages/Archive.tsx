@@ -132,7 +132,7 @@ export function Archive() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl px-0 pb-24 sm:px-2 lg:px-4">
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800">
@@ -154,7 +154,7 @@ export function Archive() {
 
       <div className="grid auto-rows-fr grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
-          <div key={item.id} className="group flex h-full min-h-[26rem] flex-col overflow-hidden clay-card">
+          <div key={item.id} className="group flex h-full min-h-[22rem] flex-col overflow-hidden sm:min-h-[26rem] clay-card">
             <div className={`relative w-full overflow-hidden rounded-t-3xl pt-[75%] ${item.color}`}>
               <div className="absolute inset-0 opacity-20 mix-blend-overlay bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
               <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-7xl drop-shadow-xl transition-transform duration-500 group-hover:scale-110">

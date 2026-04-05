@@ -10,7 +10,7 @@ interface AppFooterProps {
 
 export function AppFooter({ onOpenPartnership }: AppFooterProps) {
   return (
-    <SurfaceCard className="mt-12 p-6 sm:p-8">
+    <SurfaceCard className="mt-8 p-5 sm:mt-12 sm:p-8">
       <div className="grid gap-8 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="space-y-4">
           <UniFoliaLogo size="sm" subtitle={null} />

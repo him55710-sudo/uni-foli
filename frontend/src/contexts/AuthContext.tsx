@@ -27,12 +27,35 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const GUEST_SESSION_KEY = 'polio_guest_session';
+type SocialProvider = 'google' | 'kakao' | 'naver';
 const POPUP_FALLBACK_ERROR_CODES = new Set([
   'auth/popup-blocked',
   'auth/popup-closed-by-user',
   'auth/cancelled-popup-request',
   'auth/operation-not-supported-in-this-environment',
 ]);
+const GOOGLE_SOCIAL_REDIRECT_ERROR_CODES = new Set([
+  'auth/configuration-not-found',
+  'auth/operation-not-allowed',
+  'auth/admin-restricted-operation',
+  'auth/unauthorized-domain',
+  'auth/invalid-api-key',
+]);
+const SOCIAL_LOGIN_ERROR_MESSAGE_MAP: Record<string, string> = {
+  'Social login is disabled.': '현재 백엔드에서 소셜 로그인이 비활성화되어 있어요. AUTH_SOCIAL_LOGIN_ENABLED=true로 설정해 주세요.',
+  'Social login is not configured.': '소셜 로그인 보안 설정이 누락되었어요. AUTH_SOCIAL_STATE_SECRET을 설정해 주세요.',
+  'Google login is not configured.': 'Google OAuth 설정이 누락되었어요. GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET을 확인해 주세요.',
+};
+
+function extractApiErrorMessage(error: unknown): string | null {
+  const responseData = (error as { response?: { data?: { detail?: unknown } } })?.response?.data;
+  if (typeof responseData?.detail === 'string' && responseData.detail.trim()) {
+    const detail = responseData.detail.trim();
+    return SOCIAL_LOGIN_ERROR_MESSAGE_MAP[detail] ?? detail;
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,9 +94,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
+  const signInWithSocialRedirect = async (provider: SocialProvider) => {
+    try {
+      const response = await api.post<{ authorize_url: string }>('/api/v1/auth/social/prepare', {
+        provider,
+      });
+      window.location.href = response.authorize_url;
+    } catch (error) {
+      const detail = extractApiErrorMessage(error);
+      if (detail) {
+        throw new Error(detail);
+      }
+      throw error;
+    }
+  };
+
   const signInWithGoogle = async () => {
-    if (!auth || !googleProvider || !isFirebaseConfigured) {
+    if (!auth || !isFirebaseConfigured) {
       throw new Error('Google login is unavailable until Firebase env vars are configured.');
+    }
+
+    if (!googleProvider) {
+      await signInWithSocialRedirect('google');
+      return;
     }
 
     try {
@@ -90,10 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithKakao = async () => {
     try {
-      const response = await api.post<{ authorize_url: string }>('/api/v1/auth/social/prepare', {
-        provider: 'kakao',
-      });
-      window.location.href = response.authorize_url;
+      await signInWithSocialRedirect('kakao');
     } catch (error) {
       console.error('Kakao auth prepare failed:', error);
       throw error;
@@ -102,10 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithNaver = async () => {
     try {
-      const response = await api.post<{ authorize_url: string }>('/api/v1/auth/social/prepare', {
-        provider: 'naver',
-      });
-      window.location.href = response.authorize_url;
+      await signInWithSocialRedirect('naver');
     } catch (error) {
       console.error('Naver auth prepare failed:', error);
       throw error;

@@ -7,7 +7,6 @@ import {
   Download,
   FileText,
   Loader2,
-  RotateCcw,
   Send,
   Sparkles,
   ToggleLeft,
@@ -289,8 +288,6 @@ export function Workshop() {
   const [diagnosisReport, setDiagnosisReport] = useState<Record<string, unknown> | null>(null);
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
-  const [docHistory, setDocHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
   const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<'chat' | 'draft'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -481,24 +478,9 @@ export function Workshop() {
     const marker = `${AI_SUGGESTION_HEADER}\n${AI_SUGGESTION_NOTE}`;
     const updated = `${documentContent}\n\n${marker}\n\n${content}`;
 
-    setDocHistory(prev => {
-      const trimmed = prev.slice(0, historyIndex + 1);
-      trimmed.push(documentContent);
-      return trimmed.slice(-20);
-    });
-    setHistoryIndex(prev => Math.min(prev + 1, 19));
-
     setDocumentContent(updated);
     setPendingSuggestion(null);
     toast.success('제안 초안을 문서에 반영했습니다.');
-  };
-
-  const undoLastChange = () => {
-    if (historyIndex >= 0 && docHistory[historyIndex] !== undefined) {
-      setDocumentContent(docHistory[historyIndex]);
-      setHistoryIndex(prev => prev - 1);
-      toast.success('직전 편집을 되돌렸습니다.');
-    }
   };
 
   const handleGenerateDraft = async () => {
@@ -557,7 +539,7 @@ export function Workshop() {
   const diagnosisGapCount = Array.isArray(diagnosisReport?.gaps) ? diagnosisReport.gaps.length : 0;
 
   return (
-    <div className={cn("mx-auto max-w-7xl space-y-5 px-3 py-4 transition-all duration-700 sm:space-y-6 sm:px-4 sm:py-6", advancedMode && "rounded-[32px] bg-blue-50/30 shadow-[inset_0_0_100px_rgba(37,99,235,0.03)] sm:rounded-[48px]")}>
+    <div className={cn("mx-auto max-w-[1800px] space-y-4 px-2.5 py-3 transition-all duration-700 sm:space-y-6 sm:px-4 sm:py-6", advancedMode && "rounded-[32px] bg-blue-50/30 shadow-[inset_0_0_100px_rgba(37,99,235,0.03)] sm:rounded-[48px]")}>
       <motion.div
         animate={advancedMode ? { y: [0, -2, 0] } : {}}
         transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
@@ -624,12 +606,12 @@ export function Workshop() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+      <div className="grid gap-4 md:gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
         <SectionCard
           title="Foli 대화"
           description="핵심 질문으로 논리 구조, 근거 연결, 문장 완성도를 순서대로 개선해 보세요."
           eyebrow="대화"
-          className={cn('min-h-[34rem] md:min-h-[38rem]', mobileView !== 'chat' && 'hidden md:flex')}
+          className={cn('min-h-[30rem] sm:min-h-[34rem] md:min-h-[38rem]', mobileView !== 'chat' && 'hidden md:flex')}
           bodyClassName="flex h-full min-h-0 flex-col gap-4 space-y-0"
           actions={<StatusBadge status={qualityMeta.status}>{qualityMeta.label}</StatusBadge>}
         >
@@ -668,7 +650,7 @@ export function Workshop() {
             </SurfaceCard>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3" tabIndex={0} aria-label="워크숍 대화">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2.5 sm:p-3" tabIndex={0} aria-label="워크숍 대화">
             {isSessionLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600">
@@ -713,7 +695,7 @@ export function Workshop() {
             )
           ) : null}
 
-          <div className="sticky bottom-0 z-10 -mx-1 flex items-center gap-2 border-t border-slate-200 bg-white/95 px-1 pt-3 pb-[calc(0.25rem+env(safe-area-inset-bottom))] backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:pt-0 md:pb-0">
+          <div className="sticky bottom-0 z-20 -mx-3 flex items-center gap-2 border-t border-slate-200 bg-white/95 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-10px_22px_rgba(15,23,42,0.08)] backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:pt-0 md:pb-0 md:shadow-none">
             <SecondaryButton onClick={() => toast.success('내보내기 기능은 다음 단계에서 연결됩니다.')} aria-label="초안 내보내기" size="icon">
               <Download size={16} />
             </SecondaryButton>
@@ -727,7 +709,7 @@ export function Workshop() {
                 }
               }}
               placeholder="논지 구성, 근거 연결, 문장 다듬기 등 요청을 입력해 주세요."
-              className="h-11 min-w-0 flex-1 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 outline-none transition focus-visible:ring-2 focus-visible:ring-blue-300"
+              className="h-12 min-w-0 flex-1 rounded-2xl border border-slate-300 bg-white px-4 text-[15px] font-medium text-slate-700 outline-none transition focus-visible:ring-2 focus-visible:ring-blue-300 sm:h-11 sm:text-sm"
             />
             <PrimaryButton onClick={() => void handleSend()} disabled={!input.trim() || isTyping} aria-label="메시지 전송" size="icon">
               <Send size={16} />
@@ -739,7 +721,7 @@ export function Workshop() {
           title="초안 문서"
           description="학생 작성 문장을 중심으로 유지하고, AI 제안은 검토 후 반영하세요."
           eyebrow="문서"
-          className={cn('min-h-[34rem] md:min-h-[38rem]', mobileView !== 'draft' && 'hidden md:flex')}
+          className={cn('min-h-[30rem] sm:min-h-[38rem] md:min-h-[46rem]', mobileView !== 'draft' && 'hidden md:flex')}
           bodyClassName="flex h-full min-h-0 flex-col gap-4 space-y-0"
           actions={
             <div className="flex flex-wrap items-center gap-2">
@@ -752,39 +734,20 @@ export function Workshop() {
                 <ExternalLink size={14} />
                 전문 에디터
               </SecondaryButton>
-              <SecondaryButton data-testid="workshop-undo" onClick={undoLastChange} disabled={historyIndex < 0} size="sm">
-                <RotateCcw size={14} />
-                되돌리기
-              </SecondaryButton>
-              <PrimaryButton onClick={handleGenerateDraft} disabled={!workshopState || isRendering} size="sm">
-                {isRendering ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}
-                {isRendering ? '생성 중...' : '렌더링'}
-              </PrimaryButton>
               <SecondaryButton data-testid="workshop-save-draft" onClick={handleSaveDraft} size="sm">
                 저장
               </SecondaryButton>
             </div>
           }
         >
-          <WorkflowNotice
-            tone="info"
-            title="신뢰 원칙"
-            description="AI 문구는 사용자의 승인 후에만 삽입되며, 삽입된 위치는 문서에서 명시적으로 표시됩니다."
-          />
-
           <div
-            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-6"
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 sm:p-4"
             tabIndex={0}
             aria-label="초안 미리보기 문서"
             data-testid="workshop-draft-preview"
           >
-            <div className="mx-auto flex min-h-[520px] w-full max-w-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:min-h-[720px] sm:max-w-[210mm] sm:p-10">
-              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-                <p className="truncate text-xs font-bold uppercase tracking-[0.14em] text-slate-400">{fileName}</p>
-                <StatusBadge status="neutral">실시간 미리보기</StatusBadge>
-              </div>
-
-              <div className="prose prose-sm max-w-none prose-headings:font-bold prose-p:leading-7 prose-p:text-slate-700">
+            <div className="mx-auto flex min-h-[480px] w-full max-w-[1400px] flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:min-h-[680px] sm:p-8 lg:p-12">
+              <div className="prose max-w-none prose-headings:font-bold prose-p:leading-8 prose-p:text-slate-700">
                 {documentContent ? (
                   <MemoizedMarkdown content={documentContent} />
                 ) : (
@@ -793,18 +756,22 @@ export function Workshop() {
               </div>
             </div>
 
-            <EvidenceDrawer evidenceMap={renderArtifact?.evidence_map ?? null} />
+            {advancedMode ? (
+              <>
+                <EvidenceDrawer evidenceMap={renderArtifact?.evidence_map ?? null} />
 
-            <SurfaceCard className="mt-6 p-4">
-              <AdvancedPreview
-                workshopId={workshopState?.session.id || ''}
-                artifactId={workshopState?.latest_artifact?.id || ''}
-                isAdvancedMode={advancedMode}
-                visualSpecs={renderArtifact?.visual_specs ?? []}
-                mathExpressions={renderArtifact?.math_expressions ?? []}
-                onUpdateVisualStatus={handleUpdateVisualStatus}
-              />
-            </SurfaceCard>
+                <SurfaceCard className="mt-6 p-4">
+                  <AdvancedPreview
+                    workshopId={workshopState?.session.id || ''}
+                    artifactId={workshopState?.latest_artifact?.id || ''}
+                    isAdvancedMode={advancedMode}
+                    visualSpecs={renderArtifact?.visual_specs ?? []}
+                    mathExpressions={renderArtifact?.math_expressions ?? []}
+                    onUpdateVisualStatus={handleUpdateVisualStatus}
+                  />
+                </SurfaceCard>
+              </>
+            ) : null}
           </div>
         </SectionCard>
       </div>

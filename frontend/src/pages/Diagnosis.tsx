@@ -9,6 +9,7 @@ import { UniversityLogo } from '../components/UniversityLogo';
 import { useAuthStore } from '../store/authStore';
 import { useOnboardingStore } from '../store/onboardingStore';
 import { api, shouldUseSynchronousApiJobs } from '../lib/api';
+import { getApiErrorMessage } from '../lib/apiError';
 import { DiagnosisEvidencePanel } from '../components/DiagnosisEvidencePanel';
 import { DiagnosisGuidedChoicePanel } from '../components/DiagnosisGuidedChoicePanel';
 import { ClaimGroundingPanel } from '../components/ClaimGroundingPanel';
@@ -38,6 +39,7 @@ import {
 } from '../components/primitives';
 
 type DiagnosisStep = 'GOALS' | 'UPLOAD' | 'ANALYSING' | 'RESULT' | 'FAILED';
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export function Diagnosis() {
   const navigate = useNavigate();
@@ -237,6 +239,10 @@ export function Diagnosis() {
     async (acceptedFiles: File[]) => {
       const file = acceptedFiles[0];
       if (!file) return;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error('파일 용량이 50MB를 초과해 업로드할 수 없습니다.');
+        return;
+      }
 
       setIsUploading(true);
       const loadingId = toast.loading('PDF 업로드와 진단 준비를 진행 중입니다...');
@@ -250,9 +256,7 @@ export function Diagnosis() {
           formData.append('title', `${mainGoal.university} ${mainGoal.major} 진단`);
         }
 
-        const uploadRes = await api.post<{ project_id: string; id: string }>('/api/v1/documents/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const uploadRes = await api.post<{ project_id: string; id: string }>('/api/v1/documents/upload', formData);
         setProjectId(uploadRes.project_id);
 
         const parseUrl = useSynchronousApiJobs
@@ -283,8 +287,7 @@ export function Diagnosis() {
         toast.success('진단 실행을 시작했습니다.', { id: loadingId });
       } catch (error: any) {
         console.error('Diagnosis flow failed:', error);
-        const detail = error.response?.data?.detail || '진단 실행에 실패했습니다. 파일 형식이나 용량(50MB)을 확인해 주세요.';
-        toast.error(detail, { id: loadingId });
+        toast.error(getApiErrorMessage(error, '진단 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.'), { id: loadingId });
         setIsUploading(false);
       }
     },
@@ -533,7 +536,7 @@ export function Diagnosis() {
                   onClick: handleOpenFileDialog,
                   onKeyDown: handleDropzoneKeyDown,
                 })}
-                className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-colors ${
+                className={`cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition-colors sm:p-10 ${
                   isDragActive ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-white'
                 } ${isUploading ? 'pointer-events-none opacity-60' : ''}`}
               >

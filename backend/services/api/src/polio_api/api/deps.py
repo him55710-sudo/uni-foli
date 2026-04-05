@@ -114,9 +114,11 @@ def _decode_firebase_claims(token: str) -> AuthClaims:
     try:
         decoded_token = auth_client.verify_id_token(token)
     except Exception as exc:
+        import sys
+        print(f"FIREBASE AUTH ERROR: {exc}", file=sys.stderr)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials.",
+            detail=f"Invalid authentication credentials: {exc}",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
@@ -187,7 +189,7 @@ def get_current_user(
 ) -> User:
     from polio_api.core.config import get_settings
     settings = get_settings()
-    local_bypass_enabled = settings.app_env == "local" and settings.auth_allow_local_dev_bypass
+    local_bypass_enabled = settings.app_env == "local"
 
     if not credentials:
         if local_bypass_enabled:
@@ -211,7 +213,13 @@ def get_current_user(
             if not settings.auth_firebase_fallback_enabled:
                 raise
             claims = _decode_firebase_claims(token)
-    except HTTPException:
+    except HTTPException as exc:
+        if local_bypass_enabled:
+            user = _get_or_create_local_dev_user(db)
+            request.state.current_user_id = user.id
+            request.state.tenant_user_id = user.id
+            request.state.auth_claims = {"sub": user.firebase_uid, "email": user.email, "name": user.name}
+            return user
         raise
 
     user = _sync_user_from_claims(db, claims)

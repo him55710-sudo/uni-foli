@@ -482,10 +482,12 @@ def test_social_login_prepare_and_invalid_state_handling() -> None:
     original_secret = settings.auth_social_state_secret
     original_ttl = settings.auth_social_state_ttl_seconds
     original_kakao_client_id = settings.kakao_client_id
+    original_google_client_id = settings.google_client_id
     settings.auth_social_login_enabled = True
     settings.auth_social_state_secret = "test-social-state-secret"
     settings.auth_social_state_ttl_seconds = 300
     settings.kakao_client_id = "test-kakao-client-id"
+    settings.google_client_id = "test-google-client-id"
 
     try:
         with TestClient(app) as client:
@@ -493,6 +495,10 @@ def test_social_login_prepare_and_invalid_state_handling() -> None:
             assert prepare.status_code == 200
             issued_state = prepare.json()["state"]
             assert issued_state
+
+            google_prepare = client.post("/api/v1/auth/social/prepare", json={"provider": "google"})
+            assert google_prepare.status_code == 200
+            assert "accounts.google.com" in google_prepare.json()["authorize_url"]
 
             invalid = client.post(
                 "/api/v1/auth/social",
@@ -505,6 +511,7 @@ def test_social_login_prepare_and_invalid_state_handling() -> None:
         settings.auth_social_state_secret = original_secret
         settings.auth_social_state_ttl_seconds = original_ttl
         settings.kakao_client_id = original_kakao_client_id
+        settings.google_client_id = original_google_client_id
 
 
 def test_expired_workshop_stream_token_is_rejected() -> None:

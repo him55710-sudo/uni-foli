@@ -43,12 +43,12 @@ export function AppTopbar({
       </Topbar>
 
       {visibleGoals.length ? (
-        <div className="border-b border-slate-200 bg-blue-50 px-4 py-2 md:hidden">
+        <div className="border-b border-slate-200 bg-blue-50 px-3 py-2 md:hidden">
           <div className="flex gap-2 overflow-x-auto pb-0.5">
             {visibleGoals.map((goal, index) => (
               <div
                 key={`${goal.university}-${goal.major ?? ''}-${index}`}
-                className="flex min-w-[170px] items-center gap-2 rounded-lg border border-blue-200 bg-white px-2 py-1.5"
+                className="flex min-w-[148px] items-center gap-2 rounded-lg border border-blue-200 bg-white px-2 py-1.5 sm:min-w-[170px]"
               >
                 <UniversityLogo
                   universityName={goal.university}
@@ -102,4 +102,3 @@ export function AppTopbar({
     </>
   );
 }
-

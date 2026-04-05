@@ -40,12 +40,17 @@ const client = axios.create({
 
 client.interceptors.request.use(
   async (config) => {
+    const headers = AxiosHeaders.from(config.headers);
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      // Let the browser set multipart boundaries automatically.
+      headers.delete('Content-Type');
+    }
+
     if (auth?.currentUser) {
       const token = await auth.currentUser.getIdToken();
-      const headers = AxiosHeaders.from(config.headers);
       headers.set('Authorization', `Bearer ${token}`);
-      config.headers = headers;
     }
+    config.headers = headers;
     return config;
   },
   (error) => Promise.reject(error),

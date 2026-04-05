@@ -17,18 +17,18 @@ router = APIRouter()
 
 
 class SocialProviderPrepareRequest(BaseModel):
-    provider: Literal["kakao", "naver"]
+    provider: Literal["kakao", "naver", "google"]
 
 
 class SocialProviderPrepareResponse(BaseModel):
-    provider: Literal["kakao", "naver"]
+    provider: Literal["kakao", "naver", "google"]
     state: str
     authorize_url: str
     expires_in: int
 
 
 class SocialLoginRequest(BaseModel):
-    provider: Literal["kakao", "naver"]
+    provider: Literal["kakao", "naver", "google"]
     code: str = Field(min_length=1, max_length=2048)
     state: str = Field(min_length=16, max_length=1024)
 
@@ -72,8 +72,20 @@ def prepare_social_login(
     # Build authorize url
     if payload.provider == "kakao":
         authorize_url = f"https://kauth.kakao.com/oauth/authorize?client_id={settings.kakao_client_id}&redirect_uri={settings.kakao_redirect_uri}&response_type=code&state={state}"
-    else:
+    elif payload.provider == "naver":
         authorize_url = f"https://nid.naver.com/oauth2.0/authorize?client_id={settings.naver_client_id}&redirect_uri={settings.naver_redirect_uri}&response_type=code&state={state}"
+    else:
+        authorize_url = (
+            "https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id={settings.google_client_id}"
+            f"&redirect_uri={settings.google_redirect_uri}"
+            "&response_type=code"
+            "&scope=openid%20email%20profile"
+            "&access_type=offline"
+            "&include_granted_scopes=true"
+            "&prompt=select_account"
+            f"&state={state}"
+        )
 
     return SocialProviderPrepareResponse(
         provider=payload.provider,
@@ -114,8 +126,10 @@ async def social_login(payload: SocialLoginRequest, request: Request) -> SocialL
     async with httpx.AsyncClient(timeout=timeout) as client:
         if payload.provider == "kakao":
             uid, email, name = await _exchange_kakao_code(client, settings, payload.code)
-        else:
+        elif payload.provider == "naver":
             uid, email, name = await _exchange_naver_code(client, settings, payload.code)
+        else:
+            uid, email, name = await _exchange_google_code(client, settings, payload.code)
 
     auth_client = get_firebase_auth_client()
     try:
@@ -145,7 +159,7 @@ def _ensure_social_login_enabled(settings) -> None:
         )
 
 
-def _require_provider_config(settings, provider: Literal["kakao", "naver"]) -> None:
+def _require_provider_config(settings, provider: Literal["kakao", "naver", "google"]) -> None:
     if provider == "kakao":
         if not settings.kakao_client_id or settings.kakao_client_id.startswith("DUMMY_"):
             raise HTTPException(
@@ -154,15 +168,28 @@ def _require_provider_config(settings, provider: Literal["kakao", "naver"]) -> N
             )
         return
 
-    if not settings.naver_client_id or settings.naver_client_id.startswith("DUMMY_"):
+    if provider == "naver":
+        if not settings.naver_client_id or settings.naver_client_id.startswith("DUMMY_"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Naver login is not configured.",
+            )
+        if not settings.naver_client_secret or settings.naver_client_secret.startswith("DUMMY_"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Naver login is not configured.",
+            )
+        return
+
+    if not settings.google_client_id or settings.google_client_id.startswith("DUMMY_"):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Naver login is not configured.",
+            detail="Google login is not configured.",
         )
-    if not settings.naver_client_secret or settings.naver_client_secret.startswith("DUMMY_"):
+    if not settings.google_client_secret or settings.google_client_secret.startswith("DUMMY_"):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Naver login is not configured.",
+            detail="Google login is not configured.",
         )
 
 
@@ -231,3 +258,39 @@ async def _exchange_naver_code(client: httpx.AsyncClient, settings, code: str) -
     email = profile.get("email")
     name = profile.get("name", "Naver User")
     return f"naver:{naver_id}", email, name
+
+
+async def _exchange_google_code(client: httpx.AsyncClient, settings, code: str) -> tuple[str, str | None, str | None]:
+    token_response = await client.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri": settings.google_redirect_uri,
+            "code": code,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    if token_response.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google code exchange failed.")
+
+    access_token = str(token_response.json().get("access_token") or "").strip()
+    if not access_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google access token missing.")
+
+    user_response = await client.get(
+        "https://openidconnect.googleapis.com/v1/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    if user_response.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google user lookup failed.")
+
+    user_info = user_response.json()
+    google_sub = str(user_info.get("sub") or "").strip()
+    if not google_sub:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google user id missing.")
+
+    email = user_info.get("email")
+    name = user_info.get("name", "Google User")
+    return f"google:{google_sub}", email, name
