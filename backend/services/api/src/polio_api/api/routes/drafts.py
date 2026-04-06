@@ -15,6 +15,7 @@ from polio_api.schemas.draft import DraftCreate, DraftUpdate, DraftRead
 from polio_api.services.draft_service import create_draft, update_draft, get_draft, list_drafts_for_project
 from polio_api.services.prompt_registry import get_prompt_registry
 from polio_api.services.project_service import append_project_discussion_log, get_project
+from polio_api.services.workshop_document_grounding_service import build_workshop_document_grounding_context
 
 router = APIRouter()
 chat_router = APIRouter()
@@ -57,6 +58,7 @@ def _build_system_instruction(
     target_university: str | None,
     target_major: str | None,
     reference_materials: list[ReferenceMaterial],
+    document_grounding_context: str | None = None,
 ) -> str:
     profile_context = (
         f"학생의 목표 대학은 '{target_university or '미정'}'이고, 목표 전공은 '{target_major or '미정'}'이다."
@@ -67,6 +69,8 @@ def _build_system_instruction(
     sections = []
     if reference_context:
         sections.append(reference_context)
+    if document_grounding_context:
+        sections.append(document_grounding_context)
     sections.append(f"[학생 맥락]\n{profile_context}")
     sections.append(base_instruction)
     return "\n\n".join(sections)
@@ -89,12 +93,14 @@ def _build_streaming_response(
     project_id: str | None,
     target_university: str | None,
     target_major: str | None,
+    document_grounding_context: str | None = None,
 ) -> StreamingResponse:
     llm = get_llm_client()
     system_instruction = _build_system_instruction(
         target_university=target_university,
         target_major=target_major,
         reference_materials=payload.reference_materials,
+        document_grounding_context=document_grounding_context,
     )
 
     async def save_chat_to_db(user_message: str, ai_response: str, user: User) -> None:
@@ -213,6 +219,11 @@ async def handle_chat_stream_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
     _validate_reference_limit(payload.reference_materials)
+    document_grounding_context = build_workshop_document_grounding_context(
+        db=db,
+        project=project,
+        user_message=payload.message,
+    )
     return _build_streaming_response(
         payload=payload,
         current_user=current_user,
@@ -220,6 +231,7 @@ async def handle_chat_stream_route(
         project_id=project.id,
         target_university=current_user.target_university or project.target_university,
         target_major=project.target_major or current_user.target_major,
+        document_grounding_context=document_grounding_context,
     )
 
 
@@ -232,12 +244,21 @@ async def handle_drafts_chat_stream_route(
 ) -> StreamingResponse:
     _validate_reference_limit(payload.reference_materials)
 
+    project = None
     target_major: str | None = None
     if payload.project_id:
         project = get_project(db, payload.project_id, owner_user_id=current_user.id)
         if not project:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
         target_major = project.target_major
+
+    document_grounding_context = None
+    if project is not None:
+        document_grounding_context = build_workshop_document_grounding_context(
+            db=db,
+            project=project,
+            user_message=payload.message,
+        )
 
     return _build_streaming_response(
         payload=payload,
@@ -246,4 +267,5 @@ async def handle_drafts_chat_stream_route(
         project_id=payload.project_id,
         target_university=current_user.target_university,
         target_major=target_major or current_user.target_major,
+        document_grounding_context=document_grounding_context,
     )

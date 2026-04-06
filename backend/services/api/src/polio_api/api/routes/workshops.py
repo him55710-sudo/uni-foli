@@ -47,6 +47,7 @@ from polio_api.services.quality_control import (
 )
 from polio_api.services.project_service import get_project
 from polio_api.services.rag_service import RAGConfig
+from polio_api.services.workshop_document_grounding_service import build_workshop_document_grounding_context
 from polio_api.services.workshop_render_service import SSEEvent, _parse_artifact, _sse_line, stream_render
 from polio_domain.enums import QualityLevel, TurnType, WorkshopStatus
 
@@ -458,8 +459,13 @@ async def chat_stream_route(
 
     # Build the grounded memory context
     memory_context = build_workshop_memory_context(session, project, quest)
+    document_grounding_context = build_workshop_document_grounding_context(
+        db=db,
+        project=project,
+        user_message=payload.message.strip(),
+    )
     base_instruction = get_prompt_registry().compose_prompt("chat.coaching-orchestration")
-    full_instruction = f"{memory_context}\n\n[지침]\n{base_instruction}"
+    full_instruction = f"{memory_context}\n\n{document_grounding_context}\n\n[지침]\n{base_instruction}"
 
     llm = get_llm_client()
 
