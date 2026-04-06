@@ -113,6 +113,16 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 2048
     ollama_num_predict: int = 512
     ollama_num_thread: int | None = None
+    pdf_analysis_llm_enabled: bool = True
+    pdf_analysis_llm_provider: str = "ollama"
+    pdf_analysis_gemini_api_key: str | None = None
+    pdf_analysis_ollama_base_url: str | None = None
+    pdf_analysis_ollama_model: str = "gemma4"
+    pdf_analysis_timeout_seconds: float = 60.0
+    pdf_analysis_keep_alive: str = "15m"
+    pdf_analysis_num_ctx: int = 3072
+    pdf_analysis_num_predict: int = 512
+    pdf_analysis_num_thread: int | None = None
 
     # SMTP Settings
     smtp_enabled: bool = False

@@ -194,14 +194,49 @@ def get_llm_client() -> LLMClient:
     raise RuntimeError("Gemini API key is not configured.")
 
 
-def _build_ollama_client() -> OllamaClient:
+def get_pdf_analysis_llm_client() -> LLMClient:
+    settings = get_settings()
+    provider = (settings.pdf_analysis_llm_provider or "ollama").strip().lower()
+    gemini_api_key = (
+        settings.pdf_analysis_gemini_api_key or settings.gemini_api_key or os.environ.get("GEMINI_API_KEY") or ""
+    ).strip()
+
+    if provider == "ollama":
+        return _build_ollama_client(
+            base_url=settings.pdf_analysis_ollama_base_url or settings.ollama_base_url,
+            model=settings.pdf_analysis_ollama_model or settings.ollama_model,
+            request_timeout_seconds=settings.pdf_analysis_timeout_seconds,
+            keep_alive=settings.pdf_analysis_keep_alive,
+            num_ctx=settings.pdf_analysis_num_ctx,
+            num_predict=settings.pdf_analysis_num_predict,
+            num_thread=settings.pdf_analysis_num_thread,
+        )
+
+    if provider == "gemini":
+        if not gemini_api_key or gemini_api_key == "DUMMY_KEY":
+            raise RuntimeError("PDF analysis Gemini API key is not configured.")
+        return GeminiClient(api_key=gemini_api_key)
+
+    raise RuntimeError(f"Unsupported PDF analysis LLM provider: {settings.pdf_analysis_llm_provider}")
+
+
+def _build_ollama_client(
+    *,
+    base_url: str | None = None,
+    model: str | None = None,
+    request_timeout_seconds: float | None = None,
+    keep_alive: str | None = None,
+    num_ctx: int | None = None,
+    num_predict: int | None = None,
+    num_thread: int | None = None,
+) -> OllamaClient:
     settings = get_settings()
     return OllamaClient(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        request_timeout_seconds=settings.ollama_timeout_seconds,
-        keep_alive=settings.ollama_keep_alive,
-        num_ctx=settings.ollama_num_ctx,
-        num_predict=settings.ollama_num_predict,
-        num_thread=settings.ollama_num_thread,
+        base_url=base_url or settings.ollama_base_url,
+        model=model or settings.ollama_model,
+        request_timeout_seconds=request_timeout_seconds if request_timeout_seconds is not None else settings.ollama_timeout_seconds,
+        keep_alive=settings.ollama_keep_alive if keep_alive is None else keep_alive,
+        num_ctx=settings.ollama_num_ctx if num_ctx is None else num_ctx,
+        num_predict=settings.ollama_num_predict if num_predict is None else num_predict,
+        num_thread=settings.ollama_num_thread if num_thread is None else num_thread,
     )

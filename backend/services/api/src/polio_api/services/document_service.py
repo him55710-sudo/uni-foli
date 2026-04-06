@@ -13,6 +13,7 @@ from polio_api.db.models.document_chunk import DocumentChunk
 from polio_api.db.models.draft import Draft
 from polio_api.db.models.parsed_document import ParsedDocument
 from polio_api.db.models.upload_asset import UploadAsset
+from polio_api.services.pdf_analysis_service import build_pdf_analysis_metadata
 from polio_domain.enums import (
     DocumentMaskingStatus,
     DocumentProcessingStatus,
@@ -209,6 +210,9 @@ def ingest_upload_asset(
             "parse_confidence": parsed.parse_confidence,
             "needs_review": parsed.needs_review,
         }
+        pdf_analysis = build_pdf_analysis_metadata(parsed)
+        if pdf_analysis:
+            document.parse_metadata["pdf_analysis"] = pdf_analysis
         document.last_error = None
         if parsed.processing_status in {
             DocumentProcessingStatus.PARTIAL.value,

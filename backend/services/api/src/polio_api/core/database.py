@@ -81,6 +81,10 @@ def _apply_schema_evolution() -> None:
             "stream_token": "stream_token VARCHAR(128)",
             "stream_token_expires_at": "stream_token_expires_at DATETIME",
         },
+        "workshop_turns": {
+            "speaker_role": "speaker_role VARCHAR(32) DEFAULT 'user' NOT NULL",
+            "action_payload": "action_payload JSON",
+        },
         "draft_artifacts": {
             "quality_level_applied": "quality_level_applied VARCHAR(8)",
             "safety_score": "safety_score INTEGER",
@@ -100,6 +104,10 @@ def _apply_schema_evolution() -> None:
             "template_id": "template_id VARCHAR(80)",
             "include_provenance_appendix": "include_provenance_appendix BOOLEAN DEFAULT 0 NOT NULL",
             "hide_internal_provenance_on_final_export": "hide_internal_provenance_on_final_export BOOLEAN DEFAULT 1 NOT NULL",
+        },
+        "async_jobs": {
+            "progress_stage": "progress_stage VARCHAR(64)",
+            "progress_message": "progress_message TEXT",
         },
     }
 

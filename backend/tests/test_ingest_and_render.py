@@ -62,6 +62,9 @@ def test_pdf_ingest_and_selected_render_flow() -> None:
             assert document_response.status_code == 200
             document_payload = document_response.json()
             assert document_payload["parse_metadata"]["chunk_count"] >= 1
+            assert "pdf_analysis" in document_payload["parse_metadata"]
+            assert document_payload["parse_metadata"]["pdf_analysis"]["summary"]
+            assert document_payload["parse_metadata"]["pdf_analysis"]["page_insights"]
             assert "chunk_evidence_map" not in document_payload["parse_metadata"]
             assert "raw_artifact" not in document_payload["parse_metadata"]
 

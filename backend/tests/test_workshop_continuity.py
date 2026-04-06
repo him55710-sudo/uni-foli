@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -109,14 +110,17 @@ def test_real_assistant_response_persists_to_history() -> None:
 
 def test_contract_workshop_chat_turn_schema_supports_roles() -> None:
     from polio_api.schemas.workshop import WorkshopTurnResponse
+    now = datetime.now(timezone.utc)
     turn = WorkshopTurnResponse(
         id="dummy",
+        session_id="session-1",
         turn_type="message",
         speaker_role="assistant",
         query="Hello from Assistant",
-        response=None
+        response=None,
+        created_at=now,
+        updated_at=now,
     )
     dumped = turn.model_dump()
     assert dumped["speaker_role"] == "assistant"
     assert dumped["query"] == "Hello from Assistant"
-

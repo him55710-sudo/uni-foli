@@ -69,6 +69,16 @@ interface DocumentStatusResponse {
       pattern_hits?: Record<string, number>;
     };
     page_failures?: Array<{ page_number?: number; message?: string }>;
+    pdf_analysis?: {
+      provider?: string;
+      model?: string;
+      engine?: string;
+      generated_at?: string;
+      summary?: string;
+      key_points?: string[];
+      evidence_gaps?: string[];
+      page_insights?: Array<{ page_number?: number; summary?: string }>;
+    };
   };
 }
 
@@ -296,6 +306,7 @@ export function Record() {
 
   const canContinue = Boolean(document && SUCCESS_STATUSES.has(document.status));
   const maskingSummary = document?.parse_metadata?.masking;
+  const pdfAnalysis = document?.parse_metadata?.pdf_analysis;
   const pageFailures = document?.parse_metadata?.page_failures ?? [];
   const warnings = document?.parse_metadata?.warnings ?? [];
   const stepItems = [
@@ -529,6 +540,70 @@ export function Record() {
                 {previewText || '아직 표시할 분석 텍스트가 없어요.'}
               </pre>
             </SurfaceCard>
+          </SectionCard>
+
+          <SectionCard title="Gemma4 PDF 분석" description="페이지별 핵심과 문서 흐름 요약을 확인해요." eyebrow="AI 분석">
+            {pdfAnalysis?.summary ? (
+              <div className="space-y-4">
+                <SurfaceCard tone="muted" padding="sm" className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={pdfAnalysis.engine === 'llm' ? 'success' : 'warning'}>
+                      {pdfAnalysis.engine === 'llm' ? 'Gemma4 분석 완료' : '보수 모드 요약'}
+                    </StatusBadge>
+                    {pdfAnalysis.model ? <StatusBadge status="neutral">{pdfAnalysis.model}</StatusBadge> : null}
+                  </div>
+                  <p className="text-sm font-medium leading-6 text-slate-700">{pdfAnalysis.summary}</p>
+                </SurfaceCard>
+
+                {pdfAnalysis.key_points?.length ? (
+                  <SurfaceCard tone="muted" padding="sm">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">핵심 포인트</p>
+                    <ul className="mt-2 space-y-2">
+                      {pdfAnalysis.key_points.map(point => (
+                        <li key={point} className="text-sm font-medium leading-6 text-slate-700">
+                          • {point}
+                        </li>
+                      ))}
+                    </ul>
+                  </SurfaceCard>
+                ) : null}
+
+                {pdfAnalysis.page_insights?.length ? (
+                  <SurfaceCard tone="muted" padding="sm">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">페이지 요약</p>
+                    <div className="mt-2 space-y-2">
+                      {pdfAnalysis.page_insights.slice(0, 8).map((item, index) => (
+                        <div key={`${item.page_number ?? 'na'}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                          <p className="text-sm font-bold text-slate-800">{item.page_number ?? '?'} 페이지</p>
+                          <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
+                            {item.summary || '요약 정보가 부족합니다.'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </SurfaceCard>
+                ) : null}
+
+                {pdfAnalysis.evidence_gaps?.length ? (
+                  <SurfaceCard tone="muted" padding="sm" className="border border-amber-200 bg-amber-50/70">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">근거 부족 안내</p>
+                    <ul className="mt-2 space-y-1.5">
+                      {pdfAnalysis.evidence_gaps.map(gap => (
+                        <li key={gap} className="text-sm font-medium leading-6 text-amber-900">
+                          • {gap}
+                        </li>
+                      ))}
+                    </ul>
+                  </SurfaceCard>
+                ) : null}
+              </div>
+            ) : (
+              <WorkflowNotice
+                tone="info"
+                title="아직 Gemma4 PDF 분석 결과가 없어요."
+                description="PDF 파싱이 완료되면 페이지별 요약과 핵심 포인트가 자동으로 채워집니다."
+              />
+            )}
           </SectionCard>
 
           {warnings.length || pageFailures.length || document?.last_error ? (

@@ -101,6 +101,10 @@ OLLAMA_MODEL=gemma4
 OLLAMA_NUM_CTX=4096
 OLLAMA_NUM_PREDICT=768
 OLLAMA_TIMEOUT_SECONDS=120
+PDF_ANALYSIS_LLM_ENABLED=true
+PDF_ANALYSIS_LLM_PROVIDER=ollama
+PDF_ANALYSIS_OLLAMA_MODEL=gemma4
+PDF_ANALYSIS_TIMEOUT_SECONDS=60
 ```
 
 4. Local fallback rule:
@@ -112,11 +116,14 @@ OLLAMA_TIMEOUT_SECONDS=120
 - `POST /api/v1/guided-chat/topic-suggestions`
 - `POST /api/v1/guided-chat/topic-selection`
 
-6. Frontend test page:
-- `/app/guided-chat`
-- `/app/guided-chat/:projectId`
+6. Workshop integrated flow:
+- `/app/workshop` or `/app/workshop/:projectId`
+- First message should be: `안녕하세요. 어떤 주제의 보고서를 써볼까요?`
+- Enter a broad subject (예: `수학`) and verify 3 topic cards appear in the same Foli chat.
+- Select one card and confirm the right draft panel is filled automatically.
 
 If Ollama is unavailable, the guided chat route returns conservative fallback suggestions with a limited-context note instead of crashing.
+If PDF analysis Ollama is unavailable, upload parsing still succeeds and falls back to a conservative local summary.
 
 ### Frontend
 
