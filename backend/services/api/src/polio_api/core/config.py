@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     auth_jwt_public_key: str | None = None
     auth_jwt_issuer: str | None = None
     auth_jwt_audience: str | None = None
+    auth_session_ttl_minutes: int = 720
     auth_token_leeway_seconds: int = 30
     auth_allow_local_dev_bypass: bool = False
     auth_firebase_fallback_enabled: bool = True
@@ -188,6 +189,8 @@ class Settings(BaseSettings):
 
         if self.auth_social_login_enabled and not self.auth_social_state_secret:
             raise ValueError("AUTH_SOCIAL_STATE_SECRET is required when AUTH_SOCIAL_LOGIN_ENABLED=true.")
+        if self.auth_session_ttl_minutes <= 0:
+            raise ValueError("AUTH_SESSION_TTL_MINUTES must be greater than zero.")
         if self.toss_payments_enabled:
             if not self.toss_payments_client_key:
                 raise ValueError("TOSS_PAYMENTS_CLIENT_KEY is required when TOSS_PAYMENTS_ENABLED=true.")

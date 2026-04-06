@@ -34,11 +34,11 @@ function toAuthMessage(error: unknown): string {
 }
 
 export function Auth() {
-  const { user, isGuestSession, signInWithGoogle, signInWithKakao, signInWithNaver, signInAsGuest } = useAuth();
+  const { isAuthenticated, signInWithGoogle, signInWithKakao, signInWithNaver, signInAsGuest } = useAuth();
   const [isSigningIn, setIsSigningIn] = useState<'google' | 'kakao' | 'naver' | 'guest' | null>(null);
   const missingFirebaseKeys = useMemo(() => getFirebaseMissingKeys(), []);
 
-  if (user || isGuestSession) {
+  if (isAuthenticated) {
     return <Navigate to="/app" replace />;
   }
 
@@ -293,4 +293,3 @@ export function Auth() {
     </div>
   );
 }
-

@@ -4,6 +4,7 @@ import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
 import { isGuestSessionActive, readGuestProfile } from '../lib/guestProfile';
 import { buildLocalAuthProfile, readLocalAuthProfile } from '../lib/localAuthProfile';
+import { clearAppAccessToken } from '../lib/appAccessToken';
 import type { UserProfile } from '@shared-contracts';
 
 interface AuthState {
@@ -53,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     try {
       await signOut(auth);
+      clearAppAccessToken();
       set({ user: null, isAuthenticated: false, isLoading: false });
     } catch (error) {
       console.error('Logout failed:', error);

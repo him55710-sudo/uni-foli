@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider, isFirebaseConfigured, isGuestModeAllowed } from '../lib/firebase';
 import { api } from '../lib/api';
+import { clearAppAccessToken, hasAppAccessToken } from '../lib/appAccessToken';
 
 interface AuthContextType {
   user: User | null;
@@ -61,12 +62,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isGuestSession, setIsGuestSession] = useState(false);
   const guestModeAvailable = isGuestModeAllowed;
+  const backendSessionAuthenticated = useAuthStore(state => state.isAuthenticated);
 
   useEffect(() => {
     localStorage.removeItem(GUEST_SESSION_KEY);
     setIsGuestSession(false);
 
     if (!auth || !isFirebaseConfigured) {
+      if (hasAppAccessToken()) {
+        void useAuthStore.getState().fetchProfile().finally(() => setLoading(false));
+        return;
+      }
+      useAuthStore.getState().setUser(null);
       setLoading(false);
       return;
     }
@@ -74,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        clearAppAccessToken();
         const shouldMarkGuest = currentUser.isAnonymous;
         setIsGuestSession(shouldMarkGuest);
         if (shouldMarkGuest) {
@@ -87,7 +95,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setIsGuestSession(false);
         localStorage.removeItem(GUEST_SESSION_KEY);
-        useAuthStore.getState().setUser(null);
+        if (hasAppAccessToken()) {
+          await useAuthStore.getState().fetchProfile();
+        } else {
+          useAuthStore.getState().setUser(null);
+        }
       }
       setLoading(false);
     });
@@ -110,11 +122,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    if (!auth || !isFirebaseConfigured) {
-      throw new Error('Google login is unavailable until Firebase env vars are configured.');
-    }
-
-    if (!googleProvider) {
+    const canUseFirebaseGoogle = Boolean(auth && isFirebaseConfigured && googleProvider);
+    if (!canUseFirebaseGoogle) {
       await signInWithSocialRedirect('google');
       return;
     }
@@ -125,6 +134,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const authError = error as Partial<AuthError>;
       if (authError.code && POPUP_FALLBACK_ERROR_CODES.has(authError.code)) {
         await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+      if (authError.code && GOOGLE_SOCIAL_REDIRECT_ERROR_CODES.has(authError.code)) {
+        await signInWithSocialRedirect('google');
         return;
       }
       throw error;
@@ -179,6 +192,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setIsGuestSession(false);
     localStorage.removeItem(GUEST_SESSION_KEY);
+    clearAppAccessToken();
+    useAuthStore.getState().setUser(null);
     try {
       if (auth?.currentUser) {
         await signOut(auth);
@@ -188,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const isAuthenticated = Boolean(user) || isGuestSession;
+  const isAuthenticated = Boolean(user) || isGuestSession || backendSessionAuthenticated;
 
   return (
     <AuthContext.Provider

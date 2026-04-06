@@ -6,6 +6,8 @@ import { api } from '../lib/api';
 import { motion } from 'motion/react';
 import { Bot } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { clearAppAccessToken, writeAppAccessToken } from '../lib/appAccessToken';
+import { useAuthStore } from '../store/authStore';
 
 export function AuthCallback() {
   const { provider } = useParams();
@@ -23,20 +25,38 @@ export function AuthCallback() {
 
   const handleSocialLogin = async (providerName: string, code: string, state: string) => {
     try {
-      if (!auth || !isFirebaseConfigured) {
-        throw new Error('소셜 로그인은 Firebase 설정이 필요합니다.');
+      const response = await api.post<{ firebase_custom_token?: string | null; app_access_token?: string | null }>(
+        '/api/v1/auth/social',
+        {
+          provider: providerName,
+          code,
+          state,
+        },
+      );
+
+      const firebaseToken = response.firebase_custom_token?.trim();
+      const appAccessToken = response.app_access_token?.trim();
+      let signedIn = false;
+
+      if (firebaseToken && auth && isFirebaseConfigured) {
+        await signInWithCustomToken(auth, firebaseToken);
+        signedIn = true;
       }
 
-      const response = await api.post<{ firebase_custom_token: string }>('/api/v1/auth/social', {
-        provider: providerName,
-        code,
-        state,
-      });
+      if (!signedIn && appAccessToken) {
+        writeAppAccessToken(appAccessToken);
+        await useAuthStore.getState().fetchProfile();
+        signedIn = true;
+      }
 
-      await signInWithCustomToken(auth, response.firebase_custom_token);
-      toast.success('로그인이 완료되었습니다.');
+      if (!signedIn) {
+        throw new Error('No usable login token was returned.');
+      }
+
+      toast.success('로그인이 완료됐습니다.');
       navigate('/app');
     } catch (error) {
+      clearAppAccessToken();
       console.error('Social login failed:', error);
       toast.error('로그인에 실패했습니다. 다시 시도해 주세요.');
       navigate('/auth');

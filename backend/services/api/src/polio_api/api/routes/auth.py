@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
@@ -34,7 +36,8 @@ class SocialLoginRequest(BaseModel):
 
 
 class SocialLoginResponse(BaseModel):
-    firebase_custom_token: str
+    firebase_custom_token: str | None = None
+    app_access_token: str | None = None
 
 
 @router.post("/firebase/exchange", response_model=UserProfileRead)
@@ -131,8 +134,16 @@ async def social_login(payload: SocialLoginRequest, request: Request) -> SocialL
         else:
             uid, email, name = await _exchange_google_code(client, settings, payload.code)
 
-    auth_client = get_firebase_auth_client()
+    app_access_token = _build_app_access_token(
+        settings=settings,
+        uid=uid,
+        email=email,
+        name=name,
+    )
+
+    firebase_custom_token: str | None = None
     try:
+        auth_client = get_firebase_auth_client()
         try:
             firebase_user = auth_client.get_user_by_email(email) if email else auth_client.get_user(uid)
         except auth_client.UserNotFoundError:
@@ -141,14 +152,46 @@ async def social_login(payload: SocialLoginRequest, request: Request) -> SocialL
                 email=email,
                 display_name=name,
             )
+        firebase_custom_token = auth_client.create_custom_token(firebase_user.uid).decode("utf-8")
+    except Exception:  # noqa: BLE001
+        firebase_custom_token = None
 
-        custom_token = auth_client.create_custom_token(firebase_user.uid).decode("utf-8")
-        return SocialLoginResponse(firebase_custom_token=custom_token)
-    except Exception as exc:  # noqa: BLE001
+    if not firebase_custom_token and not app_access_token:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Social login could not be completed.",
-        ) from exc
+        )
+
+    return SocialLoginResponse(
+        firebase_custom_token=firebase_custom_token,
+        app_access_token=app_access_token,
+    )
+
+
+def _build_app_access_token(
+    *,
+    settings,
+    uid: str,
+    email: str | None,
+    name: str | None,
+) -> str | None:
+    jwt_secret = (settings.auth_jwt_secret or "").strip()
+    if not jwt_secret:
+        return None
+
+    now = datetime.now(timezone.utc)
+    payload: dict[str, object] = {
+        "sub": uid,
+        "email": email,
+        "name": name,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=settings.auth_session_ttl_minutes)).timestamp()),
+    }
+    if settings.auth_jwt_issuer:
+        payload["iss"] = settings.auth_jwt_issuer
+    if settings.auth_jwt_audience:
+        payload["aud"] = settings.auth_jwt_audience
+    return jwt.encode(payload, jwt_secret, algorithm=settings.auth_jwt_algorithm)
 
 
 def _ensure_social_login_enabled(settings) -> None:

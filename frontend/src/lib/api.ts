@@ -1,5 +1,6 @@
 import axios, { AxiosHeaders, type AxiosRequestConfig } from 'axios';
 import { auth } from './firebase';
+import { readAppAccessToken } from './appAccessToken';
 
 function normalizeBaseUrl(value: string) {
   return value.replace(/\/+$/, '');
@@ -31,7 +32,15 @@ export function resolveApiBaseUrl() {
 }
 
 export function shouldUseSynchronousApiJobs() {
-  return import.meta.env.VITE_SYNC_API_JOBS === 'true';
+  const explicit = import.meta.env.VITE_SYNC_API_JOBS;
+  if (explicit === 'true') return true;
+  if (explicit === 'false') return false;
+
+  if (typeof window !== 'undefined' && /\.vercel\.app$/i.test(window.location.hostname)) {
+    // Vercel deployments often run without a separate worker process.
+    return true;
+  }
+  return false;
 }
 
 const client = axios.create({
@@ -49,6 +58,11 @@ client.interceptors.request.use(
     if (auth?.currentUser) {
       const token = await auth.currentUser.getIdToken();
       headers.set('Authorization', `Bearer ${token}`);
+    } else {
+      const appToken = readAppAccessToken();
+      if (appToken) {
+        headers.set('Authorization', `Bearer ${appToken}`);
+      }
     }
     config.headers = headers;
     return config;
@@ -58,6 +72,15 @@ client.interceptors.request.use(
 
 async function request<T = any>(config: AxiosRequestConfig): Promise<T> {
   const response = await client.request<T>(config);
+
+  const requestUrl = typeof config.url === 'string' ? config.url : '';
+  const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+  if (requestUrl.startsWith('/api/') && contentType.includes('text/html')) {
+    throw new Error(
+      '백엔드 API 연결이 설정되지 않았습니다. VITE_API_URL을 실제 백엔드 주소로 설정한 뒤 다시 배포해 주세요.',
+    );
+  }
+
   return response.data;
 }
 
