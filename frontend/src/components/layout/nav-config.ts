@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Archive, FileSearch, FolderOpen, Home, PenTool, Settings, Sparkles, TrendingUp } from 'lucide-react';
+import { Archive, FileSearch, FolderOpen, Home, PenTool, Settings, TrendingUp } from 'lucide-react';
 
 export interface AppNavItem {
   path: string;
@@ -41,7 +41,6 @@ export const appNavSections: AppNavSection[] = [
     hint: '초안 작성과 수정',
     items: [
       { path: '/app/workshop', label: '문서 작성', hint: '초안 작성 공간', icon: PenTool, stage: '3단계' },
-      { path: '/app/guided-chat', label: 'Guided Chat', hint: '3-topic test flow', icon: Sparkles, stage: '테스트' },
       { path: '/app/archive', label: '보관함', hint: '완료 문서 모아보기', icon: Archive, stage: '기록' },
     ],
   },

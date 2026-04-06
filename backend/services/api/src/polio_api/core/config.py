@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     llm_provider: str = Field(default="gemini", description="LLM provider: 'gemini' or 'ollama'")
     gemini_api_key: str | None = None
     ollama_base_url: str = "http://localhost:11434/v1"
-    ollama_model: str = "gemma"
+    ollama_model: str = "gemma4"
     ollama_timeout_seconds: float = 90.0
     ollama_keep_alive: str = "30m"
     ollama_num_ctx: int = 2048

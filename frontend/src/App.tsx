@@ -24,7 +24,6 @@ const Archive = lazy(() => import('./pages/Archive').then(m => ({ default: m.Arc
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Trends = lazy(() => import('./pages/Trends').then(m => ({ default: m.Trends })));
 const Diagnosis = lazy(() => import('./pages/Diagnosis').then(m => ({ default: m.Diagnosis })));
-const GuidedChatTest = lazy(() => import('./pages/GuidedChatTest').then(m => ({ default: m.GuidedChatTest })));
 const Onboarding = lazy(() => import('./pages/Onboarding').then(m => ({ default: m.Onboarding })));
 const TermsOfService = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.TermsOfService })));
 const PrivacyPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.PrivacyPolicy })));
@@ -150,8 +149,6 @@ export default function App() {
                 <Route path="diagnosis" element={<Diagnosis />} />
                 <Route path="workshop" element={<Workshop />} />
                 <Route path="workshop/:projectId" element={<Workshop />} />
-                <Route path="guided-chat" element={<GuidedChatTest />} />
-                <Route path="guided-chat/:projectId" element={<GuidedChatTest />} />
                 <Route path="editor/:projectId" element={<DocumentEditorPage />} />
                 <Route path="archive" element={<Archive />} />
                 <Route path="trends" element={<Trends />} />

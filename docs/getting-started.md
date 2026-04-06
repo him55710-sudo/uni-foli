@@ -1,4 +1,4 @@
-# Beginner Guide
+﻿# Beginner Guide
 
 This guide is for the current monorepo layout.
 
@@ -40,7 +40,7 @@ npm run dev
 
 ```powershell
 ollama serve
-ollama pull gemma
+ollama pull gemma4
 ollama list
 ```
 
@@ -50,7 +50,7 @@ Set backend envs in `.env`:
 APP_ENV=local
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
-OLLAMA_MODEL=gemma
+OLLAMA_MODEL=gemma4
 OLLAMA_NUM_CTX=4096
 OLLAMA_NUM_PREDICT=768
 OLLAMA_TIMEOUT_SECONDS=120

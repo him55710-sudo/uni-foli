@@ -1,4 +1,4 @@
-# API Service
+﻿# API Service
 
 Public HTTP entrypoint.
 

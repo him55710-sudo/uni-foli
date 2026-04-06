@@ -1,4 +1,4 @@
-# Polio Monorepo
+﻿# Polio Monorepo
 
 Polio is an execution-oriented AI platform for students.
 
@@ -87,7 +87,7 @@ ollama serve
 2. Ensure the local model exists:
 
 ```powershell
-ollama pull gemma
+ollama pull gemma4
 ollama list
 ```
 
@@ -97,7 +97,7 @@ ollama list
 APP_ENV=local
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
-OLLAMA_MODEL=gemma
+OLLAMA_MODEL=gemma4
 OLLAMA_NUM_CTX=4096
 OLLAMA_NUM_PREDICT=768
 OLLAMA_TIMEOUT_SECONDS=120
