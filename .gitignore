@@ -45,6 +45,7 @@ frontend/ui_pattern_output.txt
 frontend/test_output.txt
 frontend/stats.html
 *.txt
+!backend/requirements.txt
 *.log
 
 .vercel
