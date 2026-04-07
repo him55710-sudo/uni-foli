@@ -1,20 +1,23 @@
 from __future__ import annotations
 
+import logging
 import re
+import smtplib
+import threading
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from polio_api.core.config import Settings, get_settings
 from polio_api.db.models.inquiry import Inquiry
 from polio_api.schemas.inquiry import InquiryCreate
 from polio_api.services.prompt_registry import PromptRegistryError, get_prompt_registry
-from polio_api.core.config import get_settings
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import threading
 
 TRIAGE_PROMPT_NAME = "inquiry-support.contact-triage"
+_INQUIRY_LOGGER = logging.getLogger("polio.api.inquiries")
+_SMTP_TIMEOUT_SECONDS = 20.0
 _FABRICATION_PATTERN = re.compile(r"\b(make up|fabricat(?:e|ed|ion)|조작|거짓|허위)\b", re.IGNORECASE)
 _GUARANTEE_PATTERN = re.compile(r"\b(guarantee|guaranteed|100%|합격 보장|확정 합격)\b", re.IGNORECASE)
 _SENSITIVE_PATTERN = re.compile(
@@ -47,18 +50,44 @@ def create_inquiry(db: Session, payload: InquiryCreate) -> Inquiry:
     
     return inquiry
 
+
 def _send_email_notification_safe(payload: InquiryCreate) -> None:
+    settings = get_settings()
+    smtp_skip_reason = _get_smtp_skip_reason(settings)
+    if smtp_skip_reason is not None:
+        _INQUIRY_LOGGER.warning("Skipping inquiry email notification: %s", smtp_skip_reason)
+        return
+
+    receiver_email = _resolve_receiver_email(settings)
+    if receiver_email is None:
+        _INQUIRY_LOGGER.warning("Skipping inquiry email notification: SMTP receiver email is not configured.")
+        return
+
+    message = _build_inquiry_email_message(
+        payload=payload,
+        from_email=settings.smtp_username or "",
+        to_email=receiver_email,
+    )
+
     try:
-        settings = get_settings()
-        if not settings.smtp_enabled or not settings.smtp_username or not settings.smtp_password:
-            return
-            
-        msg = MIMEMultipart()
-        msg["From"] = settings.smtp_username
-        msg["To"] = settings.smtp_receiver_email
-        msg["Subject"] = f"[{payload.inquiry_type.upper()}] 새 문의가 접수되었습니다: {payload.name}"
-        
-        body = f"""유형: {payload.inquiry_type}
+        _send_via_smtp(settings=settings, message=message)
+        _INQUIRY_LOGGER.info(
+            "Inquiry email notification sent to %s for inquiry_type=%s",
+            receiver_email,
+            payload.inquiry_type,
+        )
+    except Exception as e:
+        _INQUIRY_LOGGER.exception("Failed to send inquiry email notification: %s", e)
+
+
+def _build_inquiry_email_message(*, payload: InquiryCreate, from_email: str, to_email: str) -> MIMEMultipart:
+    msg = MIMEMultipart()
+    msg["From"] = from_email
+    msg["To"] = to_email
+    msg["Reply-To"] = payload.email
+    msg["Subject"] = f"[{payload.inquiry_type.upper()}] 새 문의가 접수되었습니다: {payload.name or '익명'}"
+
+    body = f"""유형: {payload.inquiry_type}
 카테고리: {payload.inquiry_category or '-'}
 이름: {payload.name or '-'}
 이메일: {payload.email}
@@ -69,16 +98,49 @@ def _send_email_notification_safe(payload: InquiryCreate) -> None:
 --- 문의내용 ---
 {payload.message}
 """
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-        
-        server = smtplib.SMTP(settings.smtp_server, settings.smtp_port)
-        server.starttls()
-        server.login(settings.smtp_username, settings.smtp_password)
-        server.send_message(msg)
-        server.quit()
-    except Exception as e:
-        print(f"Failed to send email notification: {e}")
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+    return msg
 
+
+def _get_smtp_skip_reason(settings: Settings) -> str | None:
+    if not settings.smtp_enabled:
+        return "SMTP_ENABLED=false"
+    if not settings.smtp_server:
+        return "SMTP_SERVER is empty"
+    if settings.smtp_port <= 0:
+        return "SMTP_PORT must be greater than zero"
+    if not settings.smtp_username:
+        return "SMTP_USERNAME is empty"
+    if not settings.smtp_password:
+        return "SMTP_PASSWORD is empty"
+    return None
+
+
+def _resolve_receiver_email(settings: Settings) -> str | None:
+    receiver = (settings.smtp_receiver_email or "").strip()
+    if receiver:
+        return receiver
+    fallback = (settings.smtp_username or "").strip()
+    return fallback or None
+
+
+def _send_via_smtp(*, settings: Settings, message: MIMEMultipart) -> None:
+    use_ssl = settings.smtp_port == 465
+    smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+    with smtp_cls(settings.smtp_server, settings.smtp_port, timeout=_SMTP_TIMEOUT_SECONDS) as server:
+        if not use_ssl:
+            server.ehlo()
+            if server.has_extn("starttls"):
+                server.starttls()
+                server.ehlo()
+            elif settings.smtp_port == 587:
+                _INQUIRY_LOGGER.warning(
+                    "SMTP server %s:%s does not advertise STARTTLS on port 587.",
+                    settings.smtp_server,
+                    settings.smtp_port,
+                )
+        server.login(settings.smtp_username or "", settings.smtp_password or "")
+        server.send_message(message)
 
 
 def _build_extra_fields(payload: InquiryCreate) -> dict[str, Any]:

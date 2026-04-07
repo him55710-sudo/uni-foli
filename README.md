@@ -76,6 +76,24 @@ Security note:
 `/docs` is also hidden by default outside local development unless `API_DOCS_ENABLED=true` is set explicitly.
 If social login is enabled, production redirect URIs must not point at localhost. KCI-backed research search also now requires an explicit `KCI_API_KEY`.
 
+### Inquiry Email Setup (Naver)
+
+문의 작성 시 운영자 메일로 알림을 받으려면 아래 환경 변수를 반드시 설정하세요.
+
+```dotenv
+SMTP_ENABLED=true
+SMTP_SERVER=smtp.naver.com
+SMTP_PORT=587
+SMTP_USERNAME=<발신 Naver 메일 주소>
+SMTP_PASSWORD=<앱 비밀번호 또는 SMTP 비밀번호>
+SMTP_RECEIVER_EMAIL=mongben@naver.com
+```
+
+동작 체크:
+- 문의 API는 DB 저장 후 비동기로 메일을 전송합니다.
+- SMTP 설정이 비어 있으면 메일 전송을 건너뛰고 서버 로그에 이유를 남깁니다.
+- 수신자(`SMTP_RECEIVER_EMAIL`)가 비어 있으면 `SMTP_USERNAME`을 수신자로 fallback 합니다.
+
 ### Local Ollama/Gemma Guided-Chat Test
 
 1. Start Ollama locally:
