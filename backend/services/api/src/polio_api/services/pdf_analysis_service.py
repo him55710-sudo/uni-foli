@@ -12,11 +12,13 @@ from pydantic import BaseModel, Field
 
 from polio_api.core.config import get_settings
 from polio_api.core.llm import get_pdf_analysis_llm_client
+from polio_api.core.security import sanitize_public_error
 from polio_ingest.models import ParsedDocumentPayload
 
 _MAX_PAGES_FOR_PROMPT = 8
 _MAX_PAGE_TEXT_CHARS = 1400
 _MAX_RAW_LLM_RESPONSE_CHARS = 16000
+_PDF_ANALYSIS_FALLBACK_REASON = "LLM PDF analysis failed. Generated heuristic summary instead."
 
 
 class PdfPageInsight(BaseModel):
@@ -49,6 +51,9 @@ def build_pdf_analysis_metadata(parsed: ParsedDocumentPayload) -> dict[str, Any]
             "model": model_name,
             "engine": "fallback",
             "generated_at": _utc_iso(),
+            "attempted_provider": provider_name,
+            "attempted_model": model_name,
+            "failure_reason": "No extractable PDF page text was available for LLM analysis.",
             **heuristic,
         }
 
@@ -72,7 +77,12 @@ def build_pdf_analysis_metadata(parsed: ParsedDocumentPayload) -> dict[str, Any]
             "generated_at": _utc_iso(),
             **normalized,
         }
-    except Exception:
+    except Exception as exc:
+        failure_reason = sanitize_public_error(
+            str(exc),
+            fallback=_PDF_ANALYSIS_FALLBACK_REASON,
+            max_length=220,
+        )
         recovered = _recover_structured_response_from_text(
             llm=llm,
             prompt=prompt,
@@ -90,6 +100,9 @@ def build_pdf_analysis_metadata(parsed: ParsedDocumentPayload) -> dict[str, Any]
                 "model": model_name,
                 "engine": "llm",
                 "generated_at": _utc_iso(),
+                "attempted_provider": provider_name,
+                "attempted_model": model_name,
+                "recovered_from_text_fallback": True,
                 **normalized,
             }
         return {
@@ -97,6 +110,9 @@ def build_pdf_analysis_metadata(parsed: ParsedDocumentPayload) -> dict[str, Any]
             "model": model_name,
             "engine": "fallback",
             "generated_at": _utc_iso(),
+            "attempted_provider": provider_name,
+            "attempted_model": model_name,
+            "failure_reason": failure_reason,
             **heuristic,
         }
 

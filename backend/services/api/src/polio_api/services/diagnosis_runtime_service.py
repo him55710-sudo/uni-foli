@@ -10,6 +10,10 @@ from polio_api.db.models.project import Project
 from polio_api.db.models.response_trace import ResponseTrace
 from polio_api.db.models.user import User
 from polio_api.services.blueprint_service import build_blueprint_signals, create_blueprint_from_signals
+from polio_api.services.diagnosis_scoring_service import (
+    DiagnosisScoringSheet,
+    build_diagnosis_scoring_sheet,
+)
 from polio_api.services.diagnosis_service import (
     DiagnosisCitation,
     attach_policy_flags_to_run,
@@ -22,6 +26,7 @@ from polio_api.services.diagnosis_service import (
 )
 from polio_api.services.document_service import list_chunks_for_project, list_documents_for_project
 from polio_api.services.project_service import get_project
+from polio_api.services.student_record_feature_service import extract_student_record_features
 from polio_shared.paths import resolve_stored_path
 
 
@@ -79,6 +84,51 @@ def get_run_with_relations(db: Session, run_id: str) -> DiagnosisRun | None:
     )
 
 
+def _diagnosis_llm_strategy() -> tuple[bool, str]:
+    settings = get_settings()
+    provider = (settings.llm_provider or "gemini").strip().lower()
+    has_real_gemini_key = bool(settings.gemini_api_key and settings.gemini_api_key != "DUMMY_KEY")
+
+    if provider == "ollama":
+        model = (settings.ollama_model or "ollama").strip() or "ollama"
+        return True, model
+    if provider == "gemini" and has_real_gemini_key:
+        return True, "gemini-1.5-pro"
+    return False, "grounded-fallback"
+
+
+def _merge_unique(items: list[str], extra: list[str], *, limit: int) -> list[str]:
+    seen: set[str] = set()
+    merged: list[str] = []
+    for raw in [*items, *extra]:
+        normalized = str(raw or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        merged.append(normalized)
+        if len(merged) >= limit:
+            break
+    return merged
+
+
+def _apply_structured_backbone(*, result, sheet: DiagnosisScoringSheet) -> None:  # noqa: ANN001
+    result.overview = sheet.overview
+    result.document_quality = sheet.document_quality
+    result.section_analysis = sheet.section_analysis
+    result.admission_axes = sheet.admission_axes
+    result.risks = _merge_unique(sheet.risk_flags, getattr(result, "risks", []) or [], limit=10)
+    result.next_actions = _merge_unique(sheet.next_action_seeds, getattr(result, "next_actions", []) or [], limit=10)
+    result.recommended_topics = _merge_unique(
+        sheet.recommended_topics,
+        getattr(result, "recommended_topics", []) or [],
+        limit=10,
+    )
+    result.strengths = _merge_unique(sheet.strengths_candidates, result.strengths, limit=8)
+    result.gaps = _merge_unique(sheet.gap_candidates, result.gaps, limit=8)
+    result.recommended_focus = sheet.recommended_focus or result.recommended_focus
+    result.risk_level = sheet.risk_level
+
+
 async def run_diagnosis_run(
     db: Session,
     *,
@@ -112,15 +162,26 @@ async def run_diagnosis_run(
 
     target_major = fallback_target_major or project.target_major
     user_major = project.target_major or fallback_target_major or "General Studies"
-    settings = get_settings()
-    has_real_gemini_key = bool(settings.gemini_api_key and settings.gemini_api_key != "DUMMY_KEY")
     evidence_keys = [
         document.sha256 or document.id
         for document in documents
         if (document.sha256 or document.id)
     ]
+    features = extract_student_record_features(
+        documents=documents,
+        full_text=full_text,
+        target_major=target_major,
+        career_direction=owner.career,
+    )
+    scoring_sheet = build_diagnosis_scoring_sheet(
+        features=features,
+        project_title=project.title,
+        target_major=target_major,
+        target_university=fallback_target_university,
+    )
+    should_use_llm, model_name = _diagnosis_llm_strategy()
 
-    if has_real_gemini_key:
+    if should_use_llm:
         result = await evaluate_student_record(
             user_major=user_major,
             masked_text=full_text[:30000],
@@ -131,7 +192,6 @@ async def run_diagnosis_run(
             scope_key=f"project:{project.id}",
             evidence_keys=evidence_keys,
         )
-        model_name = "gemini-1.5-pro"
     else:
         result = build_grounded_diagnosis_result(
             project_title=project.title,
@@ -141,7 +201,7 @@ async def run_diagnosis_run(
             document_count=len(documents),
             full_text=full_text,
         )
-        model_name = "grounded-fallback"
+    _apply_structured_backbone(result=result, sheet=scoring_sheet)
 
     trace, citation_records = create_response_trace(
         db,

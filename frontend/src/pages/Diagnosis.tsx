@@ -613,6 +613,10 @@ export function Diagnosis() {
                 </StatusBadge>
               }
             >
+              {diagnosisResult.overview ? (
+                <WorkflowNotice tone="info" title="개요" description={diagnosisResult.overview} />
+              ) : null}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <SurfaceCard tone="muted" padding="sm">
                   <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">강점</p>
@@ -641,6 +645,118 @@ export function Diagnosis() {
                   </ul>
                 </SurfaceCard>
               </div>
+
+              {diagnosisResult.document_quality ? (
+                <SurfaceCard tone="muted" padding="sm" className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">문서 품질</p>
+                    <StatusBadge status={diagnosisResult.document_quality.needs_review ? 'warning' : 'success'}>
+                      {diagnosisResult.document_quality.parse_reliability_band} ({diagnosisResult.document_quality.parse_reliability_score}점)
+                    </StatusBadge>
+                  </div>
+                  <p className="text-sm font-medium leading-6 text-slate-700">{diagnosisResult.document_quality.summary}</p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                      source: {diagnosisResult.document_quality.source_mode}
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                      records: {diagnosisResult.document_quality.total_records}
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                      words: {diagnosisResult.document_quality.total_word_count}
+                    </div>
+                  </div>
+                </SurfaceCard>
+              ) : null}
+
+              {diagnosisResult.section_analysis?.length ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">섹션 분석</p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {diagnosisResult.section_analysis.map((item) => (
+                      <SurfaceCard key={item.key} tone="muted" padding="sm" className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-bold text-slate-800">{item.label}</p>
+                          <StatusBadge status={item.present ? 'success' : 'warning'}>
+                            {item.present ? `records ${item.record_count}` : 'missing'}
+                          </StatusBadge>
+                        </div>
+                        <p className="text-sm font-medium leading-6 text-slate-600">{item.note}</p>
+                      </SurfaceCard>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {diagnosisResult.admission_axes?.length ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">핵심 평가축</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {diagnosisResult.admission_axes.map((axis) => (
+                      <SurfaceCard key={axis.key} padding="sm">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-sm font-bold text-slate-800">{axis.label}</p>
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge status={axis.severity === 'low' ? 'success' : axis.severity === 'medium' ? 'warning' : 'danger'}>
+                              {axis.band}
+                            </StatusBadge>
+                            <StatusBadge status="neutral">{axis.score}점</StatusBadge>
+                          </div>
+                        </div>
+                        <p className="text-sm font-medium leading-6 text-slate-600">{axis.rationale}</p>
+                        {axis.evidence_hints?.length ? (
+                          <ul className="mt-2 space-y-1">
+                            {axis.evidence_hints.slice(0, 2).map((hint) => (
+                              <li key={hint} className="text-xs font-semibold text-slate-500">
+                                · {hint}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </SurfaceCard>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {diagnosisResult.risks?.length ? (
+                <SurfaceCard tone="muted" padding="sm" className="border border-amber-200 bg-amber-50/70">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-amber-700">리스크</p>
+                  <ul className="space-y-1.5">
+                    {diagnosisResult.risks.map((risk) => (
+                      <li key={risk} className="text-sm font-medium leading-6 text-amber-900">
+                        · {risk}
+                      </li>
+                    ))}
+                  </ul>
+                </SurfaceCard>
+              ) : null}
+
+              {diagnosisResult.next_actions?.length ? (
+                <SurfaceCard tone="muted" padding="sm">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">다음 액션</p>
+                  <ul className="space-y-1.5">
+                    {diagnosisResult.next_actions.map((action) => (
+                      <li key={action} className="text-sm font-medium leading-6 text-slate-700">
+                        · {action}
+                      </li>
+                    ))}
+                  </ul>
+                </SurfaceCard>
+              ) : null}
+
+              {diagnosisResult.recommended_topics?.length ? (
+                <SurfaceCard tone="muted" padding="sm">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">추천 주제</p>
+                  <div className="flex flex-wrap gap-2">
+                    {diagnosisResult.recommended_topics.map((topic) => (
+                      <StatusBadge key={topic} status="neutral">
+                        {topic}
+                      </StatusBadge>
+                    ))}
+                  </div>
+                </SurfaceCard>
+              ) : null}
 
               {diagnosisResult.action_plan?.length ? (
                 <div className="space-y-2">

@@ -17,6 +17,11 @@ from polio_api.db.models.project import Project
 from polio_api.db.models.response_trace import ResponseTrace
 from polio_api.db.models.review_task import ReviewTask
 from polio_api.db.models.user import User
+from polio_api.services.diagnosis_scoring_service import (
+    AdmissionAxisResult,
+    DocumentQualitySummary,
+    SectionAnalysisItem,
+)
 from polio_api.services.llm_cache_service import CacheRequest, fetch_cached_response, store_cached_response
 from polio_api.services.prompt_registry import get_prompt_registry
 from polio_ingest.masking import MaskingPipeline
@@ -168,12 +173,19 @@ class GuidedDraftOutline(BaseModel):
 
 class DiagnosisResult(BaseModel):
     headline: str = Field(description="Short diagnosis summary headline")
+    overview: str | None = Field(default=None, description="Structured diagnosis overview")
     strengths: list[str] = Field(description="Current grounded strengths in the record")
     gaps: list[str] = Field(description="Visible evidence or inquiry gaps to close next")
     detailed_gaps: list[DiagnosisGap] = Field(default_factory=list, description="Structured gap analysis")
     recommended_focus: str = Field(description="Most important next focus")
     action_plan: list[DiagnosisQuest] = Field(default_factory=list, description="Concrete next quests")
     risk_level: Literal["safe", "warning", "danger"] = Field(description="Risk tier")
+    document_quality: DocumentQualitySummary | None = None
+    section_analysis: list[SectionAnalysisItem] = Field(default_factory=list)
+    admission_axes: list[AdmissionAxisResult] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+    recommended_topics: list[str] = Field(default_factory=list)
     diagnosis_summary: DiagnosisSummary | None = None
     gap_axes: list[GapAxis] = Field(default_factory=list)
     recommended_directions: list[RecommendedDirection] = Field(default_factory=list)

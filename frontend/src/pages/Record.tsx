@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   AlertTriangle,
@@ -15,7 +15,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../lib/api';
+import { api, shouldUseSynchronousApiJobs } from '../lib/api';
 import { getApiErrorMessage } from '../lib/apiError';
 import { searchMajors } from '../lib/educationCatalog';
 import { CatalogAutocompleteInput } from '../components/CatalogAutocompleteInput';
@@ -51,6 +51,9 @@ interface DocumentStatusResponse {
   parse_attempts: number;
   last_error: string | null;
   can_retry: boolean;
+  latest_async_job_id: string | null;
+  latest_async_job_status: string | null;
+  latest_async_job_error: string | null;
   page_count: number;
   word_count: number;
   parse_started_at: string | null;
@@ -74,6 +77,10 @@ interface DocumentStatusResponse {
       model?: string;
       engine?: string;
       generated_at?: string;
+      failure_reason?: string;
+      attempted_provider?: string;
+      attempted_model?: string;
+      recovered_from_text_fallback?: boolean;
       summary?: string;
       key_points?: string[];
       evidence_gaps?: string[];
@@ -184,6 +191,7 @@ export function Record() {
   const [isUploading, setIsUploading] = useState(false);
   const [isStartingParse, setIsStartingParse] = useState(false);
   const lastTerminalStatus = useRef<DocumentStatus | null>(null);
+  const useSynchronousApiJobs = shouldUseSynchronousApiJobs();
 
   const isBusy = isUploading || isStartingParse;
   const previewText = useMemo(() => (document?.content_text ? document.content_text.slice(0, 900) : ''), [document?.content_text]);
@@ -221,7 +229,9 @@ export function Record() {
     } else if (document.status === 'partial') {
       toast('일부 경고가 있지만 분석은 완료됐어요. 내용을 확인해 주세요.', { icon: '!' });
     } else if (document.status === 'failed') {
-      toast.error(document.last_error || '분석에 실패했어요. 파일 상태를 확인한 뒤 다시 시도해 주세요.');
+      toast.error(
+        document.latest_async_job_error || document.last_error || '분석에 실패했어요. 파일 상태를 확인한 뒤 다시 시도해 주세요.',
+      );
     }
 
     lastTerminalStatus.current = document.status;
@@ -230,7 +240,10 @@ export function Record() {
   const startParse = useCallback(async (documentId: string) => {
     setIsStartingParse(true);
     try {
-      const started = await api.post<DocumentStatusResponse>(`/api/v1/documents/${documentId}/parse`);
+      const parseUrl = useSynchronousApiJobs
+        ? `/api/v1/documents/${documentId}/parse?wait_for_completion=true`
+        : `/api/v1/documents/${documentId}/parse`;
+      const started = await api.post<DocumentStatusResponse>(parseUrl);
       setDocument(started);
     } catch (error: any) {
       console.error('Failed to start parsing:', error);
@@ -239,7 +252,7 @@ export function Record() {
     } finally {
       setIsStartingParse(false);
     }
-  }, []);
+  }, [useSynchronousApiJobs]);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -309,6 +322,12 @@ export function Record() {
   const pdfAnalysis = document?.parse_metadata?.pdf_analysis;
   const pageFailures = document?.parse_metadata?.page_failures ?? [];
   const warnings = document?.parse_metadata?.warnings ?? [];
+  const parseErrorMessage =
+    document?.status === 'retrying' || document?.status === 'failed'
+      ? document?.latest_async_job_error || document?.last_error || null
+      : document?.last_error || null;
+  const hasPdfFallback = pdfAnalysis?.engine === 'fallback';
+  const pdfFallbackReason = pdfAnalysis?.failure_reason;
   const stepItems = [
     { id: 'upload', label: '업로드', description: '파일 등록', state: getStepState(document, 'upload') },
     { id: 'masking', label: '개인정보 보호', description: '이름/연락처 숨김 처리', state: getStepState(document, 'masking') },
@@ -551,9 +570,32 @@ export function Record() {
                       {pdfAnalysis.engine === 'llm' ? 'Gemma4 분석 완료' : '보수 모드 요약'}
                     </StatusBadge>
                     {pdfAnalysis.model ? <StatusBadge status="neutral">{pdfAnalysis.model}</StatusBadge> : null}
+                    {hasPdfFallback && pdfAnalysis.attempted_model ? (
+                      <StatusBadge status="neutral">Attempted: {pdfAnalysis.attempted_model}</StatusBadge>
+                    ) : null}
                   </div>
                   <p className="text-sm font-medium leading-6 text-slate-700">{pdfAnalysis.summary}</p>
                 </SurfaceCard>
+
+                {hasPdfFallback ? (
+                  <WorkflowNotice
+                    tone="warning"
+                    title="Gemma4 분석이 실패해 휴리스틱 요약으로 대체되었습니다."
+                    description={
+                      pdfFallbackReason
+                        ? `${pdfFallbackReason}${pdfAnalysis.attempted_provider ? ` (provider: ${pdfAnalysis.attempted_provider})` : ''}`
+                        : 'LLM 분석이 실패해 보수 모드 요약을 사용했습니다.'
+                    }
+                  />
+                ) : null}
+
+                {pdfAnalysis.recovered_from_text_fallback ? (
+                  <WorkflowNotice
+                    tone="info"
+                    title="JSON 파싱 실패 후 텍스트 응답을 복구해 분석을 완료했습니다."
+                    description="모델 응답 형식이 완전하지 않았지만 텍스트 복구 경로를 통해 페이지 요약을 만들었습니다."
+                  />
+                ) : null}
 
                 {pdfAnalysis.key_points?.length ? (
                   <SurfaceCard tone="muted" padding="sm">
@@ -606,9 +648,9 @@ export function Record() {
             )}
           </SectionCard>
 
-          {warnings.length || pageFailures.length || document?.last_error ? (
+          {warnings.length || pageFailures.length || parseErrorMessage ? (
             <SectionCard title="경고와 오류" description="확인이 필요한 항목이 있으면 여기에서 알려드려요." eyebrow="확인 필요">
-              {document?.last_error ? <WorkflowNotice tone="danger" title="오류 메시지" description={document.last_error} /> : null}
+              {parseErrorMessage ? <WorkflowNotice tone="danger" title="오류 메시지" description={parseErrorMessage} /> : null}
               {warnings.map(warning => (
                 <WorkflowNotice key={warning} tone="warning" title="분석 경고" description={warning} />
               ))}

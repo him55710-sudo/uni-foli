@@ -83,9 +83,17 @@ def _sanitize_parse_metadata(value: object) -> dict[str, object]:
         if provider:
             safe_pdf_analysis["provider"] = provider[:40]
 
+        attempted_provider = str(pdf_analysis.get("attempted_provider") or "").strip()
+        if attempted_provider:
+            safe_pdf_analysis["attempted_provider"] = attempted_provider[:40]
+
         model = str(pdf_analysis.get("model") or "").strip()
         if model:
             safe_pdf_analysis["model"] = model[:80]
+
+        attempted_model = str(pdf_analysis.get("attempted_model") or "").strip()
+        if attempted_model:
+            safe_pdf_analysis["attempted_model"] = attempted_model[:80]
 
         engine = str(pdf_analysis.get("engine") or "").strip()
         if engine:
@@ -98,6 +106,18 @@ def _sanitize_parse_metadata(value: object) -> dict[str, object]:
         summary = str(pdf_analysis.get("summary") or "").strip()
         if summary:
             safe_pdf_analysis["summary"] = summary[:1000]
+
+        failure_reason_raw = pdf_analysis.get("failure_reason")
+        if failure_reason_raw is not None:
+            safe_pdf_analysis["failure_reason"] = sanitize_public_error(
+                str(failure_reason_raw),
+                fallback=_DOCUMENT_ERROR_FALLBACK,
+                max_length=240,
+            )
+
+        recovered_from_text_fallback = pdf_analysis.get("recovered_from_text_fallback")
+        if isinstance(recovered_from_text_fallback, bool):
+            safe_pdf_analysis["recovered_from_text_fallback"] = recovered_from_text_fallback
 
         key_points = pdf_analysis.get("key_points")
         if isinstance(key_points, list):

@@ -11,6 +11,13 @@ export const DIAGNOSIS_GAP_AXIS_VALUES = [
 export const DIAGNOSIS_AXIS_SEVERITY_VALUES = ['strong', 'watch', 'weak'] as const;
 export const DIAGNOSIS_DIRECTION_COMPLEXITY_VALUES = ['lighter', 'balanced', 'deeper'] as const;
 export const DIAGNOSIS_EXPORT_FORMAT_VALUES = ['pdf', 'pptx', 'hwpx'] as const;
+export const DIAGNOSIS_ADMISSION_AXIS_VALUES = [
+  'major_alignment',
+  'inquiry_continuity',
+  'evidence_density',
+  'process_explanation',
+  'authenticity_risk',
+] as const;
 
 export type DiagnosisRiskLevel = (typeof DIAGNOSIS_RISK_LEVEL_VALUES)[number];
 export type DiagnosisGapDifficulty = (typeof DIAGNOSIS_GAP_DIFFICULTY_VALUES)[number];
@@ -19,6 +26,8 @@ export type DiagnosisGapAxisKey = (typeof DIAGNOSIS_GAP_AXIS_VALUES)[number];
 export type DiagnosisAxisSeverity = (typeof DIAGNOSIS_AXIS_SEVERITY_VALUES)[number];
 export type DiagnosisDirectionComplexity = (typeof DIAGNOSIS_DIRECTION_COMPLEXITY_VALUES)[number];
 export type DiagnosisExportFormat = (typeof DIAGNOSIS_EXPORT_FORMAT_VALUES)[number];
+export type DiagnosisAdmissionAxisKey = (typeof DIAGNOSIS_ADMISSION_AXIS_VALUES)[number];
+export type DiagnosisAxisPrioritySeverity = 'low' | 'medium' | 'high';
 
 export interface DiagnosisCitation {
   id?: string | null;
@@ -86,6 +95,37 @@ export interface DiagnosisGapAxis {
   severity: DiagnosisAxisSeverity;
   rationale: string;
   evidence_hint?: string | null;
+}
+
+export interface DocumentQualitySummary {
+  source_mode: string;
+  parse_reliability_score: number;
+  parse_reliability_band: string;
+  needs_review: boolean;
+  needs_review_documents: number;
+  total_records: number;
+  total_word_count: number;
+  narrative_density: number;
+  evidence_density: number;
+  summary: string;
+}
+
+export interface SectionAnalysisItem {
+  key: string;
+  label: string;
+  present: boolean;
+  record_count: number;
+  note: string;
+}
+
+export interface AdmissionAxisResult {
+  key: DiagnosisAdmissionAxisKey;
+  label: string;
+  score: number;
+  band: string;
+  severity: DiagnosisAxisPrioritySeverity;
+  rationale: string;
+  evidence_hints: string[];
 }
 
 export interface TopicCandidate {
@@ -201,12 +241,19 @@ export interface DiagnosisGuidedPlanResponse {
 
 export interface DiagnosisResultPayload {
   headline: string;
+  overview?: string | null;
   strengths: string[];
   gaps: string[];
   detailed_gaps?: DiagnosisGap[];
   recommended_focus: string;
   action_plan?: DiagnosisQuest[];
   risk_level: DiagnosisRiskLevel;
+  document_quality?: DocumentQualitySummary | null;
+  section_analysis?: SectionAnalysisItem[];
+  admission_axes?: AdmissionAxisResult[];
+  risks?: string[];
+  next_actions?: string[];
+  recommended_topics?: string[];
   diagnosis_summary?: DiagnosisSummary | null;
   gap_axes?: DiagnosisGapAxis[];
   recommended_directions?: RecommendedDirection[];
