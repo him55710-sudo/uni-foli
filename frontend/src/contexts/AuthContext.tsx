@@ -123,9 +123,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     const canUseFirebaseGoogle = Boolean(auth && isFirebaseConfigured && googleProvider);
-    if (!canUseFirebaseGoogle) {
+    try {
+      // Prefer backend-managed OAuth so we can control the Google client used in production.
       await signInWithSocialRedirect('google');
       return;
+    } catch (socialRedirectError) {
+      if (!canUseFirebaseGoogle) {
+        const detail = extractApiErrorMessage(socialRedirectError);
+        if (detail) {
+          throw new Error(detail);
+        }
+        throw socialRedirectError;
+      }
     }
 
     try {
