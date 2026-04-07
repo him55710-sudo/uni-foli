@@ -1,20 +1,19 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
-  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Clock3,
   FileSearch,
   FileText,
   FileUp,
-  RefreshCw,
   ShieldCheck,
   TimerReset,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import { ProcessTimingDashboard, type TimingPhaseStatus } from '../components/ProcessTimingDashboard';
 import { api, shouldUseSynchronousApiJobs } from '../lib/api';
 import { getApiErrorMessage } from '../lib/apiError';
 import { searchMajors } from '../lib/educationCatalog';
@@ -33,6 +32,16 @@ import {
 type DocumentStatus = 'uploaded' | 'masking' | 'parsing' | 'retrying' | 'parsed' | 'partial' | 'failed';
 type MaskingStatus = 'pending' | 'masking' | 'masked' | 'failed';
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+type RecordTimingPhaseKey = 'upload' | 'parse';
+
+interface RecordTimingPhaseState {
+  status: TimingPhaseStatus;
+  startedAt: number | null;
+  finishedAt: number | null;
+  note?: string;
+}
+
+type RecordTimingPhaseMap = Record<RecordTimingPhaseKey, RecordTimingPhaseState>;
 
 interface DocumentStatusResponse {
   id: string;
@@ -125,16 +134,12 @@ const UPLOAD_READY_CHECKLIST = [
   '학생부 전체 페이지가 모두 포함됐는지 확인하기',
 ] as const;
 
-const COMMON_UPLOAD_ISSUES = [
-  {
-    title: '파일 선택창에 PDF가 보이지 않아요',
-    description: '다운로드 폴더를 확인하고 파일 형식이 PDF인지 먼저 확인해 주세요.',
-  },
-  {
-    title: '업로드가 중간에 멈춰요',
-    description: '인터넷 연결을 확인한 뒤 다시 시도 버튼을 눌러 주세요.',
-  },
-] as const;
+function createInitialTimingPhases(): RecordTimingPhaseMap {
+  return {
+    upload: { status: 'idle', startedAt: null, finishedAt: null, note: '파일 업로드' },
+    parse: { status: 'idle', startedAt: null, finishedAt: null, note: '파싱/마스킹' },
+  };
+}
 
 function formatBytes(value: number | null): string {
   if (!value) return '0 B';
@@ -190,8 +195,62 @@ export function Record() {
   const [document, setDocument] = useState<DocumentStatusResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isStartingParse, setIsStartingParse] = useState(false);
+  const [timingPhases, setTimingPhases] = useState<RecordTimingPhaseMap>(() => createInitialTimingPhases());
   const lastTerminalStatus = useRef<DocumentStatus | null>(null);
   const useSynchronousApiJobs = shouldUseSynchronousApiJobs();
+
+  const setTimingPhase = useCallback(
+    (phase: RecordTimingPhaseKey, updater: Partial<RecordTimingPhaseState> | ((prev: RecordTimingPhaseState) => RecordTimingPhaseState)) => {
+      setTimingPhases((prev) => {
+        const current = prev[phase];
+        const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater };
+        return { ...prev, [phase]: next };
+      });
+    },
+    [],
+  );
+
+  const beginTimingPhase = useCallback((phase: RecordTimingPhaseKey, note?: string) => {
+    const now = Date.now();
+    setTimingPhase(phase, {
+      status: 'running',
+      startedAt: now,
+      finishedAt: null,
+      note,
+    });
+  }, [setTimingPhase]);
+
+  const finishTimingPhase = useCallback((phase: RecordTimingPhaseKey, status: Exclude<TimingPhaseStatus, 'idle'>, note?: string) => {
+    const now = Date.now();
+    setTimingPhase(phase, (prev) => ({
+      ...prev,
+      status,
+      startedAt: prev.startedAt ?? now,
+      finishedAt: now,
+      note: note ?? prev.note,
+    }));
+  }, [setTimingPhase]);
+
+  const failRunningTimingPhases = useCallback((note?: string) => {
+    const now = Date.now();
+    setTimingPhases((prev) => {
+      const next = { ...prev };
+      (Object.keys(next) as RecordTimingPhaseKey[]).forEach((phase) => {
+        if (next[phase].status !== 'running') return;
+        next[phase] = {
+          ...next[phase],
+          status: 'failed',
+          finishedAt: now,
+          note: note ?? next[phase].note,
+        };
+      });
+      return next;
+    });
+  }, []);
+
+  const resetTimingPhases = useCallback(() => {
+    setTimingPhases(createInitialTimingPhases());
+  }, []);
 
   const isBusy = isUploading || isStartingParse;
   const previewText = useMemo(() => (document?.content_text ? document.content_text.slice(0, 900) : ''), [document?.content_text]);
@@ -225,19 +284,27 @@ export function Record() {
     if (lastTerminalStatus.current === document.status) return;
 
     if (document.status === 'parsed') {
+      const parseNote = document.page_count ? `분석 완료 (${document.page_count}페이지)` : '분석 완료';
+      finishTimingPhase('parse', 'done', parseNote);
       toast.success('업로드와 분석이 모두 완료됐어요.');
     } else if (document.status === 'partial') {
+      const partialNote = document.page_count ? `부분 완료 (${document.page_count}페이지)` : '부분 완료';
+      finishTimingPhase('parse', 'done', partialNote);
       toast('일부 경고가 있지만 분석은 완료됐어요. 내용을 확인해 주세요.', { icon: '!' });
     } else if (document.status === 'failed') {
+      const failureMessage =
+        document.latest_async_job_error || document.last_error || '분석에 실패했어요. 파일 상태를 확인한 뒤 다시 시도해 주세요.';
+      finishTimingPhase('parse', 'failed', failureMessage);
       toast.error(
-        document.latest_async_job_error || document.last_error || '분석에 실패했어요. 파일 상태를 확인한 뒤 다시 시도해 주세요.',
+        failureMessage,
       );
     }
 
     lastTerminalStatus.current = document.status;
-  }, [document]);
+  }, [document, finishTimingPhase]);
 
-  const startParse = useCallback(async (documentId: string) => {
+  const startParse = useCallback(async (documentId: string, source: 'initial' | 'retry' = 'retry') => {
+    beginTimingPhase('parse', source === 'initial' ? '문서 분석 진행 중' : '분석 재시도 진행 중');
     setIsStartingParse(true);
     try {
       const parseUrl = useSynchronousApiJobs
@@ -245,14 +312,23 @@ export function Record() {
         : `/api/v1/documents/${documentId}/parse`;
       const started = await api.post<DocumentStatusResponse>(parseUrl);
       setDocument(started);
+
+      if (started.status === 'failed') {
+        const failureMessage = started.latest_async_job_error || started.last_error || '분석 시작에 실패했어요.';
+        finishTimingPhase('parse', 'failed', failureMessage);
+      } else if (SUCCESS_STATUSES.has(started.status)) {
+        const parseNote = started.page_count ? `분석 완료 (${started.page_count}페이지)` : '분석 완료';
+        finishTimingPhase('parse', 'done', parseNote);
+      }
     } catch (error: any) {
       console.error('Failed to start parsing:', error);
       const detail = error.response?.data?.detail || '분석 시작에 실패했어요.';
+      finishTimingPhase('parse', 'failed', detail);
       toast.error(detail);
     } finally {
       setIsStartingParse(false);
     }
-  }, [useSynchronousApiJobs]);
+  }, [beginTimingPhase, finishTimingPhase, useSynchronousApiJobs]);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -270,6 +346,8 @@ export function Record() {
       }
 
       setIsUploading(true);
+      resetTimingPhases();
+      beginTimingPhase('upload', '파일 업로드 진행 중');
       const loadingId = toast.loading('PDF를 업로드하고 문서를 준비하는 중이에요...');
 
       try {
@@ -282,16 +360,30 @@ export function Record() {
 
         const created = await api.post<DocumentStatusResponse>('/api/v1/documents/upload', formData);
         setDocument(created);
+        finishTimingPhase('upload', 'done', `업로드 완료 (${formatBytes(created.file_size_bytes)})`);
         toast.success('업로드 완료! 분석을 시작할게요.', { id: loadingId });
-        await startParse(created.id);
+        await startParse(created.id, 'initial');
       } catch (error: any) {
         console.error('Upload flow failed:', error);
-        toast.error(getApiErrorMessage(error, '업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.'), { id: loadingId });
+        const failureMessage = getApiErrorMessage(error, '업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        failRunningTimingPhases(failureMessage);
+        toast.error(failureMessage, { id: loadingId });
       } finally {
         setIsUploading(false);
       }
     },
-    [isBusy, isGuestSession, navigate, startParse, targetMajor, user],
+    [
+      beginTimingPhase,
+      failRunningTimingPhases,
+      finishTimingPhase,
+      isBusy,
+      isGuestSession,
+      navigate,
+      resetTimingPhases,
+      startParse,
+      targetMajor,
+      user,
+    ],
   );
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
@@ -339,6 +431,11 @@ export function Record() {
       state: canContinue ? 'done' : document?.status === 'failed' ? 'error' : 'pending' as 'done' | 'active' | 'pending' | 'error',
     },
   ] as Array<{ id: string; label: string; description: string; state: 'done' | 'active' | 'pending' | 'error' }>;
+  const timingPhaseItems = [
+    { id: 'upload', label: '업로드', ...timingPhases.upload },
+    { id: 'parse', label: '파싱', ...timingPhases.parse },
+  ];
+  const shouldShowTimingDashboard = timingPhaseItems.some((phase) => phase.startedAt !== null);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 py-4">
@@ -356,83 +453,56 @@ export function Record() {
         }
       />
 
-      <section className="rounded-[30px] border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-5 shadow-sm sm:p-7">
-        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-blue-600 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white">
-                Upload Guide
-              </span>
-              <StatusBadge status="neutral">
-                <Clock3 size={14} />
-                평균 1~2분
-              </StatusBadge>
-            </div>
-            <h2 className="mt-4 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl break-keep">
-              처음이어도 쉽게 업로드할 수 있어요.
-            </h2>
-            <p className="mt-2 text-sm font-medium leading-6 text-slate-600 sm:text-base sm:leading-7 break-keep">
-              아래 3단계만 따라오면 업로드부터 작성 화면 이동까지 한 번에 진행돼요.
-            </p>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              {FRIENDLY_UPLOAD_STEPS.map(step => {
-                const Icon = step.icon;
-                return (
-                  <article key={step.id} className="rounded-2xl border border-white/70 bg-white/95 p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-black tracking-[0.14em] text-slate-400">{step.id}</span>
-                      <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${step.accentClassName}`}>
-                        <Icon size={17} />
-                      </div>
-                    </div>
-                    <h3 className="mt-3 text-sm font-black text-slate-900 break-keep">{step.title}</h3>
-                    <p className="mt-1 text-sm font-medium leading-6 text-slate-600 break-keep">{step.description}</p>
-                    <p className="mt-2 text-xs font-semibold leading-5 text-slate-500 break-keep">{step.tip}</p>
-                  </article>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <SurfaceCard tone="muted" className="border border-emerald-100 bg-emerald-50/70" padding="sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">업로드 전 체크리스트</p>
-              <ul className="mt-3 space-y-2">
-                {UPLOAD_READY_CHECKLIST.map(item => (
-                  <li key={item} className="flex items-start gap-2 text-sm font-semibold leading-6 text-emerald-900 break-keep">
-                    <CheckCircle2 size={15} className="mt-1 shrink-0 text-emerald-600" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </SurfaceCard>
-
-            <SurfaceCard tone="muted" className="border border-amber-200 bg-amber-50/80" padding="sm">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle size={15} className="text-amber-700" />
-                  <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-700">자주 생기는 상황</p>
-                </div>
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-black text-amber-700">
-                  <RefreshCw size={12} />
-                  다시 시도 가능
-                </span>
-              </div>
-              <div className="mt-3 space-y-3">
-                {COMMON_UPLOAD_ISSUES.map(issue => (
-                  <div key={issue.title} className="rounded-xl border border-amber-200/70 bg-white/80 p-3">
-                    <p className="text-sm font-black text-slate-900 break-keep">{issue.title}</p>
-                    <p className="mt-1 text-sm font-medium leading-6 text-slate-600 break-keep">{issue.description}</p>
+      <SectionCard
+        title="빠른 업로드 가이드"
+        description="핵심 단계만 간단히 확인하고 바로 시작하세요."
+        eyebrow="Quick Start"
+        className="border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50"
+        actions={
+          <StatusBadge status="neutral">
+            <Clock3 size={14} />
+            평균 1~2분
+          </StatusBadge>
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          {FRIENDLY_UPLOAD_STEPS.map(step => {
+            const Icon = step.icon;
+            return (
+              <SurfaceCard key={step.id} tone="muted" className="border border-white/80 bg-white/95" padding="sm">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-black tracking-[0.14em] text-slate-400">{step.id}</p>
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${step.accentClassName}`}>
+                    <Icon size={17} />
                   </div>
-                ))}
-              </div>
-            </SurfaceCard>
-          </div>
+                </div>
+                <p className="mt-3 text-base font-black text-slate-900 break-keep">{step.title}</p>
+                <p className="mt-1 text-sm font-medium leading-6 text-slate-600 break-keep">{step.description}</p>
+              </SurfaceCard>
+            );
+          })}
         </div>
-      </section>
+        <SurfaceCard tone="muted" className="border border-emerald-100 bg-emerald-50/70" padding="sm">
+          <p className="text-sm font-black text-emerald-800">업로드 전 체크리스트</p>
+          <ul className="mt-2 space-y-2">
+            {UPLOAD_READY_CHECKLIST.map(item => (
+              <li key={item} className="flex items-start gap-2 text-sm font-semibold leading-6 text-emerald-900 break-keep">
+                <CheckCircle2 size={15} className="mt-1 shrink-0 text-emerald-600" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </SurfaceCard>
+      </SectionCard>
 
       <StepIndicator items={stepItems} />
+      {shouldShowTimingDashboard ? (
+        <ProcessTimingDashboard
+          phases={timingPhaseItems}
+          title="업로드 시간 대시보드"
+          description="파일 업로드와 파싱에 걸린 실제 시간을 확인할 수 있어요."
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <SectionCard title="문서 업로드" description="PDF 1개(최대 50MB) 업로드를 지원해요." eyebrow="입력">
@@ -465,11 +535,11 @@ export function Record() {
                   <FileUp size={26} />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-lg font-bold text-slate-900 break-keep">PDF 올리기</h2>
-                  <p className="mt-1 text-sm font-medium leading-6 text-slate-600 break-keep">여기에 파일을 끌어놓거나 버튼으로 선택해 주세요.</p>
-                  <p className="mt-2 text-xs font-semibold leading-5 text-slate-500 break-keep">
-                    팁. 업로드 후에는 개인정보 보호 처리와 내용 분석이 자동으로 시작됩니다.
+                  <h2 className="text-xl font-black text-slate-900 break-keep">PDF 올리기</h2>
+                  <p className="mt-1 text-base font-medium leading-7 text-slate-600 break-keep">
+                    여기에 파일을 끌어놓거나 버튼으로 선택해 주세요.
                   </p>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-slate-500 break-keep">업로드 후 분석은 자동으로 이어집니다.</p>
                   <div className="mt-3">
                     <button
                       type="button"
@@ -511,7 +581,7 @@ export function Record() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <SecondaryButton onClick={() => document && startParse(document.id)} disabled={!document?.can_retry || isBusy}>
+            <SecondaryButton onClick={() => document && startParse(document.id, 'retry')} disabled={!document?.can_retry || isBusy}>
               <TimerReset size={16} />
               분석 다시 시도
             </SecondaryButton>
@@ -553,15 +623,15 @@ export function Record() {
             </div>
           </SectionCard>
 
-          <SectionCard title="문서 내용 미리보기" description="숨김 처리 후 텍스트 일부를 확인해요." eyebrow="미리보기">
+          <SectionCard title="문서 내용 미리보기" description="숨김 처리 후 텍스트 일부를 확인해요." eyebrow="미리보기" collapsible defaultCollapsed>
             <SurfaceCard padding="sm" className="bg-slate-950 text-slate-100">
-              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6">
+              <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-7">
                 {previewText || '아직 표시할 분석 텍스트가 없어요.'}
               </pre>
             </SurfaceCard>
           </SectionCard>
 
-          <SectionCard title="Gemma4 PDF 분석" description="페이지별 핵심과 문서 흐름 요약을 확인해요." eyebrow="AI 분석">
+          <SectionCard title="Gemma4 PDF 분석" description="페이지별 핵심과 문서 흐름 요약을 확인해요." eyebrow="AI 분석" collapsible defaultCollapsed>
             {pdfAnalysis?.summary ? (
               <div className="space-y-4">
                 <SurfaceCard tone="muted" padding="sm" className="space-y-2">

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, ArrowRight, CheckCircle2, FileUp, Loader2, Plus, Target, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, FileUp, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { AsyncJobStatusCard } from '../components/AsyncJobStatusCard';
 import { UniversityLogo } from '../components/UniversityLogo';
+import { ProcessTimingDashboard, type TimingPhaseStatus } from '../components/ProcessTimingDashboard';
 import { useAuthStore } from '../store/authStore';
 import { useOnboardingStore } from '../store/onboardingStore';
 import { api, shouldUseSynchronousApiJobs } from '../lib/api';
@@ -40,6 +41,70 @@ import {
 
 type DiagnosisStep = 'GOALS' | 'UPLOAD' | 'ANALYSING' | 'RESULT' | 'FAILED';
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const PARSE_POLL_INTERVAL_MS = 1500;
+const PARSE_TIMEOUT_MS = 3 * 60 * 1000;
+
+type DocumentLifecycleStatus = 'uploaded' | 'masking' | 'parsing' | 'retrying' | 'parsed' | 'partial' | 'failed';
+type TimingPhaseKey = 'upload' | 'parse' | 'diagnosis';
+
+interface DiagnosisDocumentStatus {
+  id: string;
+  status: DocumentLifecycleStatus;
+  content_text: string;
+  page_count?: number;
+  parse_metadata?: {
+    chunk_count?: number;
+    pdf_analysis?: {
+      summary?: string;
+    };
+  };
+  latest_async_job_error?: string | null;
+  last_error?: string | null;
+}
+
+interface TimingPhaseState {
+  status: TimingPhaseStatus;
+  startedAt: number | null;
+  finishedAt: number | null;
+  note?: string;
+}
+
+type TimingPhaseMap = Record<TimingPhaseKey, TimingPhaseState>;
+
+const PARSE_SUCCESS_STATUSES = new Set<DocumentLifecycleStatus>(['parsed', 'partial']);
+const PARSE_TERMINAL_STATUSES = new Set<DocumentLifecycleStatus>(['parsed', 'partial', 'failed']);
+
+function createInitialTimingPhases(): TimingPhaseMap {
+  return {
+    upload: { status: 'idle', startedAt: null, finishedAt: null, note: '파일 전송' },
+    parse: { status: 'idle', startedAt: null, finishedAt: null, note: '파싱/마스킹' },
+    diagnosis: { status: 'idle', startedAt: null, finishedAt: null, note: 'AI 진단' },
+  };
+}
+
+function hasDocumentContent(document: DiagnosisDocumentStatus): boolean {
+  if (document.content_text?.trim().length > 0) return true;
+  if (document.parse_metadata?.pdf_analysis?.summary?.trim()) return true;
+  return false;
+}
+
+function getParseFailureMessage(document: DiagnosisDocumentStatus): string {
+  if (document.latest_async_job_error) return document.latest_async_job_error;
+  if (document.last_error) return document.last_error;
+  return 'PDF 분석에 실패했습니다. 다른 파일로 다시 시도해 주세요.';
+}
+
+async function waitForDocumentParseResult(documentId: string): Promise<DiagnosisDocumentStatus> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < PARSE_TIMEOUT_MS) {
+    const document = await api.get<DiagnosisDocumentStatus>(`/api/v1/documents/${documentId}`);
+    if (PARSE_TERMINAL_STATUSES.has(document.status)) return document;
+    await new Promise(resolve => window.setTimeout(resolve, PARSE_POLL_INTERVAL_MS));
+  }
+
+  throw new Error('문서 분석 시간이 예상보다 오래 걸리고 있어요. 잠시 뒤 다시 시도해 주세요.');
+}
 
 export function Diagnosis() {
   const navigate = useNavigate();
@@ -61,7 +126,63 @@ export function Diagnosis() {
   const [diagnosisJob, setDiagnosisJob] = useState<AsyncJobRead | null>(null);
   const [diagnosisError, setDiagnosisError] = useState<string | null>(null);
   const [isRetryingDiagnosis, setIsRetryingDiagnosis] = useState(false);
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
+  const [timingPhases, setTimingPhases] = useState<TimingPhaseMap>(() => createInitialTimingPhases());
   const useSynchronousApiJobs = shouldUseSynchronousApiJobs();
+
+  const setTimingPhase = useCallback(
+    (phase: TimingPhaseKey, updater: Partial<TimingPhaseState> | ((prev: TimingPhaseState) => TimingPhaseState)) => {
+      setTimingPhases((prev) => {
+        const current = prev[phase];
+        const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater };
+        return { ...prev, [phase]: next };
+      });
+    },
+    [],
+  );
+
+  const beginTimingPhase = useCallback((phase: TimingPhaseKey, note?: string) => {
+    const now = Date.now();
+    setTimingPhase(phase, {
+      status: 'running',
+      startedAt: now,
+      finishedAt: null,
+      note,
+    });
+  }, [setTimingPhase]);
+
+  const finishTimingPhase = useCallback((phase: TimingPhaseKey, status: Exclude<TimingPhaseStatus, 'idle'>, note?: string) => {
+    const now = Date.now();
+    setTimingPhase(phase, (prev) => ({
+      ...prev,
+      status,
+      startedAt: prev.startedAt ?? now,
+      finishedAt: now,
+      note: note ?? prev.note,
+    }));
+  }, [setTimingPhase]);
+
+  const failRunningTimingPhases = useCallback((note?: string) => {
+    const now = Date.now();
+    setTimingPhases((prev) => {
+      const next = { ...prev };
+      (Object.keys(next) as TimingPhaseKey[]).forEach((phase) => {
+        if (next[phase].status !== 'running') return;
+        next[phase] = {
+          ...next[phase],
+          status: 'failed',
+          finishedAt: now,
+          note: note ?? next[phase].note,
+        };
+      });
+      return next;
+    });
+  }, []);
+
+  const resetTimingPhases = useCallback(() => {
+    setTimingPhases(createInitialTimingPhases());
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -117,9 +238,12 @@ export function Diagnosis() {
       const payload = mergeDiagnosisPayload(run);
       if (!payload) return false;
 
+      finishTimingPhase('diagnosis', 'done', '진단 생성 완료');
       setDiagnosisRun(run);
       setDiagnosisResult(payload);
       setDiagnosisError(null);
+      setFlowError(null);
+      setShowAdvancedDetails(false);
       setStep('RESULT');
       setDiagnosisRunId(null);
       setIsUploading(false);
@@ -143,7 +267,7 @@ export function Diagnosis() {
 
       return true;
     },
-    [currentMajor, goalList],
+    [currentMajor, finishTimingPhase, goalList],
   );
 
   const syncDiagnosisRun = useCallback(
@@ -167,7 +291,10 @@ export function Diagnosis() {
       }
 
       if (isDiagnosisFailed(run, job)) {
-        setDiagnosisError(getDiagnosisFailureMessage(run, job));
+        const failureMessage = getDiagnosisFailureMessage(run, job);
+        finishTimingPhase('diagnosis', 'failed', failureMessage);
+        setDiagnosisError(failureMessage);
+        setFlowError(failureMessage);
         setStep('FAILED');
         setDiagnosisRunId(null);
         setIsUploading(false);
@@ -176,7 +303,7 @@ export function Diagnosis() {
 
       return false;
     },
-    [completeDiagnosis],
+    [completeDiagnosis, finishTimingPhase],
   );
 
   useEffect(() => {
@@ -192,7 +319,10 @@ export function Diagnosis() {
       } catch (error) {
         console.error('Polling failed', error);
         if (!cancelled) {
-          setDiagnosisError('진단 상태를 갱신하지 못했습니다.');
+          const failureMessage = '진단 상태를 갱신하지 못했습니다.';
+          finishTimingPhase('diagnosis', 'failed', failureMessage);
+          setDiagnosisError(failureMessage);
+          setFlowError(failureMessage);
           setStep('FAILED');
           setDiagnosisRunId(null);
           setIsUploading(false);
@@ -206,16 +336,18 @@ export function Diagnosis() {
       cancelled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
     };
-  }, [diagnosisRunId, syncDiagnosisRun]);
+  }, [diagnosisRunId, finishTimingPhase, syncDiagnosisRun]);
 
   const retryDiagnosis = useCallback(async () => {
     if (!diagnosisRun?.async_job_id || isRetryingDiagnosis) return;
 
     setIsRetryingDiagnosis(true);
     try {
+      beginTimingPhase('diagnosis', '진단 재시도 진행 중');
       const retried = await api.post<AsyncJobRead>(`/api/v1/jobs/${diagnosisRun.async_job_id}/retry`);
       setDiagnosisJob(retried);
       setDiagnosisError(null);
+      setFlowError(null);
       setStep('ANALYSING');
 
       if (useSynchronousApiJobs) {
@@ -229,11 +361,12 @@ export function Diagnosis() {
       }
     } catch (error) {
       console.error('Diagnosis retry failed:', error);
+      finishTimingPhase('diagnosis', 'failed', '진단 재시도 요청 실패');
       toast.error('재시도 요청에 실패했습니다.');
     } finally {
       setIsRetryingDiagnosis(false);
     }
-  }, [diagnosisRun, isRetryingDiagnosis, syncDiagnosisRun, useSynchronousApiJobs]);
+  }, [beginTimingPhase, diagnosisRun, finishTimingPhase, isRetryingDiagnosis, syncDiagnosisRun, useSynchronousApiJobs]);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -244,10 +377,19 @@ export function Diagnosis() {
         return;
       }
 
+      setShowAdvancedDetails(false);
+      setDiagnosisResult(null);
+      setDiagnosisRun(null);
+      setDiagnosisJob(null);
+      setDiagnosisRunId(null);
+      setDiagnosisError(null);
+      setFlowError(null);
+      resetTimingPhases();
       setIsUploading(true);
       const loadingId = toast.loading('PDF 업로드와 진단 준비를 진행 중입니다...');
 
       try {
+        beginTimingPhase('upload', '파일 업로드 진행 중');
         const formData = new FormData();
         formData.append('file', file);
         const mainGoal = goalList[0];
@@ -258,25 +400,56 @@ export function Diagnosis() {
 
         const uploadRes = await api.post<{ project_id: string; id: string }>('/api/v1/documents/upload', formData);
         setProjectId(uploadRes.project_id);
+        finishTimingPhase('upload', 'done', `업로드 완료 (${(file.size / (1024 * 1024)).toFixed(1)}MB)`);
 
+        beginTimingPhase('parse', '문서 파싱/마스킹 진행 중');
+        setStep('ANALYSING');
         const parseUrl = useSynchronousApiJobs
           ? `/api/v1/documents/${uploadRes.id}/parse?wait_for_completion=true`
           : `/api/v1/documents/${uploadRes.id}/parse`;
-        await api.post(parseUrl);
+        const parseStarted = await api.post<DiagnosisDocumentStatus>(parseUrl);
+        const parsedDocument = PARSE_TERMINAL_STATUSES.has(parseStarted.status)
+          ? parseStarted
+          : await waitForDocumentParseResult(uploadRes.id);
 
-        setStep('ANALYSING');
+        if (!PARSE_SUCCESS_STATUSES.has(parsedDocument.status)) {
+          const parseError = getParseFailureMessage(parsedDocument);
+          finishTimingPhase('parse', 'failed', parseError);
+          setDiagnosisError(parseError);
+          setFlowError(parseError);
+          setStep('FAILED');
+          setIsUploading(false);
+          toast.error(parseError, { id: loadingId });
+          return;
+        }
+
+        if (!hasDocumentContent(parsedDocument)) {
+          const emptyContentError = 'PDF에서 진단 가능한 텍스트를 찾지 못했습니다. OCR 품질이 더 좋은 파일로 다시 시도해 주세요.';
+          finishTimingPhase('parse', 'failed', emptyContentError);
+          setDiagnosisError(emptyContentError);
+          setFlowError(emptyContentError);
+          setStep('FAILED');
+          setIsUploading(false);
+          toast.error(emptyContentError, { id: loadingId });
+          return;
+        }
+
+        const parseNote = parsedDocument.page_count ? `파싱 완료 (${parsedDocument.page_count}페이지)` : '파싱 완료';
+        finishTimingPhase('parse', 'done', parseNote);
+        beginTimingPhase('diagnosis', '진단 생성 진행 중');
 
         const diagnosisUrl = useSynchronousApiJobs ? '/api/v1/diagnosis/run?wait_for_completion=true' : '/api/v1/diagnosis/run';
         const run = await api.post<DiagnosisRunResponse>(diagnosisUrl, { project_id: uploadRes.project_id });
         setDiagnosisRun(run);
         setDiagnosisJob(null);
-        setDiagnosisResult(null);
-        setDiagnosisError(null);
 
         if (isDiagnosisComplete(run)) {
           completeDiagnosis(run);
         } else if (isDiagnosisFailed(run, null)) {
-          setDiagnosisError(getDiagnosisFailureMessage(run, null));
+          const runFailure = getDiagnosisFailureMessage(run, null);
+          finishTimingPhase('diagnosis', 'failed', runFailure);
+          setDiagnosisError(runFailure);
+          setFlowError(runFailure);
           setStep('FAILED');
           setDiagnosisRunId(null);
           setIsUploading(false);
@@ -287,11 +460,24 @@ export function Diagnosis() {
         toast.success('진단 실행을 시작했습니다.', { id: loadingId });
       } catch (error: any) {
         console.error('Diagnosis flow failed:', error);
-        toast.error(getApiErrorMessage(error, '진단 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.'), { id: loadingId });
+        const failureMessage = getApiErrorMessage(error, '진단 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        failRunningTimingPhases(failureMessage);
+        setDiagnosisError(failureMessage);
+        setFlowError(failureMessage);
+        setStep('FAILED');
+        toast.error(failureMessage, { id: loadingId });
         setIsUploading(false);
       }
     },
-    [completeDiagnosis, goalList, useSynchronousApiJobs],
+    [
+      beginTimingPhase,
+      completeDiagnosis,
+      failRunningTimingPhases,
+      finishTimingPhase,
+      goalList,
+      resetTimingPhases,
+      useSynchronousApiJobs,
+    ],
   );
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
@@ -363,10 +549,18 @@ export function Diagnosis() {
     step === 'RESULT' ? '강점, 보완점, 액션 플랜을 확인한 뒤 워크숍으로 이동하세요.' :
     '실패 원인과 작업 상태를 확인하고 안전하게 재시도해 주세요.';
 
+  const timingPhaseItems = [
+    { id: 'upload', label: '업로드', ...timingPhases.upload },
+    { id: 'parse', label: '파싱', ...timingPhases.parse },
+    { id: 'diagnosis', label: '진단', ...timingPhases.diagnosis },
+  ];
+  const shouldShowTimingDashboard = timingPhaseItems.some((phase) => phase.startedAt !== null);
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <PageHeader eyebrow="진단" title={headerTitle} description={headerDescription} />
       <StepIndicator items={stepItems} />
+      {shouldShowTimingDashboard ? <ProcessTimingDashboard phases={timingPhaseItems} /> : null}
 
       <AnimatePresence mode="wait">
         {step === 'GOALS' ? (
@@ -530,7 +724,12 @@ export function Diagnosis() {
 
         {step === 'UPLOAD' ? (
           <motion.div key="upload" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <SectionCard title="PDF 업로드" description="파일 1개(최대 50MB)를 업로드하면 파싱과 진단이 자동 실행됩니다.">
+            <SectionCard title="PDF 업로드" description="파일 1개(최대 50MB)를 올리면 업로드 → 파싱 → 진단이 자동으로 이어집니다.">
+              <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
+                <p className="text-sm font-semibold text-slate-700">1. PDF 선택</p>
+                <p className="text-sm font-semibold text-slate-700">2. 자동 파싱 확인</p>
+                <p className="text-sm font-semibold text-slate-700">3. 진단 결과 확인</p>
+              </div>
               <div
                 {...getRootProps({
                   onClick: handleOpenFileDialog,
@@ -544,8 +743,8 @@ export function Diagnosis() {
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-blue-700 shadow-sm">
                   {isUploading ? <Loader2 size={26} className="animate-spin" /> : <FileUp size={26} />}
                 </div>
-                <p className="text-lg font-bold tracking-tight text-slate-900">학생부 PDF를 드래그하거나 클릭해 업로드하세요</p>
-                <p className="mt-2 text-sm font-medium text-slate-500">파싱, 마스킹, 진단이 순차적으로 진행됩니다.</p>
+                <p className="text-xl font-black tracking-tight text-slate-900">학생부 PDF를 드래그하거나 클릭해 업로드하세요</p>
+                <p className="mt-2 text-base font-medium text-slate-600">업로드 후에는 페이지를 유지하면 자동으로 상태가 갱신됩니다.</p>
                 <div className="mt-4">
                   <button
                     type="button"
@@ -562,6 +761,7 @@ export function Diagnosis() {
                   </button>
                 </div>
               </div>
+              {flowError ? <WorkflowNotice tone="danger" title="업로드/진단 오류" description={flowError} /> : null}
             </SectionCard>
           </motion.div>
         ) : null}
@@ -570,8 +770,8 @@ export function Diagnosis() {
           <motion.div key="analysing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
             <WorkflowNotice
               tone="loading"
-              title="진단 분석을 진행 중입니다"
-              description="페이지를 유지하면 작업 상태가 자동으로 갱신됩니다."
+              title="문서 분석과 진단 생성을 진행 중입니다"
+              description="파싱이 끝나면 자동으로 진단 생성 단계로 넘어가며, 페이지를 유지하면 상태가 자동 갱신됩니다."
             />
             <AsyncJobStatusCard job={diagnosisJob} runStatus={diagnosisRun?.status} errorMessage={diagnosisRun?.error_message} />
           </motion.div>
@@ -579,7 +779,7 @@ export function Diagnosis() {
 
         {step === 'FAILED' ? (
           <motion.div key="failed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-            <WorkflowNotice tone="danger" title="진단 실행에 실패했습니다" description={diagnosisError || '작업 상태를 확인한 뒤 재시도해 주세요.'} />
+            <WorkflowNotice tone="danger" title="진단 실행에 실패했습니다" description={flowError || diagnosisError || '작업 상태를 확인한 뒤 재시도해 주세요.'} />
 
             <AsyncJobStatusCard
               job={diagnosisJob}
@@ -590,7 +790,15 @@ export function Diagnosis() {
             />
 
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <SecondaryButton onClick={() => setStep('UPLOAD')}>업로드로 돌아가기</SecondaryButton>
+              <SecondaryButton
+                onClick={() => {
+                  setStep('UPLOAD');
+                  setFlowError(null);
+                  setDiagnosisError(null);
+                }}
+              >
+                업로드로 돌아가기
+              </SecondaryButton>
               {diagnosisJob?.status === 'failed' ? (
                 <PrimaryButton onClick={retryDiagnosis} disabled={isRetryingDiagnosis}>
                   {isRetryingDiagnosis ? '재시도 중...' : '진단 재시도'}
@@ -608,9 +816,14 @@ export function Diagnosis() {
               eyebrow="진단 결과"
               data-testid="diagnosis-result-panel"
               actions={
-                <StatusBadge status={diagnosisResult.risk_level === 'safe' ? 'success' : diagnosisResult.risk_level === 'warning' ? 'warning' : 'danger'}>
-                  {formatRiskLevel(diagnosisResult.risk_level)}
-                </StatusBadge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={diagnosisResult.risk_level === 'safe' ? 'success' : diagnosisResult.risk_level === 'warning' ? 'warning' : 'danger'}>
+                    {formatRiskLevel(diagnosisResult.risk_level)}
+                  </StatusBadge>
+                  <SecondaryButton onClick={() => setShowAdvancedDetails((prev) => !prev)}>
+                    {showAdvancedDetails ? '상세 데이터 접기' : '상세 데이터 보기'}
+                  </SecondaryButton>
+                </div>
               }
             >
               {diagnosisResult.overview ? (
@@ -622,7 +835,7 @@ export function Diagnosis() {
                   <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">강점</p>
                   <ul className="space-y-1.5">
                     {diagnosisResult.strengths.map((item, index) => (
-                      <li key={index} className="flex gap-2 text-sm font-medium leading-6 text-slate-700">
+                      <li key={index} className="flex gap-2 text-base font-medium leading-7 text-slate-700">
                         <CheckCircle2 size={14} className="mt-1 text-emerald-600" />
                         {item}
                       </li>
@@ -637,7 +850,7 @@ export function Diagnosis() {
                       ? diagnosisResult.detailed_gaps.map(gap => `${gap.title}: ${gap.description}`)
                       : diagnosisResult.gaps
                     ).map((item, index) => (
-                      <li key={index} className="flex gap-2 text-sm font-medium leading-6 text-slate-700">
+                      <li key={index} className="flex gap-2 text-base font-medium leading-7 text-slate-700">
                         <AlertTriangle size={14} className="mt-1 text-amber-600" />
                         {item}
                       </li>
@@ -646,78 +859,88 @@ export function Diagnosis() {
                 </SurfaceCard>
               </div>
 
-              {diagnosisResult.document_quality ? (
-                <SurfaceCard tone="muted" padding="sm" className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">문서 품질</p>
-                    <StatusBadge status={diagnosisResult.document_quality.needs_review ? 'warning' : 'success'}>
-                      {diagnosisResult.document_quality.parse_reliability_band} ({diagnosisResult.document_quality.parse_reliability_score}점)
-                    </StatusBadge>
-                  </div>
-                  <p className="text-sm font-medium leading-6 text-slate-700">{diagnosisResult.document_quality.summary}</p>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-                      source: {diagnosisResult.document_quality.source_mode}
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-                      records: {diagnosisResult.document_quality.total_records}
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-                      words: {diagnosisResult.document_quality.total_word_count}
-                    </div>
-                  </div>
-                </SurfaceCard>
-              ) : null}
-
-              {diagnosisResult.section_analysis?.length ? (
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">섹션 분석</p>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {diagnosisResult.section_analysis.map((item) => (
-                      <SurfaceCard key={item.key} tone="muted" padding="sm" className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-bold text-slate-800">{item.label}</p>
-                          <StatusBadge status={item.present ? 'success' : 'warning'}>
-                            {item.present ? `records ${item.record_count}` : 'missing'}
-                          </StatusBadge>
+              {showAdvancedDetails ? (
+                <>
+                  {diagnosisResult.document_quality ? (
+                    <SurfaceCard tone="muted" padding="sm" className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">문서 품질</p>
+                        <StatusBadge status={diagnosisResult.document_quality.needs_review ? 'warning' : 'success'}>
+                          {diagnosisResult.document_quality.parse_reliability_band} ({diagnosisResult.document_quality.parse_reliability_score}점)
+                        </StatusBadge>
+                      </div>
+                      <p className="text-base font-medium leading-7 text-slate-700">{diagnosisResult.document_quality.summary}</p>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                          source: {diagnosisResult.document_quality.source_mode}
                         </div>
-                        <p className="text-sm font-medium leading-6 text-slate-600">{item.note}</p>
-                      </SurfaceCard>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {diagnosisResult.admission_axes?.length ? (
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">핵심 평가축</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {diagnosisResult.admission_axes.map((axis) => (
-                      <SurfaceCard key={axis.key} padding="sm">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-sm font-bold text-slate-800">{axis.label}</p>
-                          <div className="flex items-center gap-1.5">
-                            <StatusBadge status={axis.severity === 'low' ? 'success' : axis.severity === 'medium' ? 'warning' : 'danger'}>
-                              {axis.band}
-                            </StatusBadge>
-                            <StatusBadge status="neutral">{axis.score}점</StatusBadge>
-                          </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                          records: {diagnosisResult.document_quality.total_records}
                         </div>
-                        <p className="text-sm font-medium leading-6 text-slate-600">{axis.rationale}</p>
-                        {axis.evidence_hints?.length ? (
-                          <ul className="mt-2 space-y-1">
-                            {axis.evidence_hints.slice(0, 2).map((hint) => (
-                              <li key={hint} className="text-xs font-semibold text-slate-500">
-                                · {hint}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </SurfaceCard>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                          words: {diagnosisResult.document_quality.total_word_count}
+                        </div>
+                      </div>
+                    </SurfaceCard>
+                  ) : null}
+
+                  {diagnosisResult.section_analysis?.length ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">섹션 분석</p>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {diagnosisResult.section_analysis.map((item) => (
+                          <SurfaceCard key={item.key} tone="muted" padding="sm" className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-bold text-slate-800">{item.label}</p>
+                              <StatusBadge status={item.present ? 'success' : 'warning'}>
+                                {item.present ? `records ${item.record_count}` : 'missing'}
+                              </StatusBadge>
+                            </div>
+                            <p className="text-base font-medium leading-7 text-slate-600">{item.note}</p>
+                          </SurfaceCard>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {diagnosisResult.admission_axes?.length ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">핵심 평가축</p>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {diagnosisResult.admission_axes.map((axis) => (
+                          <SurfaceCard key={axis.key} padding="sm">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <p className="text-sm font-bold text-slate-800">{axis.label}</p>
+                              <div className="flex items-center gap-1.5">
+                                <StatusBadge status={axis.severity === 'low' ? 'success' : axis.severity === 'medium' ? 'warning' : 'danger'}>
+                                  {axis.band}
+                                </StatusBadge>
+                                <StatusBadge status="neutral">{axis.score}점</StatusBadge>
+                              </div>
+                            </div>
+                            <p className="text-base font-medium leading-7 text-slate-600">{axis.rationale}</p>
+                            {axis.evidence_hints?.length ? (
+                              <ul className="mt-2 space-y-1">
+                                {axis.evidence_hints.slice(0, 2).map((hint) => (
+                                  <li key={hint} className="text-sm font-semibold text-slate-500">
+                                    · {hint}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </SurfaceCard>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <WorkflowNotice
+                  tone="info"
+                  title="상세 데이터는 숨겨져 있어요"
+                  description="문서 품질, 섹션 분석, 평가축은 상단의 상세 데이터 보기 버튼을 누르면 확인할 수 있습니다."
+                />
+              )}
 
               {diagnosisResult.risks?.length ? (
                 <SurfaceCard tone="muted" padding="sm" className="border border-amber-200 bg-amber-50/70">
@@ -737,7 +960,7 @@ export function Diagnosis() {
                   <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">다음 액션</p>
                   <ul className="space-y-1.5">
                     {diagnosisResult.next_actions.map((action) => (
-                      <li key={action} className="text-sm font-medium leading-6 text-slate-700">
+                      <li key={action} className="text-base font-medium leading-7 text-slate-700">
                         · {action}
                       </li>
                     ))}
@@ -770,7 +993,7 @@ export function Diagnosis() {
                             {quest.priority}
                           </StatusBadge>
                         </div>
-                        <p className="text-sm font-medium leading-6 text-slate-600">{quest.description}</p>
+                        <p className="text-base font-medium leading-7 text-slate-600">{quest.description}</p>
                       </SurfaceCard>
                     ))}
                   </div>
@@ -789,15 +1012,17 @@ export function Diagnosis() {
               />
             ) : null}
 
-            <div className="grid gap-6 xl:grid-cols-2">
-              {diagnosisResult.claims?.length ? <ClaimGroundingPanel claims={diagnosisResult.claims} /> : null}
-              <DiagnosisEvidencePanel
-                citations={evidenceCitations}
-                reviewRequired={reviewRequired}
-                policyFlags={diagnosisRun?.policy_flags ?? []}
-                responseTraceId={responseTraceId}
-              />
-            </div>
+            {showAdvancedDetails ? (
+              <div className="grid gap-6 xl:grid-cols-2">
+                {diagnosisResult.claims?.length ? <ClaimGroundingPanel claims={diagnosisResult.claims} /> : null}
+                <DiagnosisEvidencePanel
+                  citations={evidenceCitations}
+                  reviewRequired={reviewRequired}
+                  policyFlags={diagnosisRun?.policy_flags ?? []}
+                  responseTraceId={responseTraceId}
+                />
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center justify-center gap-2">
               <SecondaryButton
@@ -808,6 +1033,8 @@ export function Diagnosis() {
                   setDiagnosisJob(null);
                   setDiagnosisRunId(null);
                   setDiagnosisError(null);
+                  setFlowError(null);
+                  resetTimingPhases();
                   setIsUploading(false);
                 }}
               >

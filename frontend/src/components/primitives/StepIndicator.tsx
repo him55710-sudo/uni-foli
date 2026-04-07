@@ -27,12 +27,12 @@ export function StepIndicator({ items, className }: StepIndicatorProps) {
   return (
     <ol className={cn('grid gap-3 md:grid-cols-2 xl:grid-cols-4', className)}>
       {items.map(item => (
-        <li key={item.id} className={cn('rounded-2xl border px-4 py-3', stateClass(item.state))}>
+        <li key={item.id} className={cn('rounded-2xl border px-4 py-3.5 sm:px-5', stateClass(item.state))}>
           <div className="flex items-center gap-2">
             {item.state === 'done' ? <CheckCircle2 size={15} /> : <Circle size={14} />}
-            <p className="text-sm font-bold">{item.label}</p>
+            <p className="text-sm font-black sm:text-base">{item.label}</p>
           </div>
-          {item.description ? <p className="mt-1 text-xs font-medium leading-5">{item.description}</p> : null}
+          {item.description ? <p className="mt-1 text-sm font-medium leading-6">{item.description}</p> : null}
         </li>
       ))}
     </ol>
