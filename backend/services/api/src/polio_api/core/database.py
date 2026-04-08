@@ -72,6 +72,9 @@ def _apply_schema_evolution() -> None:
             "headline": "headline VARCHAR(500)",
             "recommended_focus": "recommended_focus TEXT",
         },
+        "diagnosis_runs": {
+            "status_message": "status_message TEXT",
+        },
         "parsed_documents": {
             "status": "status VARCHAR(32) DEFAULT 'uploaded' NOT NULL",
             "masking_status": "masking_status VARCHAR(32) DEFAULT 'pending' NOT NULL",

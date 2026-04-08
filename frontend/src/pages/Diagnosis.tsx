@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, ArrowRight, CheckCircle2, FileUp, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AsyncJobStatusCard } from '../components/AsyncJobStatusCard';
 import { UniversityLogo } from '../components/UniversityLogo';
 import { ProcessTimingDashboard, type TimingPhaseStatus } from '../components/ProcessTimingDashboard';
@@ -108,8 +108,11 @@ async function waitForDocumentParseResult(documentId: string): Promise<Diagnosis
 
 export function Diagnosis() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const { goals, setGoals, submitGoals } = useOnboardingStore();
+  const preselectedProjectId = searchParams.get('project_id')?.trim() || null;
+  const autoLoadedProjectRef = useRef<string | null>(null);
 
   const [step, setStep] = useState<DiagnosisStep>('GOALS');
   const [goalList, setGoalList] = useState<Array<{ id: string; university: string; major: string }>>([]);
@@ -239,6 +242,7 @@ export function Diagnosis() {
       if (!payload) return false;
 
       finishTimingPhase('diagnosis', 'done', '진단 생성 완료');
+      setProjectId(run.project_id);
       setDiagnosisRun(run);
       setDiagnosisResult(payload);
       setDiagnosisError(null);
@@ -286,7 +290,16 @@ export function Diagnosis() {
       setDiagnosisJob(job);
 
       if (isDiagnosisComplete(run)) {
-        completeDiagnosis(run);
+        const completed = completeDiagnosis(run);
+        if (!completed) {
+          const failureMessage = '진단 결과를 불러오지 못했어요. 다시 시도해 주세요.';
+          finishTimingPhase('diagnosis', 'failed', failureMessage);
+          setDiagnosisError(failureMessage);
+          setFlowError(failureMessage);
+          setStep('FAILED');
+          setDiagnosisRunId(null);
+          setIsUploading(false);
+        }
         return true;
       }
 
@@ -368,6 +381,122 @@ export function Diagnosis() {
     }
   }, [beginTimingPhase, diagnosisRun, finishTimingPhase, isRetryingDiagnosis, syncDiagnosisRun, useSynchronousApiJobs]);
 
+  const startDiagnosisForProject = useCallback(
+    async (activeProjectId: string): Promise<boolean> => {
+      const diagnosisUrl = useSynchronousApiJobs ? '/api/v1/diagnosis/run?wait_for_completion=true' : '/api/v1/diagnosis/run';
+      const run = await api.post<DiagnosisRunResponse>(diagnosisUrl, { project_id: activeProjectId });
+      setProjectId(activeProjectId);
+      setDiagnosisRun(run);
+      setDiagnosisJob(null);
+
+      if (isDiagnosisComplete(run)) {
+        const completed = completeDiagnosis(run);
+        if (!completed) {
+          const failureMessage = '진단 결과를 불러오지 못했어요. 다시 시도해 주세요.';
+          finishTimingPhase('diagnosis', 'failed', failureMessage);
+          setDiagnosisError(failureMessage);
+          setFlowError(failureMessage);
+          setStep('FAILED');
+          setDiagnosisRunId(null);
+          setIsUploading(false);
+          return false;
+        }
+        return true;
+      }
+
+      if (isDiagnosisFailed(run, null)) {
+        const runFailure = getDiagnosisFailureMessage(run, null);
+        finishTimingPhase('diagnosis', 'failed', runFailure);
+        setDiagnosisError(runFailure);
+        setFlowError(runFailure);
+        setStep('FAILED');
+        setDiagnosisRunId(null);
+        setIsUploading(false);
+        return false;
+      }
+
+      setDiagnosisRunId(run.id);
+      return true;
+    },
+    [completeDiagnosis, finishTimingPhase, useSynchronousApiJobs],
+  );
+
+  useEffect(() => {
+    if (!preselectedProjectId) return;
+    if (autoLoadedProjectRef.current === preselectedProjectId) return;
+    autoLoadedProjectRef.current = preselectedProjectId;
+
+    let cancelled = false;
+
+    const hydrateFromRecordUpload = async () => {
+      const loadingId = toast.loading('업로드한 기록으로 진단 결과를 확인하고 있어요...');
+      const now = Date.now();
+
+      setProjectId(preselectedProjectId);
+      setShowAdvancedDetails(false);
+      setDiagnosisResult(null);
+      setDiagnosisRun(null);
+      setDiagnosisJob(null);
+      setDiagnosisRunId(null);
+      setDiagnosisError(null);
+      setFlowError(null);
+      setStep('ANALYSING');
+      setIsUploading(true);
+      setTimingPhases({
+        upload: { status: 'done', startedAt: now, finishedAt: now, note: '기록 업로드 완료' },
+        parse: { status: 'done', startedAt: now, finishedAt: now, note: '문서 파싱 완료' },
+        diagnosis: { status: 'running', startedAt: now, finishedAt: null, note: '진단 진행 중' },
+      });
+
+      try {
+        let latestRun: DiagnosisRunResponse | null = null;
+        try {
+          latestRun = await api.get<DiagnosisRunResponse>(`/api/v1/diagnosis/project/${preselectedProjectId}/latest`);
+        } catch (latestError: any) {
+          if (latestError?.response?.status !== 404) throw latestError;
+        }
+
+        if (cancelled) return;
+
+        if (latestRun && !isDiagnosisFailed(latestRun, null)) {
+          setDiagnosisRun(latestRun);
+
+          if (isDiagnosisComplete(latestRun)) {
+            const loaded = completeDiagnosis(latestRun);
+            if (loaded) {
+              toast.success('기존 진단 결과를 바로 불러왔어요.', { id: loadingId });
+              return;
+            }
+          } else {
+            setDiagnosisRunId(latestRun.id);
+            toast.success('진행 중이던 진단 작업을 이어서 보여드릴게요.', { id: loadingId });
+            return;
+          }
+        }
+
+        const started = await startDiagnosisForProject(preselectedProjectId);
+        if (!cancelled && started) {
+          toast.success('업로드한 기록으로 진단을 시작했어요.', { id: loadingId });
+        }
+      } catch (error: any) {
+        if (cancelled) return;
+        const failureMessage = getApiErrorMessage(error, '저장된 업로드 기록으로 진단을 시작하지 못했어요.');
+        failRunningTimingPhases(failureMessage);
+        setDiagnosisError(failureMessage);
+        setFlowError(failureMessage);
+        setStep('FAILED');
+        setIsUploading(false);
+        toast.error(failureMessage, { id: loadingId });
+      }
+    };
+
+    void hydrateFromRecordUpload();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [completeDiagnosis, failRunningTimingPhases, preselectedProjectId, startDiagnosisForProject]);
+
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
       const file = acceptedFiles[0];
@@ -438,24 +567,7 @@ export function Diagnosis() {
         finishTimingPhase('parse', 'done', parseNote);
         beginTimingPhase('diagnosis', '진단 생성 진행 중');
 
-        const diagnosisUrl = useSynchronousApiJobs ? '/api/v1/diagnosis/run?wait_for_completion=true' : '/api/v1/diagnosis/run';
-        const run = await api.post<DiagnosisRunResponse>(diagnosisUrl, { project_id: uploadRes.project_id });
-        setDiagnosisRun(run);
-        setDiagnosisJob(null);
-
-        if (isDiagnosisComplete(run)) {
-          completeDiagnosis(run);
-        } else if (isDiagnosisFailed(run, null)) {
-          const runFailure = getDiagnosisFailureMessage(run, null);
-          finishTimingPhase('diagnosis', 'failed', runFailure);
-          setDiagnosisError(runFailure);
-          setFlowError(runFailure);
-          setStep('FAILED');
-          setDiagnosisRunId(null);
-          setIsUploading(false);
-        } else {
-          setDiagnosisRunId(run.id);
-        }
+        await startDiagnosisForProject(uploadRes.project_id);
 
         toast.success('진단 실행을 시작했습니다.', { id: loadingId });
       } catch (error: any) {
@@ -471,11 +583,11 @@ export function Diagnosis() {
     },
     [
       beginTimingPhase,
-      completeDiagnosis,
       failRunningTimingPhases,
       finishTimingPhase,
       goalList,
       resetTimingPhases,
+      startDiagnosisForProject,
       useSynchronousApiJobs,
     ],
   );
@@ -550,9 +662,9 @@ export function Diagnosis() {
     '실패 원인과 작업 상태를 확인하고 안전하게 재시도해 주세요.';
 
   const timingPhaseItems = [
-    { id: 'upload', label: '업로드', ...timingPhases.upload },
-    { id: 'parse', label: '파싱', ...timingPhases.parse },
-    { id: 'diagnosis', label: '진단', ...timingPhases.diagnosis },
+    { id: 'upload', label: '업로드', expectedSeconds: 20, ...timingPhases.upload },
+    { id: 'parse', label: '파싱', expectedSeconds: 90, ...timingPhases.parse },
+    { id: 'diagnosis', label: '진단', expectedSeconds: 120, ...timingPhases.diagnosis },
   ];
   const shouldShowTimingDashboard = timingPhaseItems.some((phase) => phase.startedAt !== null);
 
@@ -560,7 +672,13 @@ export function Diagnosis() {
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <PageHeader eyebrow="진단" title={headerTitle} description={headerDescription} />
       <StepIndicator items={stepItems} />
-      {shouldShowTimingDashboard ? <ProcessTimingDashboard phases={timingPhaseItems} /> : null}
+      {shouldShowTimingDashboard ? (
+        <ProcessTimingDashboard
+          phases={timingPhaseItems}
+          title="진단 진행 타임테이블"
+          description="예상 소요시간 대비 현재 진단 진행률을 보여드려요."
+        />
+      ) : null}
 
       <AnimatePresence mode="wait">
         {step === 'GOALS' ? (

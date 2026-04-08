@@ -11,6 +11,7 @@ export interface TimingPhase {
   status: TimingPhaseStatus;
   startedAt: number | null;
   finishedAt: number | null;
+  expectedSeconds?: number;
   note?: string;
 }
 
@@ -21,14 +22,7 @@ interface ProcessTimingDashboardProps {
   className?: string;
 }
 
-function formatDuration(ms: number | null): string {
-  if (ms == null || ms < 0) return '-';
-  const seconds = Math.round(ms / 1000);
-  const mins = Math.floor(seconds / 60);
-  const remain = seconds % 60;
-  if (mins === 0) return `${seconds}초`;
-  return `${mins}분 ${remain}초`;
-}
+const DEFAULT_EXPECTED_SECONDS = 60;
 
 function phaseStatusLabel(status: TimingPhaseStatus): string {
   if (status === 'running') return '진행 중';
@@ -44,15 +38,48 @@ function phaseStatusTone(status: TimingPhaseStatus): 'neutral' | 'active' | 'suc
   return 'neutral';
 }
 
+function toExpectedMs(phase: TimingPhase): number {
+  const expectedSeconds = Number.isFinite(phase.expectedSeconds) ? Number(phase.expectedSeconds) : DEFAULT_EXPECTED_SECONDS;
+  return Math.max(5, expectedSeconds) * 1000;
+}
+
+function formatDuration(ms: number): string {
+  if (ms <= 0) return '0초';
+  const seconds = Math.round(ms / 1000);
+  const mins = Math.floor(seconds / 60);
+  const remain = seconds % 60;
+  if (mins === 0) return `${seconds}초`;
+  return `${mins}분 ${remain}초`;
+}
+
+function computePhaseProgress(phase: TimingPhase, nowMs: number): number {
+  if (phase.status === 'done') return 1;
+  if (phase.status === 'idle') return 0;
+
+  const expectedMs = toExpectedMs(phase);
+  if (!phase.startedAt) return phase.status === 'running' ? 0.05 : 0;
+
+  const endAt = phase.finishedAt ?? (phase.status === 'running' ? nowMs : null);
+  if (!endAt) return 0;
+
+  const elapsedMs = Math.max(0, endAt - phase.startedAt);
+  const ratio = Math.min(elapsedMs / expectedMs, 1);
+
+  if (phase.status === 'running') {
+    return Math.min(ratio, 0.98);
+  }
+  return ratio;
+}
+
 export function ProcessTimingDashboard({
   phases,
-  title = '처리 시간 대시보드',
-  description = '업로드부터 진단까지 각 단계 소요 시간을 확인할 수 있어요.',
+  title = '예상 진행 타임테이블',
+  description = '예상 소요시간 대비 작업 완료 비율을 보여드려요.',
   className,
 }: ProcessTimingDashboardProps) {
   const [tick, setTick] = useState(() => Date.now());
 
-  const hasRunningPhase = phases.some(phase => phase.status === 'running');
+  const hasRunningPhase = phases.some((phase) => phase.status === 'running');
 
   useEffect(() => {
     if (!hasRunningPhase) return undefined;
@@ -60,43 +87,78 @@ export function ProcessTimingDashboard({
     return () => window.clearInterval(intervalId);
   }, [hasRunningPhase]);
 
-  const totalDuration = useMemo(() => {
-    const starts = phases.map(phase => phase.startedAt).filter((value): value is number => typeof value === 'number');
-    if (!starts.length) return null;
-    const startAt = Math.min(...starts);
-    const endCandidates = phases
-      .map(phase => phase.finishedAt)
-      .filter((value): value is number => typeof value === 'number');
-    const endAt = hasRunningPhase ? tick : (endCandidates.length ? Math.max(...endCandidates) : tick);
-    return endAt - startAt;
-  }, [hasRunningPhase, phases, tick]);
+  const phaseProgressMap = useMemo(() => {
+    const map = new Map<string, number>();
+    phases.forEach((phase) => map.set(phase.id, computePhaseProgress(phase, tick)));
+    return map;
+  }, [phases, tick]);
+
+  const overallProgress = useMemo(() => {
+    const totalExpectedMs = phases.reduce((sum, phase) => sum + toExpectedMs(phase), 0);
+    if (totalExpectedMs <= 0) return 0;
+    const weightedProgressMs = phases.reduce((sum, phase) => {
+      const progress = phaseProgressMap.get(phase.id) ?? 0;
+      return sum + toExpectedMs(phase) * progress;
+    }, 0);
+    return Math.max(0, Math.min(weightedProgressMs / totalExpectedMs, 1));
+  }, [phaseProgressMap, phases]);
+
+  const remainingMs = useMemo(() => {
+    const totalExpectedMs = phases.reduce((sum, phase) => sum + toExpectedMs(phase), 0);
+    return Math.max(0, totalExpectedMs * (1 - overallProgress));
+  }, [overallProgress, phases]);
+
+  const overallPercent = Math.round(overallProgress * 100);
 
   return (
     <SectionCard
       title={title}
       description={description}
-      eyebrow="소요 시간"
+      eyebrow="예상 진행률"
       className={cn('border-blue-100 bg-blue-50/50', className)}
       data-testid="process-timing-dashboard"
       actions={
-        <StatusBadge status={hasRunningPhase ? 'active' : 'neutral'}>
-          <Clock3 size={14} />
-          총 {formatDuration(totalDuration)}
-        </StatusBadge>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={hasRunningPhase ? 'active' : 'neutral'}>
+            <Clock3 size={14} />
+            진행률 {overallPercent}%
+          </StatusBadge>
+          <StatusBadge status="neutral">예상 남은 시간 {formatDuration(remainingMs)}</StatusBadge>
+        </div>
       }
     >
       <div className="grid gap-3 md:grid-cols-3">
         {phases.map((phase) => {
-          const endAt = phase.finishedAt ?? (phase.status === 'running' ? tick : null);
-          const duration = phase.startedAt != null && endAt != null ? endAt - phase.startedAt : null;
+          const progress = phaseProgressMap.get(phase.id) ?? 0;
+          const phasePercent = Math.round(progress * 100);
 
           return (
-            <SurfaceCard key={phase.id} tone="muted" padding="sm" className="space-y-2 border border-white/70 bg-white/95">
+            <SurfaceCard key={phase.id} tone="muted" padding="sm" className="space-y-3 border border-white/70 bg-white/95">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-black text-slate-800">{phase.label}</p>
                 <StatusBadge status={phaseStatusTone(phase.status)}>{phaseStatusLabel(phase.status)}</StatusBadge>
               </div>
-              <p className="text-lg font-black text-slate-900">{formatDuration(duration)}</p>
+
+              <div className="space-y-1.5">
+                <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-[width] duration-500',
+                      phase.status === 'failed'
+                        ? 'bg-red-400'
+                        : phase.status === 'done'
+                          ? 'bg-emerald-500'
+                          : 'bg-blue-500',
+                    )}
+                    style={{ width: `${phasePercent}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+                  <span>진행률 {phasePercent}%</span>
+                  <span>예상 {formatDuration(toExpectedMs(phase))}</span>
+                </div>
+              </div>
+
               {phase.note ? <p className="text-sm font-medium leading-6 text-slate-500">{phase.note}</p> : null}
             </SurfaceCard>
           );

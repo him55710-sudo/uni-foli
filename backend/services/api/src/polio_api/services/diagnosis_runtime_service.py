@@ -153,6 +153,10 @@ async def run_diagnosis_run(
     chunks = list_chunks_for_project(db, project_id)
 
     policy_scan_text = build_policy_scan_text(documents) or full_text
+    
+    run.status_message = "검색된 문서들의 정책 준수 여부를 검토하고 있습니다..."
+    db.commit()
+    
     findings = detect_policy_flags(policy_scan_text)
     flag_records = run.policy_flags
     review_task = run.review_tasks[0] if run.review_tasks else None
@@ -167,21 +171,50 @@ async def run_diagnosis_run(
         for document in documents
         if (document.sha256 or document.id)
     ]
+    run.status_message = "생활기록부 데이터의 특징점(분량, 키워드 등)을 추출하고 있습니다..."
+    db.commit()
+    
     features = extract_student_record_features(
         documents=documents,
         full_text=full_text,
         target_major=target_major,
         career_direction=owner.career,
     )
+    
+    # ---------------------------------------------------------
+    # NEW: Semantic Extraction Stage (Expert Evaluation)
+    # ---------------------------------------------------------
+    run.status_message = "추출된 데이터를 기반으로 전문가 수준의 정성 진단을 수행하고 있습니다..."
+    db.commit()
+    
+    from polio_api.services.diagnosis_scoring_service import extract_semantic_diagnosis
+    semantic_data = None
+    try:
+        semantic_data = await extract_semantic_diagnosis(
+            masked_text=full_text,
+            target_major=target_major or "일반 전형",
+            target_university=fallback_target_university,
+        )
+    except Exception as e:
+        # We don't want to fail the whole run if semantic extraction fails
+        print(f"Semantic extraction failed: {e}")
+        
+    run.status_message = "진단 리포트의 체계를 구성하고 점수를 산출하고 있습니다..."
+    db.commit()
+
     scoring_sheet = build_diagnosis_scoring_sheet(
         features=features,
         project_title=project.title,
         target_major=target_major,
         target_university=fallback_target_university,
+        semantic=semantic_data,
     )
     should_use_llm, model_name = _diagnosis_llm_strategy()
 
     if should_use_llm:
+        run.status_message = "상세 진단 내용을 생성하고 근거 데이터를 매핑하고 있습니다..."
+        db.commit()
+
         result = await evaluate_student_record(
             user_major=user_major,
             masked_text=full_text[:30000],

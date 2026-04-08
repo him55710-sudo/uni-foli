@@ -37,15 +37,17 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [diagnosis, setDiagnosis] = useState<DiagnosisResultPayload | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string>('');
   const resetState = () => {
     setStep(1);
     setMajor('');
     setProjectId(null);
     setDiagnosis(null);
     setUploadedFileName(null);
-    setErrorMessage('');
+    setErrorMessage(null);
+    setStatusMessage('');
     setIsBusy(false);
   };
 
@@ -80,6 +82,7 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
     try {
       const res = await api.get<DiagnosisRunResponse>(`/api/v1/diagnosis/${runId}`);
       if (res.status === 'COMPLETED' && res.result_payload) {
+        setStatusMessage('진단이 거의 완료되었습니다. 리포트를 구성하는 중입니다...');
         setDiagnosis(res.result_payload);
         
         // Save to cache for roadmap usage
@@ -102,6 +105,10 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
         setErrorMessage(res.error_message || '진단 중 알 수 없는 오류가 발생했습니다.');
         setStep(5); // Error step
       } else {
+        const nextStatusMessage = (res as DiagnosisRunResponse & { status_message?: string }).status_message;
+        if (nextStatusMessage) {
+          setStatusMessage(nextStatusMessage);
+        }
         setTimeout(() => pollDiagnosisStatus(runId, minStartMs), 2000);
       }
     } catch (error) {
@@ -311,9 +318,21 @@ export function DiagnosisModal({ isOpen, onClose }: DiagnosisModalProps) {
                 <h3 className="mb-3 text-2xl font-extrabold text-slate-800">
                   AI가 객관적 관점에서 간극(Gap)을 찾고 있습니다.
                 </h3>
-                <p className="font-bold text-blue-500">
-                  과장된 합격 예측이 아닌, 명확한 다음 액션 플랜을 도출합니다. (최대 1분 소요될 수 있습니다)
-                </p>
+                <div className="flex flex-col gap-2">
+                  <p className="font-bold text-blue-500">
+                    과장된 합격 예측이 아닌, 명확한 다음 액션 플랜을 도출합니다.
+                  </p>
+                  {statusMessage && (
+                    <motion.p 
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      key={statusMessage}
+                      className="text-sm font-medium text-slate-400 bg-slate-50 border border-slate-100 rounded-full px-4 py-1.5"
+                    >
+                      {statusMessage}
+                    </motion.p>
+                  )}
+                </div>
               </motion.div>
             ) : null}
 

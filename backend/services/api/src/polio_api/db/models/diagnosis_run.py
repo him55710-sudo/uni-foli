@@ -14,6 +14,7 @@ class DiagnosisRun(Base):
     project_id = Column(String, ForeignKey("projects.id"), index=True, nullable=False)
     status = Column(String, nullable=False, default="PENDING")
     result_payload = Column(Text, nullable=True)  # JSON serialized DiagnosisResult
+    status_message = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)

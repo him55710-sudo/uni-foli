@@ -15,6 +15,22 @@ AdmissionAxisKey = Literal[
 ]
 RiskLevel = Literal["safe", "warning", "danger"]
 
+
+class AxisSemanticGrade(BaseModel):
+    score: int = Field(ge=0, le=100)
+    rationale: str
+    evidence_hints: list[str] = Field(default_factory=list)
+
+
+class SemanticDiagnosisExtraction(BaseModel):
+    major_alignment: AxisSemanticGrade
+    inquiry_continuity: AxisSemanticGrade
+    evidence_density: AxisSemanticGrade
+    process_explanation: AxisSemanticGrade
+    summary_insight: str
+    strengths: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+
 _SECTION_LABELS: dict[str, str] = {
     "교과학습발달상황": "교과학습발달상황",
     "창의적체험활동": "창의적체험활동",
@@ -75,20 +91,55 @@ class DiagnosisScoringSheet(BaseModel):
     recommended_focus: str
 
 
+async def extract_semantic_diagnosis(
+    *,
+    masked_text: str,
+    target_major: str | None,
+    target_university: str | None,
+) -> SemanticDiagnosisExtraction:
+    from polio_api.core.llm import get_llm_client
+    
+    llm = get_llm_client()
+    # Force use a faster model for scoring to keep latency low
+    if hasattr(llm, "model_name"):
+        llm.model_name = "gemini-1.5-flash"
+        
+    system_instruction = (
+        "You are an expert admissions officer. Extract semantic scores for the student record axes. "
+        "Each axis score should reflect the DEPTH and QUALITY of the record, not just the presence of text. "
+        f"Target Major: {target_major or 'General'}. Target University: {target_university or 'General'}. "
+        "Be critical but fair. Provide specific evidence hints for each axis."
+    )
+    
+    prompt = (
+        "Analyze the following student record and extract strategic semantic scores.\n\n"
+        f"=== Student Record ===\n{masked_text[:15000]}\n\n"
+        "Return the analysis as JSON aligned to SemanticDiagnosisExtraction schema."
+    )
+    
+    return await llm.generate_json(
+        prompt=prompt,
+        response_model=SemanticDiagnosisExtraction,
+        system_instruction=system_instruction,
+        temperature=0.1,
+    )
+
+
 def build_diagnosis_scoring_sheet(
     *,
     features: StudentRecordFeatures,
     project_title: str,
     target_major: str | None,
     target_university: str | None,
+    semantic: SemanticDiagnosisExtraction | None = None,
 ) -> DiagnosisScoringSheet:
     section_analysis = _build_section_analysis(features)
     document_quality = _build_document_quality(features)
-    admission_axes = _build_admission_axes(features)
+    admission_axes = _build_admission_axes(features, semantic=semantic)
     risk_level = _derive_risk_level(admission_axes=admission_axes)
 
-    strengths = _build_strengths(features=features, admission_axes=admission_axes)
-    gaps = _build_gaps(features=features, admission_axes=admission_axes)
+    strengths = _build_strengths(features=features, admission_axes=admission_axes, semantic=semantic)
+    gaps = _build_gaps(features=features, admission_axes=admission_axes, semantic=semantic)
     risk_flags = _build_risk_flags(features=features, admission_axes=admission_axes)
     next_actions = _build_next_action_seeds(
         features=features,
@@ -178,29 +229,45 @@ def _build_document_quality(features: StudentRecordFeatures) -> DocumentQualityS
     )
 
 
-def _build_admission_axes(features: StudentRecordFeatures) -> list[AdmissionAxisResult]:
-    major_alignment = _bounded_int(
+def _build_admission_axes(features: StudentRecordFeatures, semantic: SemanticDiagnosisExtraction | None = None) -> list[AdmissionAxisResult]:
+    # 1. Base Heuristic Scores (Deterministic)
+    h_major_alignment = _bounded_int(
         20
         + features.major_term_overlap_ratio * 58
         + min(features.unique_subject_count, 10) * 2.8
         + (8 if features.section_presence.get("교과학습발달상황") else 0)
     )
-    inquiry_continuity = _bounded_int(
+    h_inquiry_continuity = _bounded_int(
         24
         + features.repeated_subject_ratio * 52
         + min(features.total_records, 40) * 0.9
         + (6 if features.section_presence.get("창의적체험활동") else 0)
     )
-    evidence_density = _bounded_int(
+    h_evidence_density = _bounded_int(
         20
         + features.evidence_density * 56
         + min(features.evidence_reference_count, 25) * 1.0
     )
-    process_explanation = _bounded_int(
+    h_process_explanation = _bounded_int(
         22
         + features.narrative_density * 60
         + min(features.section_record_counts.get("행동특성 및 종합의견", 0), 8) * 2.0
     )
+    
+    # 2. Merge with Semantic Data (LLM Semantic extraction has 70% weight if available)
+    def _merge(h_score: int, s_grade: AxisSemanticGrade | None) -> tuple[int, str, list[str]]:
+        if not s_grade:
+            return h_score, "", []
+        # Semantic score is more "intelligent", so we weigh it heavily
+        final_score = _bounded_int(h_score * 0.3 + s_grade.score * 0.7)
+        return final_score, s_grade.rationale, s_grade.evidence_hints
+
+    s_major = semantic.major_alignment if semantic else None
+    s_inquiry = semantic.inquiry_continuity if semantic else None
+    s_evidence = semantic.evidence_density if semantic else None
+    s_process = semantic.process_explanation if semantic else None
+
+    # Authenticity risk calculation (Higher is riskier)
     authenticity_risk = _bounded_int(
         78
         - features.reliability_score * 44
@@ -211,50 +278,63 @@ def _build_admission_axes(features: StudentRecordFeatures) -> list[AdmissionAxis
     )
 
     axes: list[AdmissionAxisResult] = []
+    
+    # Axis 1: Major Alignment
+    score, rationale, hints = _merge(h_major_alignment, s_major)
     axes.append(
         _positive_axis(
             key="major_alignment",
-            score=major_alignment,
-            rationale=_major_alignment_rationale(major_alignment),
-            hints=[
+            score=score,
+            rationale=rationale or _major_alignment_rationale(score),
+            hints=hints or [
                 f"전공 키워드 중첩 비율: {round(features.major_term_overlap_ratio, 3)}",
                 f"고유 과목 수: {features.unique_subject_count}",
             ],
         )
     )
+    
+    # Axis 2: Inquiry Continuity
+    score, rationale, hints = _merge(h_inquiry_continuity, s_inquiry)
     axes.append(
         _positive_axis(
             key="inquiry_continuity",
-            score=inquiry_continuity,
-            rationale=_inquiry_rationale(inquiry_continuity),
-            hints=[
+            score=score,
+            rationale=rationale or _inquiry_rationale(score),
+            hints=hints or [
                 f"반복 과목 비율: {round(features.repeated_subject_ratio, 3)}",
                 f"총 레코드 수: {features.total_records}",
             ],
         )
     )
+    
+    # Axis 3: Evidence Density
+    score, rationale, hints = _merge(h_evidence_density, s_evidence)
     axes.append(
         _positive_axis(
             key="evidence_density",
-            score=evidence_density,
-            rationale=_evidence_rationale(evidence_density),
-            hints=[
+            score=score,
+            rationale=rationale or _evidence_rationale(score),
+            hints=hints or [
                 f"증거 밀도: {round(features.evidence_density, 3)}",
                 f"증거 참조 수: {features.evidence_reference_count}",
             ],
         )
     )
+    
+    # Axis 4: Process Explanation
+    score, rationale, hints = _merge(h_process_explanation, s_process)
     axes.append(
         _positive_axis(
             key="process_explanation",
-            score=process_explanation,
-            rationale=_process_rationale(process_explanation),
-            hints=[
+            score=score,
+            rationale=rationale or _process_rationale(score),
+            hints=hints or [
                 f"서술 밀도: {round(features.narrative_density, 3)}",
                 f"행동특성/종합의견 레코드: {features.section_record_counts.get('행동특성 및 종합의견', 0)}",
             ],
         )
     )
+    
     axes.append(
         _authenticity_risk_axis(
             score=authenticity_risk,
@@ -368,8 +448,12 @@ def _build_strengths(
     *,
     features: StudentRecordFeatures,
     admission_axes: list[AdmissionAxisResult],
+    semantic: SemanticDiagnosisExtraction | None = None,
 ) -> list[str]:
     strengths: list[str] = []
+    if semantic and semantic.strengths:
+        strengths.extend(semantic.strengths)
+        
     for axis in admission_axes:
         if axis.key == "authenticity_risk":
             continue
@@ -379,15 +463,19 @@ def _build_strengths(
         strengths.append("교과학습발달상황 기록량이 충분해 학업 근거 제시에 유리합니다.")
     if not strengths:
         strengths.append("핵심 섹션을 기반으로 확장 가능한 최소 근거는 확보되어 있습니다.")
-    return _dedupe_keep_order(strengths)[:6]
+    return _dedupe_keep_order(strengths)[:8]
 
 
 def _build_gaps(
     *,
     features: StudentRecordFeatures,
     admission_axes: list[AdmissionAxisResult],
+    semantic: SemanticDiagnosisExtraction | None = None,
 ) -> list[str]:
     gaps: list[str] = []
+    if semantic and semantic.gaps:
+        gaps.extend(semantic.gaps)
+        
     for axis in admission_axes:
         if axis.key == "authenticity_risk":
             continue
@@ -398,7 +486,7 @@ def _build_gaps(
             gaps.append(f"{section_key} 섹션 근거가 부족합니다.")
     if not gaps:
         gaps.append("현재 구조를 유지하면서 세부 증거(수치, 비교, 반성)를 추가하면 완성도가 높아집니다.")
-    return _dedupe_keep_order(gaps)[:8]
+    return _dedupe_keep_order(gaps)[:10]
 
 
 def _build_risk_flags(

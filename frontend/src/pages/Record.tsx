@@ -432,10 +432,13 @@ export function Record() {
     },
   ] as Array<{ id: string; label: string; description: string; state: 'done' | 'active' | 'pending' | 'error' }>;
   const timingPhaseItems = [
-    { id: 'upload', label: '업로드', ...timingPhases.upload },
-    { id: 'parse', label: '파싱', ...timingPhases.parse },
+    { id: 'upload', label: '업로드', expectedSeconds: 20, ...timingPhases.upload },
+    { id: 'parse', label: '파싱', expectedSeconds: 90, ...timingPhases.parse },
   ];
   const shouldShowTimingDashboard = timingPhaseItems.some((phase) => phase.startedAt !== null);
+  const diagnosisPath = document?.project_id
+    ? `/app/diagnosis?project_id=${encodeURIComponent(document.project_id)}`
+    : '/app/diagnosis';
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 py-4">
@@ -499,8 +502,8 @@ export function Record() {
       {shouldShowTimingDashboard ? (
         <ProcessTimingDashboard
           phases={timingPhaseItems}
-          title="업로드 시간 대시보드"
-          description="파일 업로드와 파싱에 걸린 실제 시간을 확인할 수 있어요."
+          title="업로드 진행 타임테이블"
+          description="예상 소요시간 대비 현재 진행률을 확인할 수 있어요."
         />
       ) : null}
 
@@ -585,7 +588,7 @@ export function Record() {
               <TimerReset size={16} />
               분석 다시 시도
             </SecondaryButton>
-            <SecondaryButton onClick={() => navigate('/app/diagnosis')} disabled={!canContinue}>
+            <SecondaryButton onClick={() => navigate(diagnosisPath)} disabled={!canContinue}>
               진단 결과 보기
               <FileSearch size={16} />
             </SecondaryButton>
