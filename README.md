@@ -1,6 +1,6 @@
-﻿# Polio Monorepo
+# Uni Foli Monorepo
 
-Polio is an execution-oriented AI platform for students.
+Uni Foli is an execution-oriented AI platform for students.
 
 It should reduce anxiety, show the next safe action, and connect real student records
 to grounded drafting. It should not invent activity, promise admission, or polish fiction
@@ -31,7 +31,7 @@ Those paths are not present in this checkout.
 ## Requested Axes Status
 
 - `ai studio ui,ux design/`: not present in this checkout
-- `codex-backend/polio-codex-polio-backend-bootstrap/`: not present in this checkout
+- `codex-backend/uni-foli-codex-uni-foli-backend-bootstrap/`: not present in this checkout
 - root `app/`, `db/`, `services/`, `pipelines/`: not present in this checkout
 
 ## Repository Map
@@ -189,7 +189,7 @@ npm run build
 - Put shared API contracts in `packages/shared-contracts/` instead of duplicating DTOs later.
 - Treat `archive/legacy/` as read-only history, not a development surface.
 - Keep docs in `docs/`, not duplicated inside `backend/`.
-- Preserve Polio safety rules over output polish.
+- Preserve Uni Foli safety rules over output polish.
 
 ## Key Docs
 

@@ -4,7 +4,7 @@ import { cn } from '../lib/cn';
 type LogoSize = 'sm' | 'md' | 'lg';
 type LogoTone = 'light' | 'dark';
 
-interface UniFoliaLogoProps {
+interface UniFoliLogoProps {
   size?: LogoSize;
   tone?: LogoTone;
   markOnly?: boolean;
@@ -75,7 +75,7 @@ function LogoMark({ size, className }: { size: LogoSize; className?: string }) {
   );
 }
 
-export function UniFoliaLogo({
+export function UniFoliLogo({
   size = 'md',
   tone = 'light',
   markOnly = false,
@@ -84,7 +84,7 @@ export function UniFoliaLogo({
   markClassName,
   titleClassName,
   subtitleClassName,
-}: UniFoliaLogoProps) {
+}: UniFoliLogoProps) {
   if (markOnly) {
     return <LogoMark size={size} className={markClassName} />;
   }
@@ -94,7 +94,7 @@ export function UniFoliaLogo({
       <LogoMark size={size} className={markClassName} />
       <div>
         <p className={cn('font-extrabold tracking-tight', sizeStyles[size].title, toneStyles[tone].title, titleClassName)}>
-          Uni Folia
+          Uni Foli
         </p>
         {subtitle ? (
           <p

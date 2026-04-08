@@ -1,4 +1,4 @@
-# Polio Agent Guide
+# Uni Foli Agent Guide
 
 This repository uses a repo-local gstack install as its default AI development workflow.
 

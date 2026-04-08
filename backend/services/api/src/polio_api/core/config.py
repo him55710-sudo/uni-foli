@@ -12,7 +12,7 @@ from polio_shared.paths import find_project_root, resolve_runtime_path
 
 
 class Settings(BaseSettings):
-    app_name: str = "polio Backend"
+    app_name: str = "Uni Foli Backend"
     app_env: str = "production"
     app_host: str = "127.0.0.1"
     app_port: int = 8000

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, FileText, Layers3, Loader2, Presentation, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { api } from '../lib/api';
+import { api, resolveApiBaseUrl } from '../lib/api';
 import { buildInitialGuidedSelection, resolveTemplateSelection } from '../lib/guidedChoice';
 import type {
   DiagnosisGuidedPlanResponse,
@@ -40,6 +40,33 @@ function tone(selected: boolean) {
     : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400';
 }
 
+function toAbsoluteDownloadUrl(downloadUrl: string): string {
+  if (/^https?:\/\//i.test(downloadUrl)) {
+    return downloadUrl;
+  }
+  const apiBase = resolveApiBaseUrl();
+  if (downloadUrl.startsWith('/')) {
+    return `${apiBase}${downloadUrl}`;
+  }
+  return `${apiBase}/${downloadUrl}`;
+}
+
+function resolveFileName(contentDisposition: string, fallbackName: string): string {
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const simpleMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+  if (simpleMatch?.[1]) {
+    return simpleMatch[1];
+  }
+  return fallbackName;
+}
+
 export function DiagnosisGuidedChoicePanel({
   diagnosisRunId,
   projectId,
@@ -61,6 +88,29 @@ export function DiagnosisGuidedChoicePanel({
   const [lastRenderJob, setLastRenderJob] = useState<RenderJobRead | null>(null);
   const [includeProvenanceAppendix, setIncludeProvenanceAppendix] = useState(false);
   const [hideInternalProvenance, setHideInternalProvenance] = useState(true);
+  const downloadRenderedArtifact = async (downloadUrl: string, formatHint?: string) => {
+    const absoluteDownloadUrl = toAbsoluteDownloadUrl(downloadUrl);
+    const fallbackName = `diagnosis_export.${formatHint || 'pdf'}`;
+    const loadingId = toast.loading('Downloading the export...');
+    try {
+      const file = await api.download(absoluteDownloadUrl);
+      const fileName = resolveFileName(file.contentDisposition, fallbackName);
+      const objectUrl = window.URL.createObjectURL(file.blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      anchor.rel = 'noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 2000);
+      toast.success('Export downloaded.', { id: loadingId });
+    } catch (error) {
+      console.error(error);
+      toast.error('The exported file could not be downloaded.', { id: loadingId });
+    }
+  };
+
   const waitForRenderJobResult = async (jobId: string, maxAttempts = 15): Promise<RenderJobRead | null> => {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const current = await api.get<RenderJobRead>(`/api/v1/render-jobs/${jobId}`);
@@ -224,7 +274,7 @@ export function DiagnosisGuidedChoicePanel({
       }
       setLastRenderJob(resolved);
       if (resolved.download_url) {
-        window.open(resolved.download_url, '_blank', 'noopener,noreferrer');
+        await downloadRenderedArtifact(resolved.download_url, resolved.render_format);
       } else if (resolved.status === 'failed') {
         toast.error(resolved.result_message || 'The export job failed.');
       } else {
@@ -488,14 +538,16 @@ export function DiagnosisGuidedChoicePanel({
                 ))}
               </div>
               {lastRenderJob?.download_url ? (
-                <a
-                  href={lastRenderJob.download_url}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  data-testid="guided-download-latest"
+                  onClick={() => {
+                    void downloadRenderedArtifact(lastRenderJob.download_url || '', lastRenderJob.render_format);
+                  }}
                   className="mt-6 inline-flex rounded-[20px] bg-slate-900 px-5 py-3 text-sm font-black text-white"
                 >
                   Download latest export
-                </a>
+                </button>
               ) : null}
             </div>
           ) : null}

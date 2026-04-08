@@ -157,7 +157,7 @@ export function exportToHtml(html: string, filename = '탐구보고서'): void {
   <div class="page">
     ${html}
     <div class="footer">
-      Uni Folia에서 작성됨 · ${new Date().toLocaleDateString('ko-KR')}
+      Uni Foli에서 작성됨 · ${new Date().toLocaleDateString('ko-KR')}
     </div>
   </div>
 </body>

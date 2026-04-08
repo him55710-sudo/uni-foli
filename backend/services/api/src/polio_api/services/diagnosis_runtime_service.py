@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+from typing import Any
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -31,9 +35,49 @@ from polio_shared.paths import resolve_stored_path
 
 
 RAW_POLICY_SCAN_EXTENSIONS = {".txt", ".md", ".csv", ".json"}
+MAX_DOC_TEXT_CHARS = 42_000
+MAX_COMBINED_TEXT_CHARS = 120_000
+MAX_METADATA_SUMMARY_CHARS = 1_600
+MAX_DIAGNOSIS_LLM_INPUT_CHARS = 30_000
+MAX_SEMANTIC_INPUT_CHARS = 15_000
+SEMANTIC_EXTRACTION_TIMEOUT_SECONDS = 12.0
+
+logger = logging.getLogger("polio.api.diagnosis_runtime")
 
 
-def combine_project_text(project_id: str, db: Session) -> tuple[list, str]:
+def _extract_document_text(document: Any) -> str:
+    primary = str(
+        getattr(document, "content_text", "")
+        or getattr(document, "content_markdown", "")
+        or ""
+    ).strip()
+    if primary:
+        return primary[:MAX_DOC_TEXT_CHARS]
+
+    metadata = getattr(document, "parse_metadata", None)
+    if not isinstance(metadata, dict):
+        return ""
+
+    pdf_analysis = metadata.get("pdf_analysis")
+    if not isinstance(pdf_analysis, dict):
+        return ""
+
+    fallback_parts: list[str] = []
+    summary = str(pdf_analysis.get("summary") or "").strip()
+    if summary:
+        fallback_parts.append(summary[:MAX_METADATA_SUMMARY_CHARS])
+
+    key_points = pdf_analysis.get("key_points")
+    if isinstance(key_points, list):
+        for item in key_points[:6]:
+            normalized = str(item or "").strip()
+            if normalized:
+                fallback_parts.append(f"- {normalized[:220]}")
+
+    return "\n".join(fallback_parts).strip()
+
+
+def combine_project_text(project_id: str, db: Session) -> tuple[list[Any], str]:
     documents = list_documents_for_project(db, project_id)
     if not documents:
         raise HTTPException(
@@ -41,15 +85,25 @@ def combine_project_text(project_id: str, db: Session) -> tuple[list, str]:
             detail="Upload a parsed document before running diagnosis.",
         )
 
-    full_text = "\n\n".join(
-        document.content_text or document.content_markdown or ""
-        for document in documents
-        if document.content_text or document.content_markdown
-    ).strip()
+    merged_parts: list[str] = []
+    remaining_budget = MAX_COMBINED_TEXT_CHARS
+    for document in documents:
+        text = _extract_document_text(document)
+        if not text:
+            continue
+        clipped = text[:remaining_budget].strip()
+        if not clipped:
+            continue
+        merged_parts.append(clipped)
+        remaining_budget -= len(clipped) + 2
+        if remaining_budget <= 0:
+            break
+
+    full_text = "\n\n".join(merged_parts).strip()
     if not full_text:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Parsed document content is empty.",
+            detail="Parsed document content is empty. Re-run parsing with a clearer source file.",
         )
     return documents, full_text
 
@@ -142,10 +196,16 @@ async def run_diagnosis_run(
     if run is None:
         raise ValueError(f"Diagnosis run not found: {run_id}")
 
-    project = get_project(db, project_id, owner_user_id=owner_user_id)
+    resolved_owner_user_id = owner_user_id.strip() or None
+    if resolved_owner_user_id:
+        project = get_project(db, project_id, owner_user_id=resolved_owner_user_id)
+    else:
+        project = db.get(Project, project_id)
     if project is None:
         raise ValueError("Project not found.")
-    owner = db.get(User, owner_user_id)
+    if not resolved_owner_user_id:
+        resolved_owner_user_id = project.owner_user_id
+    owner = db.get(User, resolved_owner_user_id) if resolved_owner_user_id else None
     if owner is None:
         raise ValueError("Project owner not found.")
 
@@ -153,7 +213,10 @@ async def run_diagnosis_run(
     chunks = list_chunks_for_project(db, project_id)
 
     policy_scan_text = build_policy_scan_text(documents) or full_text
-    
+    diagnosis_input_text = full_text[:MAX_DIAGNOSIS_LLM_INPUT_CHARS]
+    semantic_input_text = full_text[:MAX_SEMANTIC_INPUT_CHARS]
+    should_use_llm, model_name = _diagnosis_llm_strategy()
+
     run.status_message = "검색된 문서들의 정책 준수 여부를 검토하고 있습니다..."
     db.commit()
     
@@ -180,25 +243,25 @@ async def run_diagnosis_run(
         target_major=target_major,
         career_direction=owner.career,
     )
-    
-    # ---------------------------------------------------------
-    # NEW: Semantic Extraction Stage (Expert Evaluation)
-    # ---------------------------------------------------------
-    run.status_message = "추출된 데이터를 기반으로 전문가 수준의 정성 진단을 수행하고 있습니다..."
-    db.commit()
-    
-    from polio_api.services.diagnosis_scoring_service import extract_semantic_diagnosis
+
     semantic_data = None
-    try:
-        semantic_data = await extract_semantic_diagnosis(
-            masked_text=full_text,
-            target_major=target_major or "일반 전형",
-            target_university=fallback_target_university,
-        )
-    except Exception as e:
-        # We don't want to fail the whole run if semantic extraction fails
-        print(f"Semantic extraction failed: {e}")
-        
+    if should_use_llm and semantic_input_text:
+        from polio_api.services.diagnosis_scoring_service import extract_semantic_diagnosis
+
+        run.status_message = "추출된 데이터를 기반으로 심화 의미 분석을 수행하고 있습니다..."
+        db.commit()
+        try:
+            semantic_data = await asyncio.wait_for(
+                extract_semantic_diagnosis(
+                    masked_text=semantic_input_text,
+                    target_major=target_major or "일반 전형",
+                    target_university=fallback_target_university,
+                ),
+                timeout=SEMANTIC_EXTRACTION_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Semantic extraction skipped for run %s: %s", run.id, exc)
+
     run.status_message = "진단 리포트의 체계를 구성하고 점수를 산출하고 있습니다..."
     db.commit()
 
@@ -209,22 +272,32 @@ async def run_diagnosis_run(
         target_university=fallback_target_university,
         semantic=semantic_data,
     )
-    should_use_llm, model_name = _diagnosis_llm_strategy()
 
     if should_use_llm:
         run.status_message = "상세 진단 내용을 생성하고 근거 데이터를 매핑하고 있습니다..."
         db.commit()
-
-        result = await evaluate_student_record(
-            user_major=user_major,
-            masked_text=full_text[:30000],
-            target_university=fallback_target_university,
-            target_major=target_major,
-            career_direction=owner.career,
-            project_title=project.title,
-            scope_key=f"project:{project.id}",
-            evidence_keys=evidence_keys,
-        )
+        try:
+            result = await evaluate_student_record(
+                user_major=user_major,
+                masked_text=diagnosis_input_text,
+                target_university=fallback_target_university,
+                target_major=target_major,
+                career_direction=owner.career,
+                project_title=project.title,
+                scope_key=f"project:{project.id}",
+                evidence_keys=evidence_keys,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LLM diagnosis failed for run %s. Falling back: %s", run.id, exc)
+            model_name = "grounded-fallback"
+            result = build_grounded_diagnosis_result(
+                project_title=project.title,
+                target_major=target_major,
+                target_university=fallback_target_university,
+                career_direction=owner.career,
+                document_count=len(documents),
+                full_text=diagnosis_input_text or full_text,
+            )
     else:
         result = build_grounded_diagnosis_result(
             project_title=project.title,
@@ -232,7 +305,7 @@ async def run_diagnosis_run(
             target_university=fallback_target_university,
             career_direction=owner.career,
             document_count=len(documents),
-            full_text=full_text,
+            full_text=diagnosis_input_text or full_text,
         )
     _apply_structured_backbone(result=result, sheet=scoring_sheet)
 

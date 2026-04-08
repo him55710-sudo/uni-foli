@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
         description=(
-            "Beginner-friendly backend skeleton for Uni Folia. "
+            "Beginner-friendly backend skeleton for Uni Foli. "
             "Create projects, upload files, write drafts, and queue render jobs."
         ),
     )
@@ -115,7 +115,7 @@ def create_app() -> FastAPI:
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Uni Folia Backend</title>
+    <title>Uni Foli Backend</title>
     <style>
       :root {
         color-scheme: light;
@@ -215,10 +215,10 @@ def create_app() -> FastAPI:
   <body>
     <main>
       <section class="hero">
-        <span class="eyebrow">Uni Folia backend</span>
+        <span class="eyebrow">Uni Foli backend</span>
         <h1>Upload, parse, draft, and render from one backend.</h1>
         <p>
-          This local service powers the beginner-friendly backend blueprint for Uni Folia.
+          This local service powers the beginner-friendly backend blueprint for Uni Foli.
           Confirm health, inspect available render formats, and use interactive docs only when
           they are explicitly enabled for the current environment.
         </p>

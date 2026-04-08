@@ -1,6 +1,6 @@
 # Monorepo Structure
 
-This document defines how the current Polio repository should be read.
+This document defines how the current Uni Foli repository should be read.
 
 ## Canonical Structure
 
@@ -15,7 +15,7 @@ This document defines how the current Polio repository should be read.
 - `archive/legacy/backend/`: duplicated backend docs and root-level backend notes
 - `archive/legacy/tests-root/`: tests that target missing `app/` and `services.admissions.*` scaffolds
 - `archive/legacy/scripts/`: deprecated admissions-prefixed root scripts
-- `archive/legacy/poli-images/`: unused mascot image source folder
+- `archive/legacy/uni-foli-images/`: unused mascot image source folder
 - `archive/legacy/root-gemini-review.md`: historical planning note
 
 Nothing under `archive/legacy/` should be used as a source of truth for new work.
@@ -25,7 +25,7 @@ Nothing under `archive/legacy/` should be used as a source of truth for new work
 The following paths were requested for analysis but do not exist in this checkout:
 
 - `ai studio ui,ux design/`
-- `codex-backend/polio-codex-polio-backend-bootstrap/`
+- `codex-backend/uni-foli-codex-uni-foli-backend-bootstrap/`
 - root `app/`, `db/`, `services/`, `pipelines/`
 
 Any old docs or tests that mention those paths are describing a different or outdated structure.

@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { ArrowRight, BookOpen, CircleCheck, Headphones, ShieldCheck, User, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
-import { UniFoliaLogo } from '../components/UniFoliaLogo';
+import { UniFoliLogo } from '../components/UniFoliLogo';
 import { getFirebaseMissingKeys } from '../lib/firebase';
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -59,7 +59,7 @@ export function Auth() {
   const onGoogleLogin = async () => {
     if (isSigningIn !== null) return;
     setIsSigningIn('google');
-    localStorage.setItem('polio_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
+    localStorage.setItem('uni_foli_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
     try {
       await signInWithGoogle();
     } catch (error) {
@@ -72,7 +72,7 @@ export function Auth() {
   const onKakaoLogin = async () => {
     if (isSigningIn !== null) return;
     setIsSigningIn('kakao');
-    localStorage.setItem('polio_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
+    localStorage.setItem('uni_foli_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
     try {
       await signInWithKakao();
     } catch (error) {
@@ -85,7 +85,7 @@ export function Auth() {
   const onNaverLogin = async () => {
     if (isSigningIn !== null) return;
     setIsSigningIn('naver');
-    localStorage.setItem('polio_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
+    localStorage.setItem('uni_foli_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
     try {
       await signInWithNaver();
     } catch (error) {
@@ -98,7 +98,7 @@ export function Auth() {
   const onGuestLogin = async () => {
     if (isSigningIn !== null) return;
     setIsSigningIn('guest');
-    localStorage.setItem('polio_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
+    localStorage.setItem('uni_foli_pending_marketing_consent', agreements.marketing ? 'true' : 'false');
     try {
       await signInAsGuest();
     } catch (error) {
@@ -114,7 +114,7 @@ export function Auth() {
         <section className="relative overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.18),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_100%)] px-4 py-6 sm:px-8 sm:py-8 lg:px-12 lg:py-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Link to="/" onClick={scrollToTop} className="flex items-center gap-3">
-              <UniFoliaLogo size="md" subtitle={null} />
+              <UniFoliLogo size="md" subtitle={null} />
             </Link>
 
             <div className="flex flex-wrap justify-end gap-2">
@@ -216,7 +216,7 @@ export function Auth() {
           >
             <div className="text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-blue-100 bg-blue-50 sm:h-20 sm:w-20 sm:rounded-[28px]">
-                <UniFoliaLogo size="lg" markOnly />
+                <UniFoliLogo size="lg" markOnly />
               </div>
               <h2 className="mt-5 text-2xl font-black tracking-tight text-slate-900 sm:mt-6 sm:text-3xl">로그인하고 시작하기</h2>
               <p className="mt-2.5 text-sm font-medium leading-7 text-slate-500 sm:mt-3 sm:text-base">

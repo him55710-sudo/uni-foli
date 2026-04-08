@@ -13,7 +13,7 @@ export function A4Container({ children, className, pageNumber = 1, ...props }: A
         {children}
 
         <div className="absolute bottom-0 right-0 left-0 flex items-center justify-between px-4 pb-3 sm:px-[20mm] sm:pb-[10mm]" style={{ pointerEvents: 'none' }}>
-          <span className="text-[10px] font-medium text-slate-300">Uni Folia Document</span>
+          <span className="text-[10px] font-medium text-slate-300">Uni Foli Document</span>
           <span className="text-[10px] font-medium text-slate-300">{pageNumber}</span>
         </div>
       </div>

@@ -15,7 +15,7 @@ from polio_api.db.models.policy_flag import PolicyFlag
 from polio_api.db.models.response_trace import ResponseTrace
 from polio_api.db.models.review_task import ReviewTask
 from polio_api.main import app
-from polio_api.services.diagnosis_runtime_service import run_diagnosis_run
+from polio_api.services.diagnosis_runtime_service import combine_project_text, run_diagnosis_run
 from polio_api.services.diagnosis_service import DiagnosisResult
 from backend.tests.auth_helpers import auth_headers
 
@@ -181,6 +181,9 @@ def test_runtime_uses_ollama_llm_path_when_configured(monkeypatch) -> None:
         calls["llm"] = int(calls["llm"]) + 1
         return _build_minimal_result("llm path")
 
+    async def fake_extract_semantic_diagnosis(**kwargs):  # noqa: ANN003
+        return None
+
     def fake_build_grounded_diagnosis_result(**kwargs):  # noqa: ANN003
         calls["fallback"] = int(calls["fallback"]) + 1
         return _build_minimal_result("fallback path")
@@ -198,6 +201,7 @@ def test_runtime_uses_ollama_llm_path_when_configured(monkeypatch) -> None:
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.detect_policy_flags", lambda text: [])
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.evaluate_student_record", fake_evaluate_student_record)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.build_grounded_diagnosis_result", fake_build_grounded_diagnosis_result)
+    monkeypatch.setattr("polio_api.services.diagnosis_scoring_service.extract_semantic_diagnosis", fake_extract_semantic_diagnosis)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.create_response_trace", fake_create_response_trace)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.create_blueprint_from_signals", lambda db, project, diagnosis_run_id, signals: None)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.build_blueprint_signals", lambda **kwargs: {})
@@ -260,6 +264,9 @@ def test_runtime_falls_back_when_provider_not_usable(monkeypatch) -> None:
         calls["llm"] = int(calls["llm"]) + 1
         return _build_minimal_result("llm path")
 
+    async def fake_extract_semantic_diagnosis(**kwargs):  # noqa: ANN003
+        return None
+
     def fake_build_grounded_diagnosis_result(**kwargs):  # noqa: ANN003
         calls["fallback"] = int(calls["fallback"]) + 1
         return _build_minimal_result("fallback path")
@@ -277,6 +284,7 @@ def test_runtime_falls_back_when_provider_not_usable(monkeypatch) -> None:
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.detect_policy_flags", lambda text: [])
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.evaluate_student_record", fake_evaluate_student_record)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.build_grounded_diagnosis_result", fake_build_grounded_diagnosis_result)
+    monkeypatch.setattr("polio_api.services.diagnosis_scoring_service.extract_semantic_diagnosis", fake_extract_semantic_diagnosis)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.create_response_trace", fake_create_response_trace)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.create_blueprint_from_signals", lambda db, project, diagnosis_run_id, signals: None)
     monkeypatch.setattr("polio_api.services.diagnosis_runtime_service.build_blueprint_signals", lambda **kwargs: {})
@@ -296,3 +304,26 @@ def test_runtime_falls_back_when_provider_not_usable(monkeypatch) -> None:
     assert calls["llm"] == 0
     assert calls["fallback"] == 1
     assert calls["model_name"] == "grounded-fallback"
+
+
+def test_combine_project_text_uses_pdf_analysis_fallback(monkeypatch) -> None:
+    document = SimpleNamespace(
+        content_text="",
+        content_markdown="",
+        parse_metadata={
+            "pdf_analysis": {
+                "summary": "요약 기반 텍스트",
+                "key_points": ["핵심 포인트 A", "핵심 포인트 B"],
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "polio_api.services.diagnosis_runtime_service.list_documents_for_project",
+        lambda db, project_id: [document],
+    )
+
+    documents, full_text = combine_project_text("project-1", db=SimpleNamespace())
+
+    assert len(documents) == 1
+    assert "요약 기반 텍스트" in full_text
+    assert "핵심 포인트 A" in full_text

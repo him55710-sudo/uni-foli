@@ -13,7 +13,7 @@ import {
   User,
   LogOut
 } from 'lucide-react';
-import { UniFoliaLogo } from '../UniFoliaLogo';
+import { UniFoliLogo } from '../UniFoliLogo';
 import { Badge, Button } from '../ui';
 import { appNavSections, isNavItemActive } from './nav-config';
 import { Sidebar } from '../primitives';
@@ -31,7 +31,7 @@ interface AppSidebarProps {
   onLogout: () => void;
 }
 
-const SIDEBAR_SECTION_STATE_KEY = 'unifolia_sidebar_sections_v1';
+const SIDEBAR_SECTION_STATE_KEY = 'unifoli_sidebar_sections_v1';
 
 export function AppSidebar({
   pathname,
@@ -109,7 +109,7 @@ export function AppSidebar({
             <div className="flex bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
               <Sparkles size={20} />
             </div>
-            {isOpen && <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Poli</span>}
+            {isOpen && <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Uni Foli</span>}
           </div>
         </div>
 

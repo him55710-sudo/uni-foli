@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { UniFoliaLogo } from '../UniFoliaLogo';
+import { UniFoliLogo } from '../UniFoliLogo';
 import { PrimaryButton, SurfaceCard } from '../primitives';
 import { buttonClassName } from '../ui';
 
@@ -13,10 +13,12 @@ export function AppFooter({ onOpenPartnership }: AppFooterProps) {
     <SurfaceCard className="mt-8 p-5 sm:mt-12 sm:p-8">
       <div className="grid gap-8 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="space-y-4">
-          <UniFoliaLogo size="sm" subtitle={null} />
-          <p className="max-w-3xl text-sm font-medium leading-7 text-slate-500">
-            Uni Folia는 학생 기록 기반 분석과 초안 작성 워크플로를 돕는 도구입니다. 합격을 보장하지 않으며, 준비 과정의 품질과 실행력을 높이는 데 집중합니다.
-          </p>
+          <div className="mt-1 space-y-2">
+            <UniFoliLogo size="sm" markOnly subtitle={null} className="opacity-40" />
+            <p className="text-sm font-medium leading-relaxed text-slate-500">
+              Uni Foli는 학생 기록 기반 분석과 초안 작성 워크플로를 돕는 도구입니다. 합격을 보장하지 않으며, 준비 과정의 품질과 실행력을 높이는 데 집중합니다.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link to="/faq" className={buttonClassName({ variant: 'secondary', size: 'sm' })}>
               자주 묻는 질문
@@ -28,7 +30,7 @@ export function AppFooter({ onOpenPartnership }: AppFooterProps) {
               제휴 문의
             </PrimaryButton>
           </div>
-          <p className="text-xs font-medium text-slate-400">© Uni Folia 2026. 모든 권리 보유.</p>
+          <p className="text-xs font-medium text-slate-400">© Uni Foli 2026. 모든 권리 보유.</p>
         </div>
 
         <div className="space-y-3 text-sm font-medium text-slate-500 lg:text-right">

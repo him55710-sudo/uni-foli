@@ -217,7 +217,7 @@ export function Landing() {
             <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">핵심 가치</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-white">안전하게, 그러나 빠르게</h2>
             <p className="mt-4 text-sm font-medium leading-7 text-slate-300 sm:text-base">
-              Uni Folia는 그럴듯한 문장을 만드는 도구가 아니라, 실제 기록 기반으로 다음 행동을 좁혀주는 실행 도구입니다.
+              Uni Foli는 그럴듯한 문장을 만드는 도구가 아니라, 실제 기록 기반으로 다음 행동을 좁혀주는 실행 도구입니다.
             </p>
             <div className="mt-6 space-y-3">
               {trustPoints.map(point => (

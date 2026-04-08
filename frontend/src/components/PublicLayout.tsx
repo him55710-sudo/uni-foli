@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ArrowRight, Menu, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { UniFoliaLogo } from './UniFoliaLogo';
+import { UniFoliLogo } from './UniFoliLogo';
 import { buttonClassName } from './ui';
 import { cn } from '../lib/cn';
 
@@ -59,7 +59,7 @@ export function PublicLayout() {
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <Link to="/" onClick={handleDesktopNavClick}>
-            <UniFoliaLogo size="md" subtitle={null} />
+            <UniFoliLogo size="md" subtitle={null} />
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">
@@ -113,7 +113,7 @@ export function PublicLayout() {
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.4fr_0.6fr] lg:px-8">
           <div className="space-y-4">
-            <UniFoliaLogo
+            <UniFoliLogo
               size="md"
               subtitle="기록 기반 진단과 실행 중심 워크플로를 제공하는 학생부 준비 도구"
             />
@@ -152,7 +152,7 @@ export function PublicLayout() {
                 개인정보처리방침
               </Link>
             </div>
-            <p className="text-xs leading-6 text-slate-400">Uni Folia는 준비 과정의 품질 향상을 지원하며, 입시 결과를 보장하지 않습니다.</p>
+            <p className="text-xs leading-6 text-slate-400">Uni Foli는 준비 과정의 품질 향상을 지원하며, 입시 결과를 보장하지 않습니다.</p>
           </div>
         </div>
       </footer>

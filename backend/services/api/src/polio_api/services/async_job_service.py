@@ -432,11 +432,25 @@ def _opt_str(value: Any) -> str | None:
     return normalized or None
 
 
+def _diagnosis_failure_reason(reason: str) -> str:
+    fallback = "Diagnosis job failed. Retry after checking the project evidence."
+    normalized = sanitize_public_error(reason, fallback=fallback)
+    lowered = normalized.lower()
+
+    if "upload a parsed document before running diagnosis" in lowered:
+        return "Upload and parse at least one document before running diagnosis."
+    if "parsed document content is empty" in lowered:
+        return "Diagnosis requires parsed text evidence. Re-run parsing with a clearer source file."
+    if "project owner not found" in lowered:
+        return "Diagnosis owner context is missing. Re-open the project and retry."
+    return normalized
+
+
 def _public_failure_reason(job: AsyncJob, reason: str) -> str:
     if job.job_type == AsyncJobType.DOCUMENT_PARSE.value:
         return "Document parsing failed. Verify the file is still available and retry."
     if job.job_type == AsyncJobType.RENDER.value:
         return "Render job failed. Review the draft content and retry."
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
-        return "Diagnosis job failed. Retry after checking the project evidence."
+        return _diagnosis_failure_reason(reason)
     return sanitize_public_error(reason, fallback="Async job failed.")

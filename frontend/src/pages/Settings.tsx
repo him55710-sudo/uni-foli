@@ -239,7 +239,7 @@ export function Settings() {
         </SectionCard>
       </div>
 
-      <SectionCard title="법적 안내 및 약관" description="Uni Folia의 서비스 운영 정책과 개인정보 보호 원칙을 확인할 수 있어요." eyebrow="정책">
+      <SectionCard title="법적 안내 및 약관" description="Uni Foli의 서비스 운영 정책과 개인정보 보호 원칙을 확인할 수 있어요." eyebrow="정책">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <SecondaryButton onClick={() => window.open('/legal/terms', '_blank')} className="justify-start">
             <FileText size={16} />

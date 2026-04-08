@@ -52,6 +52,8 @@ interface DiagnosisDocumentStatus {
   status: DocumentLifecycleStatus;
   content_text: string;
   page_count?: number;
+  latest_async_job_id?: string | null;
+  latest_async_job_status?: string | null;
   parse_metadata?: {
     chunk_count?: number;
     pdf_analysis?: {
@@ -94,11 +96,15 @@ function getParseFailureMessage(document: DiagnosisDocumentStatus): string {
   return 'PDF 분석에 실패했습니다. 다른 파일로 다시 시도해 주세요.';
 }
 
-async function waitForDocumentParseResult(documentId: string): Promise<DiagnosisDocumentStatus> {
+async function waitForDocumentParseResult(
+  documentId: string,
+  onPoll?: (document: DiagnosisDocumentStatus) => void,
+): Promise<DiagnosisDocumentStatus> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < PARSE_TIMEOUT_MS) {
     const document = await api.get<DiagnosisDocumentStatus>(`/api/v1/documents/${documentId}`);
+    onPoll?.(document);
     if (PARSE_TERMINAL_STATUSES.has(document.status)) return document;
     await new Promise(resolve => window.setTimeout(resolve, PARSE_POLL_INTERVAL_MS));
   }
@@ -114,6 +120,7 @@ export function Diagnosis() {
   const preselectedProjectId = searchParams.get('project_id')?.trim() || null;
   const autoLoadedProjectRef = useRef<string | null>(null);
   const diagnosisProcessKickoffRef = useRef<Set<string>>(new Set());
+  const parseProcessKickoffRef = useRef<Set<string>>(new Set());
 
   const [step, setStep] = useState<DiagnosisStep>('GOALS');
   const [goalList, setGoalList] = useState<Array<{ id: string; university: string; major: string }>>([]);
@@ -201,6 +208,27 @@ export function Diagnosis() {
         })
         .catch(() => {
           // Allow a later retry kick if processing endpoint is temporarily unavailable.
+          kickoffCache.delete(jobId);
+        });
+    },
+    [useSynchronousApiJobs],
+  );
+
+  const triggerInlineParseProcessing = useCallback(
+    (document: DiagnosisDocumentStatus | null | undefined) => {
+      if (!document || useSynchronousApiJobs) return;
+
+      const jobId = document.latest_async_job_id;
+      const jobStatus = (document.latest_async_job_status || '').toLowerCase();
+      if (!jobId || (jobStatus !== 'queued' && jobStatus !== 'retrying')) return;
+
+      const kickoffCache = parseProcessKickoffRef.current;
+      if (kickoffCache.has(jobId)) return;
+      kickoffCache.add(jobId);
+
+      void api.post<AsyncJobRead>(`/api/v1/jobs/${jobId}/process`)
+        .catch(() => {
+          // Allow retrying a process kick if this call temporarily fails.
           kickoffCache.delete(jobId);
         });
     },
@@ -577,9 +605,13 @@ export function Diagnosis() {
           ? `/api/v1/documents/${uploadRes.id}/parse?wait_for_completion=true`
           : `/api/v1/documents/${uploadRes.id}/parse`;
         const parseStarted = await api.post<DiagnosisDocumentStatus>(parseUrl);
+        triggerInlineParseProcessing(parseStarted);
         const parsedDocument = PARSE_TERMINAL_STATUSES.has(parseStarted.status)
           ? parseStarted
-          : await waitForDocumentParseResult(uploadRes.id);
+          : await waitForDocumentParseResult(uploadRes.id, triggerInlineParseProcessing);
+        if (parsedDocument.latest_async_job_id && PARSE_TERMINAL_STATUSES.has(parsedDocument.status)) {
+          parseProcessKickoffRef.current.delete(parsedDocument.latest_async_job_id);
+        }
 
         if (!PARSE_SUCCESS_STATUSES.has(parsedDocument.status)) {
           const parseError = getParseFailureMessage(parsedDocument);
@@ -628,6 +660,7 @@ export function Diagnosis() {
       goalList,
       resetTimingPhases,
       startDiagnosisForProject,
+      triggerInlineParseProcessing,
       useSynchronousApiJobs,
     ],
   );

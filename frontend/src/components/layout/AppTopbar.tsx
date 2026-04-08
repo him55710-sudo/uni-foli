@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Menu, X } from 'lucide-react';
-import { UniFoliaLogo } from '../UniFoliaLogo';
+import { UniFoliLogo } from '../UniFoliLogo';
 import { UniversityLogo } from '../UniversityLogo';
 import { Button } from '../ui';
 import { Topbar } from '../primitives';
@@ -35,7 +35,7 @@ export function AppTopbar({
     <>
       <Topbar mobile>
         <Link to="/app">
-          <UniFoliaLogo size="sm" subtitle={null} />
+          <UniFoliLogo size="sm" subtitle={null} />
         </Link>
         <Button variant="ghost" size="icon" aria-label={isSidebarOpen ? '사이드바 닫기' : '사이드바 열기'} onClick={onToggleSidebar}>
           {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}

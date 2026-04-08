@@ -114,16 +114,16 @@ export function TermsOfService() {
     <LegalShell
       eyebrow="Service Policy"
       title="이용약관"
-      description="Uni Folia는 학생 기록과 탐구 준비를 돕는 도구이며, 안전하고 책임 있는 사용을 전제로 운영됩니다."
+      description="Uni Foli는 학생 기록과 탐구 준비를 돕는 도구이며, 안전하고 책임 있는 사용을 전제로 운영됩니다."
     >
       <LegalSection title="서비스의 범위" icon={<Scale size={20} />}>
         <p>
-          Uni Folia는 학생의 생기부와 실제 활동 기록을 정리하고, AI 진단과 탐구 플랜, 작업실 drafting 흐름을 지원하는 서비스입니다.
+          Uni Foli는 학생의 생기부와 실제 활동 기록을 정리하고, AI 진단과 탐구 플랜, 작업실 drafting 흐름을 지원하는 서비스입니다.
         </p>
         <div className="flex items-start gap-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-6">
           <Info className="mt-1 shrink-0 text-amber-500" size={20} />
           <p className="text-sm font-bold leading-7 text-amber-700">
-            Uni Folia는 특정 대학의 합격이나 입시 결과를 보장하지 않습니다. 최종 판단과 제출 책임은 사용자와 교육 기관에 있습니다.
+            Uni Foli는 특정 대학의 합격이나 입시 결과를 보장하지 않습니다. 최종 판단과 제출 책임은 사용자와 교육 기관에 있습니다.
           </p>
         </div>
       </LegalSection>
@@ -160,7 +160,7 @@ export function PrivacyPolicy() {
     <LegalShell
       eyebrow="Transparency & Safety"
       title="개인정보처리방침"
-      description="Uni Folia는 학생 기록과 개인정보를 다루는 만큼, 수집 범위와 처리 목적을 가능한 한 분명하게 안내합니다."
+      description="Uni Foli는 학생 기록과 개인정보를 다루는 만큼, 수집 범위와 처리 목적을 가능한 한 분명하게 안내합니다."
     >
       <LegalSection title="수집하는 정보" icon={<ShieldCheck size={20} />}>
         <p>서비스 운영과 계정 연결, 기록 분석에 필요한 최소 범위의 정보를 다룹니다.</p>

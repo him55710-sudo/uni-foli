@@ -6,6 +6,10 @@ function normalizeBaseUrl(value: string) {
   return value.replace(/\/+$/, '');
 }
 
+function isApiRequestUrl(requestUrl: string): boolean {
+  return requestUrl.startsWith('/api/') || /\/api\//.test(requestUrl);
+}
+
 let hasWarnedMissingApiUrl = false;
 
 export function resolveApiBaseUrl() {
@@ -36,9 +40,16 @@ export function shouldUseSynchronousApiJobs() {
   if (explicit === 'true') return true;
   if (explicit === 'false') return false;
 
-  if (typeof window !== 'undefined' && /\.vercel\.app$/i.test(window.location.hostname)) {
-    // Vercel deployments often run without a separate worker process.
-    return true;
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      // Local runs commonly skip a dedicated worker process.
+      return true;
+    }
+    if (/\.vercel\.app$/i.test(hostname)) {
+      // Vercel deployments often run without a separate worker process.
+      return true;
+    }
   }
   return false;
 }
@@ -70,18 +81,46 @@ client.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-async function request<T = any>(config: AxiosRequestConfig): Promise<T> {
-  const response = await client.request<T>(config);
-
-  const requestUrl = typeof config.url === 'string' ? config.url : '';
-  const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
-  if (requestUrl.startsWith('/api/') && contentType.includes('text/html')) {
+function assertApiHtmlResponse(requestUrl: string, contentType: string) {
+  if (isApiRequestUrl(requestUrl) && contentType.includes('text/html')) {
     throw new Error(
-      '백엔드 API 연결이 설정되지 않았습니다. VITE_API_URL을 실제 백엔드 주소로 설정한 뒤 다시 배포해 주세요.',
+      'Backend API is returning HTML. Check VITE_API_URL and make sure it points to the backend origin.',
     );
   }
+}
 
+async function request<T = any>(config: AxiosRequestConfig): Promise<T> {
+  const response = await client.request<T>(config);
+  const requestUrl = typeof config.url === 'string' ? config.url : '';
+  const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+  assertApiHtmlResponse(requestUrl, contentType);
   return response.data;
+}
+
+export interface ApiDownloadResponse {
+  blob: Blob;
+  contentType: string;
+  contentDisposition: string;
+  status: number;
+}
+
+async function download(url: string, config?: AxiosRequestConfig): Promise<ApiDownloadResponse> {
+  const response = await client.request<Blob>({
+    ...config,
+    method: 'GET',
+    url,
+    responseType: 'blob',
+  });
+
+  const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+  assertApiHtmlResponse(url, contentType);
+
+  return {
+    blob: response.data,
+    contentType,
+    contentDisposition: String(response.headers?.['content-disposition'] || ''),
+    status: response.status,
+  };
 }
 
 export const api = {
@@ -96,6 +135,9 @@ export const api = {
   },
   put<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig) {
     return request<T>({ ...config, method: 'PUT', url, data });
+  },
+  download(url: string, config?: AxiosRequestConfig) {
+    return download(url, config);
   },
 };
 

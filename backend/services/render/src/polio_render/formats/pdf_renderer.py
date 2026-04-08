@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from reportlab.lib import colors
@@ -13,6 +14,18 @@ from polio_render.markdown import split_markdown_sections
 from polio_render.models import RenderArtifact, RenderBuildContext
 from polio_render.template_registry import build_provenance_appendix_lines
 from polio_shared.paths import to_stored_path
+
+
+@dataclass(frozen=True, slots=True)
+class PdfVisualTheme:
+    primary: colors.Color
+    accent: colors.Color
+    secondary: colors.Color
+    surface: colors.Color
+    surface_alt: colors.Color
+    ink: colors.Color
+    muted: colors.Color
+    inverse: colors.Color
 
 
 class PdfRenderer(BaseRenderer):
@@ -33,6 +46,7 @@ class PdfRenderer(BaseRenderer):
 
     def _build_pdf(self, context: RenderBuildContext, output_path) -> None:
         template = context.resolve_template()
+        theme = self._resolve_theme(template_id=template.id, template_accent=template.preview.accent_color)
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=A4,
@@ -48,14 +62,14 @@ class PdfRenderer(BaseRenderer):
             sections = [("Overview", ["No content provided."])]
 
         styles = getSampleStyleSheet()
-        accent = colors.HexColor(template.preview.accent_color)
+        accent = theme.accent
         title_style = ParagraphStyle(
             "PolioCoverTitle",
             parent=styles["Title"],
             fontName="Helvetica-Bold",
             fontSize=28,
             leading=34,
-            textColor=colors.HexColor("#0f172a"),
+            textColor=theme.ink,
             alignment=TA_LEFT,
             spaceAfter=14,
         )
@@ -65,7 +79,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica",
             fontSize=12,
             leading=18,
-            textColor=colors.HexColor("#334155"),
+            textColor=theme.muted,
             spaceAfter=12,
         )
         badge_style = ParagraphStyle(
@@ -84,7 +98,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica-Bold",
             fontSize=9,
             leading=13,
-            textColor=colors.HexColor("#0f172a"),
+            textColor=theme.ink,
         )
         meta_value_style = ParagraphStyle(
             "PolioMetaValue",
@@ -92,7 +106,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica",
             fontSize=9,
             leading=13,
-            textColor=colors.HexColor("#475569"),
+            textColor=theme.muted,
         )
         heading_style = ParagraphStyle(
             "PolioHeading",
@@ -110,7 +124,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica-Bold",
             fontSize=10,
             leading=14,
-            textColor=colors.HexColor("#0f172a"),
+            textColor=theme.ink,
             spaceAfter=8,
         )
         body_style = ParagraphStyle(
@@ -119,7 +133,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica",
             fontSize=11,
             leading=17,
-            textColor=colors.HexColor("#111827"),
+            textColor=theme.ink,
             spaceAfter=8,
         )
         bullet_style = ParagraphStyle(
@@ -135,7 +149,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica-Bold",
             fontSize=10,
             leading=14,
-            textColor=colors.HexColor("#0f172a"),
+            textColor=theme.ink,
             alignment=TA_CENTER,
         )
         summary_title_style = ParagraphStyle(
@@ -144,7 +158,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica-Bold",
             fontSize=12,
             leading=16,
-            textColor=colors.HexColor("#0f172a"),
+            textColor=theme.ink,
             spaceAfter=4,
         )
         summary_body_style = ParagraphStyle(
@@ -153,7 +167,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica",
             fontSize=9,
             leading=13,
-            textColor=colors.HexColor("#334155"),
+            textColor=theme.muted,
         )
         appendix_style = ParagraphStyle(
             "PolioAppendix",
@@ -161,7 +175,7 @@ class PdfRenderer(BaseRenderer):
             fontName="Helvetica",
             fontSize=9,
             leading=13,
-            textColor=colors.HexColor("#334155"),
+            textColor=theme.muted,
             spaceAfter=4,
         )
         story: list = []
@@ -188,13 +202,30 @@ class PdfRenderer(BaseRenderer):
         cover_meta_table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (1, -1), colors.HexColor("#f8fafc")),
-                    ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#dbeafe")),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#e2e8f0")),
+                    ("BACKGROUND", (0, 0), (1, -1), theme.surface),
+                    ("BOX", (0, 0), (-1, -1), 1, accent),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.6, theme.surface_alt),
                     ("LEFTPADDING", (0, 0), (-1, -1), 8),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                     ("TOPPADDING", (0, 0), (-1, -1), 6),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        cover_highlight = Table(
+            [[Paragraph("Figma-inspired layout system: cover hierarchy, snapshot cards, section callouts, and checklist rhythm.", summary_body_style)]],
+            colWidths=[doc.width],
+            hAlign="LEFT",
+        )
+        cover_highlight.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), theme.surface_alt),
+                    ("BOX", (0, 0), (-1, -1), 0.8, accent),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
                 ]
             )
         )
@@ -205,6 +236,8 @@ class PdfRenderer(BaseRenderer):
                 Paragraph(self._escape_text(context.draft_title), title_style),
                 Paragraph(self._escape_text(template.description), lead_style),
                 cover_meta_table,
+                Spacer(1, 10),
+                cover_highlight,
                 Spacer(1, 14),
                 Paragraph("This export is grounded in parsed student-record evidence and keeps auditable structure.", section_intro_style),
             ]
@@ -260,10 +293,10 @@ class PdfRenderer(BaseRenderer):
         summary_cards.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eff6ff")),
-                    ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#ffffff")),
-                    ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#bfdbfe")),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.7, colors.HexColor("#dbeafe")),
+                    ("BACKGROUND", (0, 0), (-1, 0), theme.surface_alt),
+                    ("BACKGROUND", (0, 1), (-1, 1), colors.white),
+                    ("BOX", (0, 0), (-1, -1), 1, accent),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.7, theme.surface),
                     ("LEFTPADDING", (0, 0), (-1, -1), 10),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 10),
                     ("TOPPADDING", (0, 0), (-1, -1), 8),
@@ -302,8 +335,9 @@ class PdfRenderer(BaseRenderer):
             section_callout.setStyle(
                 TableStyle(
                     [
-                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                        ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#e2e8f0")),
+                        ("BACKGROUND", (0, 0), (-1, -1), theme.surface),
+                        ("BOX", (0, 0), (-1, -1), 1, theme.surface_alt),
+                        ("LINEBELOW", (0, 0), (-1, 0), 1, accent),
                         ("LEFTPADDING", (0, 0), (-1, -1), 10),
                         ("RIGHTPADDING", (0, 0), (-1, -1), 10),
                         ("TOPPADDING", (0, 0), (-1, -1), 8),
@@ -339,8 +373,8 @@ class PdfRenderer(BaseRenderer):
 
         doc.build(
             story,
-            onFirstPage=lambda canvas, doc_obj: self._draw_page_chrome(canvas, doc_obj, accent, template.label),
-            onLaterPages=lambda canvas, doc_obj: self._draw_page_chrome(canvas, doc_obj, accent, template.label),
+            onFirstPage=lambda canvas, doc_obj: self._draw_page_chrome(canvas, doc_obj, theme, template.label),
+            onLaterPages=lambda canvas, doc_obj: self._draw_page_chrome(canvas, doc_obj, theme, template.label),
         )
 
     @staticmethod
@@ -362,23 +396,53 @@ class PdfRenderer(BaseRenderer):
         ]
 
     @staticmethod
-    def _draw_page_chrome(canvas, doc, accent: colors.Color, template_label: str) -> None:
+    def _draw_page_chrome(canvas, doc, theme: PdfVisualTheme, template_label: str) -> None:
         canvas.saveState()
         width, height = A4
-        canvas.setFillColor(accent)
+        canvas.setFillColor(theme.primary)
         canvas.rect(0, height - 18, width, 18, stroke=0, fill=1)
         canvas.setFont("Helvetica-Bold", 8)
-        canvas.setFillColor(colors.white)
+        canvas.setFillColor(theme.inverse)
         canvas.drawString(doc.leftMargin, height - 12, f"POLIO DIAGNOSIS REPORT | {template_label.upper()}")
+        canvas.setFillColor(theme.secondary)
+        canvas.rect(0, height - 22, width * 0.28, 4, stroke=0, fill=1)
 
-        canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
+        canvas.setStrokeColor(theme.surface_alt)
         canvas.setLineWidth(0.6)
         canvas.line(doc.leftMargin, 34, width - doc.rightMargin, 34)
         canvas.setFont("Helvetica", 9)
-        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.setFillColor(theme.muted)
         canvas.drawString(doc.leftMargin, 20, "Grounded export")
         canvas.drawRightString(width - doc.rightMargin, 20, f"Page {canvas.getPageNumber()}")
         canvas.restoreState()
+
+    @staticmethod
+    def _resolve_theme(*, template_id: str, template_accent: str) -> PdfVisualTheme:
+        base = {
+            "primary": "#0B1F3A",
+            "secondary": "#14B8A6",
+            "surface": "#F8FAFC",
+            "surface_alt": "#DBEAFE",
+            "ink": "#0F172A",
+            "muted": "#334155",
+        }
+        if template_id in {"proposal_pitch", "presentation_visual_focus"}:
+            base.update({"secondary": "#F97316", "surface_alt": "#FFE7D6"})
+        elif template_id in {"timeline_growth_story", "activity_summary_school"}:
+            base.update({"secondary": "#0EA5A4", "surface_alt": "#D1FAE5"})
+        elif template_id == "comparison_analysis":
+            base.update({"secondary": "#B45309", "surface_alt": "#FEF3C7"})
+
+        return PdfVisualTheme(
+            primary=colors.HexColor(base["primary"]),
+            accent=colors.HexColor(template_accent),
+            secondary=colors.HexColor(base["secondary"]),
+            surface=colors.HexColor(base["surface"]),
+            surface_alt=colors.HexColor(base["surface_alt"]),
+            ink=colors.HexColor(base["ink"]),
+            muted=colors.HexColor(base["muted"]),
+            inverse=colors.white,
+        )
 
     @staticmethod
     def _escape_text(value: str) -> str:
