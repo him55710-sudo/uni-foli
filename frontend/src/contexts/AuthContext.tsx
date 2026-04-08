@@ -27,7 +27,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const GUEST_SESSION_KEY = 'polio_guest_session';
+const GUEST_SESSION_KEY = 'uni_foli_guest_session';
 type SocialProvider = 'google' | 'kakao' | 'naver';
 const POPUP_FALLBACK_ERROR_CODES = new Set([
   'auth/popup-blocked',

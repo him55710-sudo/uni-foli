@@ -85,7 +85,7 @@ export function PaywallModal({ isOpen, onClose }: PaywallModalProps) {
               </ul>
               <button
                 onClick={() => {
-                  window.location.href = 'mailto:mongben@naver.com?subject=polio%20Pro%20요금제%20문의';
+                  window.location.href = 'mailto:mongben@naver.com?subject=Uni%20Foli%20Pro%20요금제%20문의';
                 }}
                 className="clay-btn-primary w-full py-4 rounded-2xl font-extrabold text-lg flex items-center justify-center gap-2 animate-pulse shadow-[0_0_20px_rgba(59,130,246,0.5)]"
               >

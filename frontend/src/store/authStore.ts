@@ -32,12 +32,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user: profile, isAuthenticated: true, isLoading: false });
 
       // Sync marketing consent if pending
-      const pendingConsent = localStorage.getItem('polio_pending_marketing_consent');
+      const pendingConsent = localStorage.getItem('uni_foli_pending_marketing_consent');
       if (pendingConsent !== null) {
         const agreed = pendingConsent === 'true';
         try {
           await api.post('/api/v1/users/onboarding/profile', { marketing_agreed: agreed });
-          localStorage.removeItem('polio_pending_marketing_consent');
+          localStorage.removeItem('uni_foli_pending_marketing_consent');
           set((state) => ({
             user: state.user ? { ...state.user, marketing_agreed: agreed } : null
           }));

@@ -1,4 +1,4 @@
-const APP_ACCESS_TOKEN_KEY = 'polio_app_access_token_v1';
+const APP_ACCESS_TOKEN_KEY = 'uni_foli_app_access_token_v1';
 
 export function readAppAccessToken(): string | null {
   if (typeof window === 'undefined') return null;

@@ -2,7 +2,7 @@ import type { QuestStartPayload, QuestStarterChoice } from '@shared-contracts';
 
 export type { QuestStartPayload, QuestStarterChoice } from '@shared-contracts';
 
-const ACTIVE_QUEST_START_KEY = 'polio_active_quest_start';
+const ACTIVE_QUEST_START_KEY = 'uni_foli_active_quest_start';
 
 export function saveQuestStart(payload: QuestStartPayload) {
   sessionStorage.setItem(ACTIVE_QUEST_START_KEY, JSON.stringify(payload));

@@ -5,7 +5,7 @@ import type {
   UserTargetsUpdateRequest,
 } from '@shared-contracts';
 
-const LOCAL_AUTH_PROFILE_STORAGE_PREFIX = 'polio_local_auth_profile_v1';
+const LOCAL_AUTH_PROFILE_STORAGE_PREFIX = 'uni_foli_local_auth_profile_v1';
 
 function isBrowser() {
   return typeof window !== 'undefined';

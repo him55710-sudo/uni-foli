@@ -73,10 +73,77 @@ def extract_student_record_features(
         if bool(metadata.get("needs_review")):
             needs_review_documents += 1
 
-        neis_document = _extract_neis_document(metadata)
-        if isinstance(neis_document, dict):
+        # Structured Data Extraction (New Pipeline or Legacy NEIS)
+        structured_data = _extract_structured_data(metadata)
+        if structured_data:
             saw_neis = True
-            sections = neis_document.get("sections")
+            # New Pipeline Structure (v2.0.0+)
+            if "canonical_data" in structured_data:
+                canonical = structured_data["canonical_data"]
+                quality_report = structured_data.get("quality_report") or {}
+                
+                # Update confidence and reliability from quality report
+                if quality_report and "overall_score" in quality_report:
+                    parse_confidences.append(float(quality_report["overall_score"]))
+                
+                # Section mapping and record counting
+                # Attendance
+                if canonical.get("attendance"):
+                    section_presence["교과학습발달상황"] = True # Attendance usually in the same section or nearby
+                    section_record_counts["교과학습발달상황"] += len(canonical["attendance"])
+                
+                # Awards
+                if canonical.get("awards"):
+                    section_presence["수상경력"] = True
+                    section_record_counts["수상경력"] += len(canonical["awards"])
+                    total_records += len(canonical["awards"])
+                
+                # Grades
+                grades = canonical.get("grades") or []
+                if grades:
+                    section_presence["교과학습발달상황"] = True
+                    section_record_counts["교과학습발달상황"] += len(grades)
+                    total_records += len(grades)
+                    for g in grades:
+                        subj = _normalize_subject(g.get("subject"))
+                        if subj:
+                            subject_counter[subj] += 1
+                
+                # Narratives (Extracurricular)
+                extra = canonical.get("extracurricular_narratives") or {}
+                if extra:
+                    section_presence["창의적체험활동"] = True
+                    section_record_counts["창의적체험활동"] += len(extra)
+                    for k, v in extra.items():
+                        narrative_char_count += len(str(v).strip())
+                
+                # Subject Notes
+                subj_notes = canonical.get("subject_special_notes") or {}
+                if subj_notes:
+                    section_presence["교과학습발달상황"] = True
+                    section_record_counts["교과학습발달상황"] += len(subj_notes)
+                    for k, v in subj_notes.items():
+                        narrative_char_count += len(str(v).strip())
+                
+                # Reading
+                reading = canonical.get("reading_activities") or []
+                if reading:
+                    section_presence["독서활동"] = True
+                    section_record_counts["독서활동"] += len(reading)
+                    for r in reading:
+                        narrative_char_count += len(str(r).strip())
+                
+                # Behavior
+                behavior = canonical.get("behavior_opinion")
+                if behavior:
+                    section_presence["행동특성 및 종합의견"] = True
+                    section_record_counts["행동특성 및 종합의견"] += 1
+                    narrative_char_count += len(str(behavior).strip())
+                
+                continue # Skip fallback text inference
+
+            # Legacy NEIS Structure
+            sections = structured_data.get("sections")
             if isinstance(sections, list):
                 for section in sections:
                     if not isinstance(section, dict):
@@ -103,7 +170,7 @@ def extract_student_record_features(
                         )
                         narrative_char_count += len(str(narrative).strip())
 
-            evidence_refs = neis_document.get("evidence_references")
+            evidence_refs = structured_data.get("evidence_references")
             if isinstance(evidence_refs, list):
                 evidence_reference_count += len(evidence_refs)
             continue
@@ -174,7 +241,11 @@ def extract_student_record_features(
     )
 
 
-def _extract_neis_document(metadata: dict[str, Any]) -> dict[str, Any] | None:
+def _extract_structured_data(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Extracts structured parsing data from document metadata.
+    Supports both the new semantic pipeline (v2.0.0+) and legacy NEIS formats.
+    """
     candidates: list[Any] = [
         metadata.get("analysis_artifact"),
         metadata.get("student_artifact_parse"),
@@ -182,11 +253,20 @@ def _extract_neis_document(metadata: dict[str, Any]) -> dict[str, Any] | None:
     for artifact in candidates:
         if not isinstance(artifact, dict):
             continue
+        
+        # New Pipeline: check for 'canonical_data'
+        if "canonical_data" in artifact:
+            return artifact
+            
+        # Standard/Legacy: check for 'neis_document' wrapping
         neis_document = artifact.get("neis_document")
         if isinstance(neis_document, dict):
             return neis_document
+            
+        # Legacy: direct identification
         if artifact.get("document_type") == "neis_student_record" and isinstance(artifact.get("sections"), list):
             return artifact
+            
     return None
 
 

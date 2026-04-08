@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from polio_api.main import app
-from polio_api.services.chat_memory_service import build_workshop_memory_context
+from polio_api.services.chat_memory_service import build_workshop_memory_context, build_workshop_memory_payload
 from polio_api.db.models.workshop import WorkshopSession, WorkshopTurn
 from polio_api.db.models.project import Project
 from backend.tests.auth_helpers import auth_headers
@@ -124,3 +124,22 @@ def test_contract_workshop_chat_turn_schema_supports_roles() -> None:
     dumped = turn.model_dump()
     assert dumped["speaker_role"] == "assistant"
     assert dumped["query"] == "Hello from Assistant"
+
+
+def test_structured_memory_summary_stays_grounded() -> None:
+    session = WorkshopSession(id="memory-summary-session")
+    project = Project(id="dummy-id", target_university="Grounded Univ", target_major="Computer Science")
+    session.turns = [
+        WorkshopTurn(speaker_role="user", query="수학 탐구 질문을 더 명확하게 하고 싶어요."),
+        WorkshopTurn(speaker_role="assistant", query="좋아요. 현재 근거를 먼저 정리해봅시다."),
+    ]
+    session.pinned_references = []
+
+    memory_text, summary = build_workshop_memory_payload(session=session, project=project, quest=None)
+
+    assert "수학 탐구 질문" in memory_text
+    assert summary["subject"] is None
+    assert summary["selected_topic"] is None
+    assert isinstance(summary["confirmed_evidence_points"], list)
+    assert isinstance(summary["unresolved_evidence_gaps"], list)
+    assert "합격" not in json.dumps(summary, ensure_ascii=False)

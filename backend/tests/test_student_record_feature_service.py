@@ -70,3 +70,44 @@ def test_extract_features_gracefully_without_neis_structure() -> None:
     assert features.evidence_reference_count >= 1
     assert features.needs_review is True
     assert features.needs_review_documents == 1
+
+
+def test_extract_features_from_canonical_data() -> None:
+    canonical_data = {
+        "attendance": [{"grade": 1, "school_days": 190}],
+        "awards": [{"award_name": "수학경시대회", "grade": "금상"}],
+        "grades": [
+            {"subject": "미적분", "unit": 4, "original_score": 95},
+            {"subject": "확률과 통계", "unit": 3, "original_score": 98},
+        ],
+        "extracurricular_narratives": {"동아리활동": "AI 연구동아리에서 프로젝트 수행"},
+        "subject_special_notes": {"미적분": "심화 개념을 완벽히 이해함"},
+        "reading_activities": ["클린 코드"],
+        "behavior_opinion": "성실하고 탐구심이 강함",
+    }
+    artifact = {
+        "canonical_data": canonical_data,
+        "quality_report": {"overall_score": 0.95, "missing_critical_sections": []},
+    }
+    document = SimpleNamespace(
+        content_text="생기부 텍스트...",
+        content_markdown="",
+        parse_metadata={
+            "analysis_artifact": artifact,
+        },
+    )
+
+    features = extract_student_record_features(
+        documents=[document],
+        full_text=document.content_text,
+        target_major="컴퓨터공학",
+        career_direction=None,
+    )
+
+    assert features.source_mode == "neis"
+    assert features.section_presence["수상경력"] is True
+    assert features.section_presence["독서활동"] is True
+    assert features.unique_subject_count == 2
+    assert "미적분" in features.subject_distribution
+    assert features.narrative_char_count > 0
+    assert features.avg_parse_confidence == 0.95

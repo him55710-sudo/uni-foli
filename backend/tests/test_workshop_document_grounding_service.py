@@ -79,3 +79,27 @@ def test_format_chunk_evidence_block_handles_empty() -> None:
     assert "질문 관련 문서 발췌" in block
     assert "찾지 못했습니다" in block
 
+
+
+def test_grounding_profile_limits_fast_and_render(monkeypatch) -> None:
+    import polio_api.services.workshop_document_grounding_service as svc
+
+    captured: dict[str, int] = {}
+
+    def fake_docs(*, db, project_id, limit):  # noqa: ANN001
+        captured["docs"] = limit
+        return []
+
+    def fake_chunks(*, db, project_id, limit):  # noqa: ANN001
+        captured["chunk_pool"] = limit
+        return []
+
+    monkeypatch.setattr(svc, "_load_recent_documents", fake_docs)
+    monkeypatch.setattr(svc, "_load_recent_chunks", fake_chunks)
+
+    project = SimpleNamespace(id="project-1")
+    svc.build_workshop_document_grounding_context(db=None, project=project, user_message="질문", profile="fast")
+    assert captured["docs"] == 1
+
+    svc.build_workshop_document_grounding_context(db=None, project=project, user_message="질문", profile="render")
+    assert captured["docs"] == 3

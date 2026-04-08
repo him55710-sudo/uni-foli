@@ -306,6 +306,7 @@ async def run_diagnosis_run(
             career_direction=owner.career,
             document_count=len(documents),
             full_text=diagnosis_input_text or full_text,
+
         )
     _apply_structured_backbone(result=result, sheet=scoring_sheet)
 

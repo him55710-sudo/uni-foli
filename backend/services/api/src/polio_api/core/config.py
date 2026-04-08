@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     docling_enabled: bool = True
     gemini_genai_enabled: bool = False
 
+    # Storage Settings
+    polio_storage_provider: str = Field(default="local", description="Storage provider: 'local' or 's3'")
+    polio_storage_root: str | None = None
+    s3_endpoint_url: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    s3_bucket_name: str | None = None
+    s3_region_name: str | None = None
+
     # LLM Settings
     llm_provider: str = Field(default="gemini", description="LLM provider: 'gemini' or 'ollama'")
     gemini_api_key: str | None = None
@@ -115,6 +124,12 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 2048
     ollama_num_predict: int = 512
     ollama_num_thread: int | None = None
+    ollama_fast_model: str | None = None
+    ollama_standard_model: str | None = None
+    ollama_render_model: str | None = None
+    ollama_fast_timeout_seconds: float | None = None
+    ollama_standard_timeout_seconds: float | None = None
+    ollama_render_timeout_seconds: float | None = None
     pdf_analysis_llm_enabled: bool = True
     pdf_analysis_llm_provider: str = "ollama"
     pdf_analysis_gemini_api_key: str | None = None
@@ -248,6 +263,31 @@ class Settings(BaseSettings):
                             f"{provider.upper()} redirect URI must not target localhost outside local development."
                         )
 
+        normalized_storage_provider = (self.polio_storage_provider or "").strip().lower()
+        object.__setattr__(self, "polio_storage_provider", normalized_storage_provider or "local")
+        if self.polio_storage_provider == "s3":
+            if not self.s3_bucket_name:
+                raise ValueError("S3_BUCKET_NAME is required when POLIO_STORAGE_PROVIDER=s3")
+
+        normalized_provider = (self.llm_provider or "").strip().lower()
+        object.__setattr__(self, "llm_provider", normalized_provider or "gemini")
+        if self.llm_provider == "ollama":
+            if not _is_valid_http_url(self.ollama_base_url):
+                raise ValueError("OLLAMA_BASE_URL must be a valid http(s) URL when LLM_PROVIDER=ollama.")
+            if self.app_env != "local" and _is_local_host_url(self.ollama_base_url):
+                raise ValueError(
+                    "OLLAMA_BASE_URL must point to a remote host outside local development."
+                )
+            if self.ollama_timeout_seconds <= 0:
+                raise ValueError("OLLAMA_TIMEOUT_SECONDS must be greater than zero.")
+            for name, value in (
+                ("OLLAMA_FAST_TIMEOUT_SECONDS", self.ollama_fast_timeout_seconds),
+                ("OLLAMA_STANDARD_TIMEOUT_SECONDS", self.ollama_standard_timeout_seconds),
+                ("OLLAMA_RENDER_TIMEOUT_SECONDS", self.ollama_render_timeout_seconds),
+            ):
+                if value is not None and value <= 0:
+                    raise ValueError(f"{name} must be greater than zero when set.")
+
         return self
 
 
@@ -269,6 +309,14 @@ def _is_local_redirect(value: str | None) -> bool:
     parsed = urlparse(value)
     host = (parsed.hostname or "").strip().lower()
     return host in {"localhost", "127.0.0.1", "::1"}
+
+
+def _is_local_host_url(value: str | None) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").strip().lower()
+    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
 
 def _is_valid_http_url(value: str | None) -> bool:

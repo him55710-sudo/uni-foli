@@ -24,3 +24,9 @@ class DiagnosisRun(Base):
     policy_flags = relationship("PolicyFlag", back_populates="diagnosis_run", lazy="selectin", cascade="all, delete-orphan")
     review_tasks = relationship("ReviewTask", back_populates="diagnosis_run", lazy="selectin", cascade="all, delete-orphan")
     response_traces = relationship("ResponseTrace", back_populates="diagnosis_run", lazy="selectin", cascade="all, delete-orphan")
+    report_artifacts = relationship(
+        "DiagnosisReportArtifact",
+        back_populates="diagnosis_run",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )

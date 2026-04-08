@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from polio_api.core.config import get_settings
 from polio_api.db.models.upload_asset import UploadAsset
 from polio_api.services.document_service import ensure_document_placeholder, ingest_upload_asset, upload_supports_ingest
-from polio_shared.paths import get_upload_root, slugify, to_stored_path
+from polio_shared.paths import slugify
+from polio_shared.storage import get_storage_provider
 from polio_domain.enums import UploadStatus
 
 
@@ -46,22 +47,20 @@ async def store_upload(
     settings = get_settings()
     original_filename, content_type, contents = await _read_and_validate_upload(upload, settings=settings)
 
-    project_dir = get_upload_root() / project_id
-    project_dir.mkdir(parents=True, exist_ok=True)
-
     suffix = Path(original_filename).suffix or ".bin"
     safe_name = slugify(Path(original_filename).stem)
     filename = f"{safe_name}-{uuid4().hex}{suffix}"
-    target_path = project_dir / filename
-
-    target_path.write_bytes(contents)
-    relative_path = to_stored_path(target_path)
+    
+    # Use abstracted storage provider
+    storage = get_storage_provider(settings)
+    stored_path = f"uploads/{project_id}/{filename}"
+    storage.store(contents, stored_path)
 
     asset = UploadAsset(
         project_id=project_id,
         original_filename=original_filename,
         content_type=content_type,
-        stored_path=relative_path,
+        stored_path=stored_path,
         file_size_bytes=len(contents),
         sha256=hashlib.sha256(contents).hexdigest(),
         status=UploadStatus.STORED.value,

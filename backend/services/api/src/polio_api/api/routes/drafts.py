@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -8,17 +9,20 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_current_user, get_db
+from polio_api.core.llm import LLMRequestError, get_llm_client, get_llm_temperature
 from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.user import User
-from polio_api.core.llm import get_llm_client
-from polio_api.schemas.draft import DraftCreate, DraftUpdate, DraftRead
-from polio_api.services.draft_service import create_draft, update_draft, get_draft, list_drafts_for_project
-from polio_api.services.prompt_registry import get_prompt_registry
+from polio_api.schemas.draft import DraftCreate, DraftRead, DraftUpdate
+from polio_api.services.draft_service import create_draft, get_draft, list_drafts_for_project, update_draft
+from polio_api.services.chat_fallback_service import build_conversational_fallback
+from polio_api.services.guided_chat_state_service import load_guided_chat_state
 from polio_api.services.project_service import append_project_discussion_log, get_project
+from polio_api.services.prompt_registry import get_prompt_registry
 from polio_api.services.workshop_document_grounding_service import build_workshop_document_grounding_context
 
 router = APIRouter()
 chat_router = APIRouter()
+logger = logging.getLogger("polio.api.drafts")
 
 
 class ReferenceMaterial(BaseModel):
@@ -38,20 +42,26 @@ def _format_reference_materials(reference_materials: list[ReferenceMaterial]) ->
     if not reference_materials:
         return ""
 
-    blocks = ["[참고 문헌 데이터]"]
+    blocks = ["[참고 자료]"]
     for index, material in enumerate(reference_materials, start=1):
         authors = ", ".join(material.authors[:6]) if material.authors else "저자 정보 없음"
-        year_text = str(material.year) if material.year else "발행연도 미상"
+        year_text = str(material.year) if material.year else "연도 미상"
         abstract = (material.abstract or "초록 정보 없음").replace("\n", " ").strip()
-        if len(abstract) > 1200:
-            abstract = f"{abstract[:1200]}..."
+        if len(abstract) > 700:
+            abstract = f"{abstract[:700]}..."
         blocks.append(
             f"{index}. 제목: {material.title}\n"
             f"   저자: {authors}\n"
-            f"   발행연도: {year_text}\n"
-            f"   초록: {abstract}"
+            f"   연도: {year_text}\n"
+            f"   요약: {abstract}"
         )
     return "\n".join(blocks)
+
+
+def _safe_json_dump(payload: dict[str, object] | None) -> str:
+    if not payload:
+        return ""
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _build_system_instruction(
@@ -59,23 +69,24 @@ def _build_system_instruction(
     target_major: str | None,
     reference_materials: list[ReferenceMaterial],
     document_grounding_context: str | None = None,
+    guided_state_summary: dict[str, object] | None = None,
 ) -> str:
     profile_context = (
-        f"학생의 목표 대학은 '{target_university or '미정'}'이고, 목표 전공은 '{target_major or '미정'}'이다."
+        f"학생 목표 대학: {target_university or '미정'} / 목표 전공: {target_major or '미정'}"
     )
     reference_context = _format_reference_materials(reference_materials)
-    base_instruction = _build_chat_base_instruction()
+    guided_context = _safe_json_dump(guided_state_summary)
+    base_instruction = get_prompt_registry().compose_prompt("chat.coaching-orchestration")
 
-    sections = []
-    if reference_context:
-        sections.append(reference_context)
+    sections = [f"[학생 맥락]\n{profile_context}"]
+    if guided_context:
+        sections.append(f"[가이드드 드래프팅 상태]\n{guided_context}")
     if document_grounding_context:
         sections.append(document_grounding_context)
-    sections.append(f"[학생 맥락]\n{profile_context}")
+    if reference_context:
+        sections.append(reference_context)
     sections.append(base_instruction)
     return "\n\n".join(sections)
-
-
 
 
 def _validate_reference_limit(reference_materials: list[ReferenceMaterial]) -> None:
@@ -84,6 +95,25 @@ def _validate_reference_limit(reference_materials: list[ReferenceMaterial]) -> N
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="reference_materials can contain up to 3 papers.",
         )
+
+
+def _build_deterministic_fallback(
+    *,
+    user_message: str,
+    guided_state_summary: dict[str, object] | None,
+    reason: str,
+) -> str:
+    return build_conversational_fallback(
+        user_message=user_message,
+        reason=reason,
+        summary=guided_state_summary,
+    )
+
+
+def _chunk_text(text: str, chunk_size: int = 80) -> list[str]:
+    if not text:
+        return []
+    return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 
 def _build_streaming_response(
@@ -95,15 +125,21 @@ def _build_streaming_response(
     target_major: str | None,
     document_grounding_context: str | None = None,
 ) -> StreamingResponse:
-    llm = get_llm_client()
+    guided_state_summary: dict[str, object] | None = None
+    if project_id:
+        state = load_guided_chat_state(db, project_id)
+        if state:
+            guided_state_summary = state.state_summary or None
+
     system_instruction = _build_system_instruction(
         target_university=target_university,
         target_major=target_major,
         reference_materials=payload.reference_materials,
         document_grounding_context=document_grounding_context,
+        guided_state_summary=guided_state_summary,
     )
 
-    async def save_chat_to_db(user_message: str, ai_response: str, user: User) -> None:
+    def save_chat_to_db(user_message: str, user: User) -> None:
         try:
             if project_id:
                 project = get_project(db, project_id, owner_user_id=user.id)
@@ -114,29 +150,58 @@ def _build_streaming_response(
 
     async def event_stream():
         full_response = ""
+        limited_mode = False
+        limited_reason: str | None = None
+        profile = "standard"
+
+        yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': False, 'limited_reason': None}}, ensure_ascii=False)}\n\n"
+
         try:
+            llm = get_llm_client(profile="standard")
             async for token in llm.stream_chat(
                 prompt=f"[학생 메시지]\n{payload.message}",
                 system_instruction=system_instruction,
-                temperature=0.5,
+                temperature=get_llm_temperature(profile="standard"),
             ):
                 full_response += token
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+        except LLMRequestError as exc:
+            limited_mode = True
+            limited_reason = exc.limited_reason
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Draft chat stream switched to fallback: %s", repr(exc))
+            limited_mode = True
+            limited_reason = "llm_unavailable"
 
-            await save_chat_to_db(payload.message, full_response, current_user)
-            yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"
-        except Exception:  # noqa: BLE001
-            error_data = json.dumps(
-                {"error": "AI 생성 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."},
-                ensure_ascii=False,
+        if limited_mode:
+            yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': True, 'limited_reason': limited_reason}}, ensure_ascii=False)}\n\n"
+            fallback = _build_deterministic_fallback(
+                user_message=payload.message,
+                guided_state_summary=guided_state_summary,
+                reason=limited_reason or "llm_unavailable",
             )
-            yield f"data: {error_data}\n\n"
+            for token in _chunk_text(fallback):
+                full_response += token
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+
+        save_chat_to_db(payload.message, current_user)
+        yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-def _build_chat_base_instruction() -> str:
-    return get_prompt_registry().compose_prompt("chat.coaching-orchestration")
+def _resolve_project_grounding_context(db: Session, project_id: str, user: User, message: str) -> tuple[object, str]:
+    project = get_project(db, project_id, owner_user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    document_grounding_context = build_workshop_document_grounding_context(
+        db=db,
+        project=project,
+        user_message=message,
+        profile="standard",
+    )
+    return project, document_grounding_context
 
 
 @router.post(
@@ -197,11 +262,11 @@ def update_draft_route(
     project = get_project(db, project_id, owner_user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    
+
     draft = get_draft(db, draft_id)
     if not draft or draft.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found.")
-    
+
     updated = update_draft(db, draft_id, payload)
     return DraftRead.model_validate(updated)
 
@@ -214,15 +279,12 @@ async def handle_chat_stream_route(
     current_user: User = Depends(get_current_user),
     _: None = Depends(rate_limit(bucket="project_draft_chat", limit=30, window_seconds=300, guest_limit=20)),
 ) -> StreamingResponse:
-    project = get_project(db, project_id, owner_user_id=current_user.id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-
     _validate_reference_limit(payload.reference_materials)
-    document_grounding_context = build_workshop_document_grounding_context(
+    project, document_grounding_context = _resolve_project_grounding_context(
         db=db,
-        project=project,
-        user_message=payload.message,
+        project_id=project_id,
+        user=current_user,
+        message=payload.message,
     )
     return _build_streaming_response(
         payload=payload,
@@ -246,19 +308,15 @@ async def handle_drafts_chat_stream_route(
 
     project = None
     target_major: str | None = None
-    if payload.project_id:
-        project = get_project(db, payload.project_id, owner_user_id=current_user.id)
-        if not project:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-        target_major = project.target_major
-
     document_grounding_context = None
-    if project is not None:
-        document_grounding_context = build_workshop_document_grounding_context(
+    if payload.project_id:
+        project, document_grounding_context = _resolve_project_grounding_context(
             db=db,
-            project=project,
-            user_message=payload.message,
+            project_id=payload.project_id,
+            user=current_user,
+            message=payload.message,
         )
+        target_major = project.target_major
 
     return _build_streaming_response(
         payload=payload,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -64,3 +64,88 @@ class DiagnosisRunResponse(BaseModel):
     response_trace_id: str | None = None
     async_job_id: str | None = None
     async_job_status: str | None = None
+
+
+DiagnosisReportMode = Literal["compact", "premium_10p"]
+DiagnosisReportStatus = Literal["READY", "FAILED"]
+
+
+class ConsultantDiagnosisEvidenceItem(BaseModel):
+    source_label: str
+    page_number: int | None = None
+    excerpt: str
+    relevance_score: float = Field(ge=0.0)
+    support_status: Literal["verified", "probable", "needs_verification"] = "verified"
+
+
+class ConsultantDiagnosisScoreBlock(BaseModel):
+    key: str
+    label: str
+    score: int = Field(ge=0, le=100)
+    band: str
+    interpretation: str
+    uncertainty_note: str | None = None
+
+
+class ConsultantDiagnosisRoadmapItem(BaseModel):
+    horizon: Literal["1_month", "3_months", "6_months"]
+    title: str
+    actions: list[str] = Field(default_factory=list)
+    success_signals: list[str] = Field(default_factory=list)
+    caution_notes: list[str] = Field(default_factory=list)
+
+
+class ConsultantDiagnosisSection(BaseModel):
+    id: str
+    title: str
+    subtitle: str | None = None
+    body_markdown: str
+    evidence_items: list[ConsultantDiagnosisEvidenceItem] = Field(default_factory=list)
+    unsupported_claims: list[str] = Field(default_factory=list)
+    additional_verification_needed: list[str] = Field(default_factory=list)
+
+
+class ConsultantDiagnosisReport(BaseModel):
+    diagnosis_run_id: str
+    project_id: str
+    report_mode: DiagnosisReportMode
+    template_id: str
+    title: str
+    subtitle: str
+    student_target_context: str
+    generated_at: datetime
+    score_blocks: list[ConsultantDiagnosisScoreBlock] = Field(default_factory=list)
+    sections: list[ConsultantDiagnosisSection] = Field(default_factory=list)
+    roadmap: list[ConsultantDiagnosisRoadmapItem] = Field(default_factory=list)
+    citations: list[ConsultantDiagnosisEvidenceItem] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    final_consultant_memo: str
+    appendix_notes: list[str] = Field(default_factory=list)
+    render_hints: dict[str, Any] = Field(default_factory=dict)
+
+
+class DiagnosisReportCreateRequest(BaseModel):
+    report_mode: DiagnosisReportMode = "premium_10p"
+    template_id: str | None = Field(default=None, min_length=1, max_length=80)
+    include_appendix: bool = True
+    include_citations: bool = True
+    force_regenerate: bool = False
+
+
+class ConsultantDiagnosisArtifactResponse(BaseModel):
+    id: str
+    diagnosis_run_id: str
+    project_id: str
+    report_mode: DiagnosisReportMode
+    template_id: str
+    export_format: Literal["pdf"]
+    include_appendix: bool
+    include_citations: bool
+    status: DiagnosisReportStatus
+    version: int
+    generated_file_path: str | None = None
+    download_url: str | None = None
+    error_message: str | None = None
+    payload: ConsultantDiagnosisReport | None = None
+    created_at: datetime
+    updated_at: datetime

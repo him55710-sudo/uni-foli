@@ -116,3 +116,38 @@ def test_missing_diagnosis_data_returns_limited_context_note(monkeypatch) -> Non
     assert note
     assert ("제한" in note) or ("부족" in note)
     assert len(payload["suggestions"]) == 3
+
+
+def test_topic_selection_returns_richer_starter_draft(monkeypatch) -> None:
+    monkeypatch.setattr("polio_api.services.guided_chat_service.get_llm_client", lambda: _FakeGuidedChatLLM(suggestion_count=3))
+
+    headers = auth_headers("guided-chat-selection-user")
+    with TestClient(app) as client:
+        project_id = _create_project(client, headers)
+        suggestions_response = client.post(
+            "/api/v1/guided-chat/topic-suggestions",
+            headers=headers,
+            json={"project_id": project_id, "subject": "수학"},
+        )
+        assert suggestions_response.status_code == 200
+        suggestions_payload = suggestions_response.json()
+        selected_id = suggestions_payload["suggestions"][0]["id"]
+
+        selection_response = client.post(
+            "/api/v1/guided-chat/topic-selection",
+            headers=headers,
+            json={
+                "project_id": project_id,
+                "selected_topic_id": selected_id,
+                "subject": "수학",
+                "suggestions": suggestions_payload["suggestions"],
+            },
+        )
+
+    assert selection_response.status_code == 200
+    payload = selection_response.json()
+    starter = payload["starter_draft_markdown"]
+    assert "## 증거-안전 작성 경계" in starter
+    assert "## Evidence Memo" in starter
+    assert "## 도입 문단(초안)" in starter
+    assert isinstance(payload.get("state_summary"), dict)

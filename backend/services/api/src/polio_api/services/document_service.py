@@ -13,7 +13,15 @@ from polio_api.db.models.document_chunk import DocumentChunk
 from polio_api.db.models.draft import Draft
 from polio_api.db.models.parsed_document import ParsedDocument
 from polio_api.db.models.upload_asset import UploadAsset
-from polio_api.services.pdf_analysis_service import build_pdf_analysis_metadata
+from polio_api.services.pdf_analysis_service import (
+    build_pdf_analysis_metadata,
+    build_student_record_structure_metadata,
+)
+from polio_api.services.student_record_pipeline_service import StudentRecordPipelineService
+import pdfplumber
+import logging
+
+logger = logging.getLogger(__name__)
 from polio_domain.enums import (
     DocumentMaskingStatus,
     DocumentProcessingStatus,
@@ -210,9 +218,44 @@ def ingest_upload_asset(
             "parse_confidence": parsed.parse_confidence,
             "needs_review": parsed.needs_review,
         }
+
+        # Advanced Student Record Parsing Pipeline
+        is_student_record_candidate = (
+            parsed.parser_name == "neis" or 
+            "학교생활기록부" in (parsed.content_text or "") or 
+            "생활기록부" in (parsed.content_text or "")
+        )
+        if is_student_record_candidate and source_path.suffix.lower() == ".pdf":
+            try:
+                logger.info(f"Applying advanced semantic parsing pipeline to student record: {upload_asset.original_filename}")
+                with pdfplumber.open(source_path) as pdf:
+                    advanced_pipeline = StudentRecordPipelineService()
+                    # Run the pipeline synchronously as it is now refactored to be sync
+                    advanced_artifact = advanced_pipeline.process_document(pdf.pages, parsed.content_text)
+                    
+                    # Replace the existing analysis_artifact with our highly structured one
+                    document.parse_metadata["analysis_artifact"] = advanced_artifact
+                    
+                    # Update confidence and review flags if provided by quality service
+                    quality_report = advanced_artifact.get("quality_report", {})
+                    if quality_report:
+                        document.parse_metadata["parse_confidence"] = quality_report.get("overall_score", document.parse_metadata.get("parse_confidence"))
+                        if quality_report.get("missing_critical_sections"):
+                            document.parse_metadata["needs_review"] = True
+                            
+                logger.info("Advanced semantic parsing complete.")
+            except Exception as e:
+                logger.warning(f"Advanced pipeline failed for {upload_asset.original_filename}, falling back: {str(e)}")
         pdf_analysis = build_pdf_analysis_metadata(parsed)
         if pdf_analysis:
             document.parse_metadata["pdf_analysis"] = pdf_analysis
+        student_record_structure = build_student_record_structure_metadata(
+            parsed=parsed,
+            pdf_analysis=pdf_analysis,
+            analysis_artifact=document.parse_metadata.get("analysis_artifact"),
+        )
+        if student_record_structure:
+            document.parse_metadata["student_record_structure"] = student_record_structure
         document.last_error = None
         if parsed.processing_status in {
             DocumentProcessingStatus.PARTIAL.value,

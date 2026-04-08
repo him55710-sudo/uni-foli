@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from polio_api.db.models.async_job import AsyncJob
     from polio_api.db.models.research_document import ResearchDocument
     from polio_api.db.models.research_chunk import ResearchChunk
+    from polio_api.db.models.diagnosis_report_artifact import DiagnosisReportArtifact
 
 
 def utc_now() -> datetime:
@@ -69,6 +70,10 @@ class Project(Base):
         cascade="all, delete-orphan",
     )
     diagnoses: Mapped[list["DiagnosisRun"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    diagnosis_report_artifacts: Mapped[list["DiagnosisReportArtifact"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
     )

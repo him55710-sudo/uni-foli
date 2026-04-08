@@ -54,6 +54,12 @@ OLLAMA_MODEL=gemma4
 OLLAMA_NUM_CTX=4096
 OLLAMA_NUM_PREDICT=768
 OLLAMA_TIMEOUT_SECONDS=120
+OLLAMA_FAST_MODEL=
+OLLAMA_STANDARD_MODEL=
+OLLAMA_RENDER_MODEL=
+OLLAMA_FAST_TIMEOUT_SECONDS=45
+OLLAMA_STANDARD_TIMEOUT_SECONDS=120
+OLLAMA_RENDER_TIMEOUT_SECONDS=180
 PDF_ANALYSIS_LLM_ENABLED=true
 PDF_ANALYSIS_LLM_PROVIDER=ollama
 PDF_ANALYSIS_OLLAMA_MODEL=gemma4
@@ -63,6 +69,7 @@ PDF_ANALYSIS_TIMEOUT_SECONDS=60
 Notes:
 - In local mode, if `GEMINI_API_KEY` is empty, backend automatically falls back to Ollama.
 - In production mode, missing Gemini key is still treated as an error unless provider is explicitly configured.
+- In production with `LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL` must be a remote reachable endpoint (not localhost).
 
 ## 4. Recommended first workflow
 

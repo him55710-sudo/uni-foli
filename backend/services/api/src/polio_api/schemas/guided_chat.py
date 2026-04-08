@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -11,6 +13,9 @@ class GuidedChatStartResponse(BaseModel):
     greeting: str
     project_id: str | None = None
     evidence_gap_note: str | None = None
+    limited_mode: bool | None = None
+    limited_reason: str | None = None
+    state_summary: dict[str, Any] | None = None
 
 
 class TopicSuggestion(BaseModel):
@@ -33,6 +38,9 @@ class TopicSuggestionResponse(BaseModel):
     subject: str
     suggestions: list[TopicSuggestion]
     evidence_gap_note: str | None = None
+    limited_mode: bool | None = None
+    limited_reason: str | None = None
+    state_summary: dict[str, Any] | None = None
 
 
 class PageRangeOption(BaseModel):
@@ -61,6 +69,9 @@ class TopicSelectionResponse(BaseModel):
     recommended_outline: list[OutlineSection]
     starter_draft_markdown: str
     guidance_message: str
+    limited_mode: bool | None = None
+    limited_reason: str | None = None
+    state_summary: dict[str, Any] | None = None
 
 
 class GuidedChatStatePayload(BaseModel):
@@ -70,3 +81,6 @@ class GuidedChatStatePayload(BaseModel):
     recommended_page_ranges: list[PageRangeOption] = Field(default_factory=list)
     recommended_outline: list[OutlineSection] = Field(default_factory=list)
     starter_draft_markdown: str | None = None
+    state_summary: dict[str, Any] = Field(default_factory=dict)
+    limited_mode: bool | None = None
+    limited_reason: str | None = None

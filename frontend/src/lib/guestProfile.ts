@@ -4,8 +4,8 @@ import type {
   UserTargetsUpdateRequest,
 } from '@shared-contracts';
 
-export const GUEST_SESSION_KEY = 'polio_guest_session';
-const GUEST_PROFILE_STORAGE_KEY = 'polio_guest_profile_v1';
+export const GUEST_SESSION_KEY = 'uni_foli_guest_session';
+const GUEST_PROFILE_STORAGE_KEY = 'uni_foli_guest_profile_v1';
 
 function isBrowser() {
   return typeof window !== 'undefined';

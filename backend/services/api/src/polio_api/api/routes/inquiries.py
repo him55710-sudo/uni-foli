@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_db
@@ -17,9 +17,10 @@ router = APIRouter()
 )
 def create_inquiry_route(
     payload: InquiryCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> InquiryCreateResponse:
-    inquiry = create_inquiry(db, payload)
+    inquiry = create_inquiry(db, payload, background_tasks)
     return InquiryCreateResponse(
         id=inquiry.id,
         inquiry_type=inquiry.inquiry_type,

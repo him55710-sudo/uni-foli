@@ -13,6 +13,7 @@ import { api, shouldUseSynchronousApiJobs } from '../lib/api';
 import { getApiErrorMessage } from '../lib/apiError';
 import { DiagnosisEvidencePanel } from '../components/DiagnosisEvidencePanel';
 import { DiagnosisGuidedChoicePanel } from '../components/DiagnosisGuidedChoicePanel';
+import { DiagnosisReportPanel } from '../components/DiagnosisReportPanel';
 import { ClaimGroundingPanel } from '../components/ClaimGroundingPanel';
 import {
   type AsyncJobRead,
@@ -197,7 +198,7 @@ export function Diagnosis() {
 
   const triggerInlineDiagnosisProcessing = useCallback(
     (jobId: string) => {
-      if (!jobId || useSynchronousApiJobs) return;
+      if (!jobId) return;
       const kickoffCache = diagnosisProcessKickoffRef.current;
       if (kickoffCache.has(jobId)) return;
       kickoffCache.add(jobId);
@@ -211,12 +212,12 @@ export function Diagnosis() {
           kickoffCache.delete(jobId);
         });
     },
-    [useSynchronousApiJobs],
+    [],
   );
 
   const triggerInlineParseProcessing = useCallback(
     (document: DiagnosisDocumentStatus | null | undefined) => {
-      if (!document || useSynchronousApiJobs) return;
+      if (!document) return;
 
       const jobId = document.latest_async_job_id;
       const jobStatus = (document.latest_async_job_status || '').toLowerCase();
@@ -232,7 +233,7 @@ export function Diagnosis() {
           kickoffCache.delete(jobId);
         });
     },
-    [useSynchronousApiJobs],
+    [],
   );
 
   useEffect(() => {
@@ -1201,6 +1202,10 @@ export function Diagnosis() {
                 diagnosis={diagnosisResult}
                 useSynchronousApiJobs={useSynchronousApiJobs}
               />
+            ) : null}
+
+            {diagnosisRun?.id ? (
+              <DiagnosisReportPanel diagnosisRunId={diagnosisRun.id} />
             ) : null}
 
             {showAdvancedDetails ? (

@@ -78,6 +78,57 @@
         "backend/services/api/src/polio_api/services/diagnosis_service.py"
       ]
     },
+    "diagnosis.consultant-report-orchestration": {
+      "category": "diagnosis",
+      "version": "1.0.0",
+      "relative_path": "diagnosis/consultant-report-orchestration-v1/prompt.md",
+      "description": "Consultant-grade diagnosis report orchestration prompt for premium narrative sections.",
+      "output_mode": "json",
+      "wiring_status": "wired",
+      "dependencies": [
+        "system.guardrails.admissions-authenticity"
+      ],
+      "runtime_targets": [
+        "backend/services/api/src/polio_api/services/diagnosis_report_service.py"
+      ]
+    },
+    "diagnosis.student-record-structure-extraction": {
+      "category": "diagnosis",
+      "version": "1.0.0",
+      "relative_path": "diagnosis/student-record-structure-extraction-v1/prompt.md",
+      "description": "Contract prompt for conservative student-record structure extraction from parsed PDF metadata.",
+      "output_mode": "json",
+      "wiring_status": "registered",
+      "dependencies": [],
+      "runtime_targets": [
+        "backend/services/api/src/polio_api/services/pdf_analysis_service.py",
+        "backend/services/api/src/polio_api/services/document_service.py"
+      ]
+    },
+    "diagnosis.executive-summary-writer": {
+      "category": "diagnosis",
+      "version": "1.0.0",
+      "relative_path": "diagnosis/executive-summary-writer-v1/prompt.md",
+      "description": "Writes premium consultant-style executive summary text for diagnosis artifacts.",
+      "output_mode": "json",
+      "wiring_status": "wired",
+      "dependencies": [],
+      "runtime_targets": [
+        "backend/services/api/src/polio_api/services/diagnosis_report_service.py"
+      ]
+    },
+    "diagnosis.roadmap-generator": {
+      "category": "diagnosis",
+      "version": "1.0.0",
+      "relative_path": "diagnosis/roadmap-generator-v1/prompt.md",
+      "description": "Roadmap writing guidance for 1/3/6 month evidence-safe consultant recommendations.",
+      "output_mode": "instructions",
+      "wiring_status": "wired",
+      "dependencies": [],
+      "runtime_targets": [
+        "backend/services/api/src/polio_api/services/diagnosis_report_service.py"
+      ]
+    },
     "chat.guided-diagnosis-orchestration": {
       "category": "chat",
       "version": "1.0.0",
@@ -139,10 +190,13 @@
       "output_mode": "markdown",
       "wiring_status": "wired",
       "dependencies": [
-        "system.guardrails.admissions-authenticity"
+        "system.guardrails.admissions-authenticity",
+        "chat.guided-drafting-state",
+        "chat.fast-coaching-mode"
       ],
       "runtime_targets": [
-        "backend/services/api/src/polio_api/api/routes/drafts.py"
+        "backend/services/api/src/polio_api/api/routes/drafts.py",
+        "backend/services/api/src/polio_api/api/routes/workshops.py"
       ]
     },
     "chat.guided-report-topic-orchestration": {
@@ -153,10 +207,38 @@
       "output_mode": "json",
       "wiring_status": "wired",
       "dependencies": [
-        "system.guardrails.admissions-authenticity"
+        "system.guardrails.admissions-authenticity",
+        "chat.guided-drafting-state"
       ],
       "runtime_targets": [
         "backend/services/api/src/polio_api/services/guided_chat_service.py"
+      ]
+    },
+    "chat.guided-drafting-state": {
+      "category": "chat",
+      "version": "1.0.0",
+      "relative_path": "chat/guided-drafting-state-v1/prompt.md",
+      "description": "Compact guided drafting state contract for continuity-safe chat prompting.",
+      "output_mode": "instructions",
+      "wiring_status": "wired-shared-fragment",
+      "dependencies": [],
+      "runtime_targets": [
+        "backend/services/api/src/polio_api/api/routes/drafts.py",
+        "backend/services/api/src/polio_api/api/routes/workshops.py",
+        "backend/services/api/src/polio_api/services/guided_chat_service.py"
+      ]
+    },
+    "chat.fast-coaching-mode": {
+      "category": "chat",
+      "version": "1.0.0",
+      "relative_path": "chat/fast-coaching-mode-v1/prompt.md",
+      "description": "Fast coaching response style constraints for low-latency production chat.",
+      "output_mode": "instructions",
+      "wiring_status": "wired-shared-fragment",
+      "dependencies": [],
+      "runtime_targets": [
+        "backend/services/api/src/polio_api/api/routes/drafts.py",
+        "backend/services/api/src/polio_api/api/routes/workshops.py"
       ]
     },
     "chat.workshop-choice-copy": {

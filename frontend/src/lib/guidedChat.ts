@@ -27,6 +27,9 @@ export interface GuidedTopicSelectionResponse {
   recommended_outline: GuidedOutlineSection[];
   starter_draft_markdown: string;
   guidance_message: string;
+  limited_mode?: boolean | null;
+  limited_reason?: string | null;
+  state_summary?: Record<string, unknown> | null;
 }
 
 export interface GuidedTopicSuggestionResponse {
@@ -34,6 +37,9 @@ export interface GuidedTopicSuggestionResponse {
   subject: string;
   suggestions: GuidedTopicSuggestion[];
   evidence_gap_note: string | null;
+  limited_mode?: boolean | null;
+  limited_reason?: string | null;
+  state_summary?: Record<string, unknown> | null;
 }
 
 export interface GuidedChatUiState {

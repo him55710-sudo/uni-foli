@@ -14,7 +14,7 @@ interface UserSettings {
   notifyOnExport: boolean;
 }
 
-const SETTINGS_STORAGE_KEY = 'polio_user_settings_v1';
+const SETTINGS_STORAGE_KEY = 'uni_foli_user_settings_v1';
 const DEFAULT_SETTINGS: UserSettings = {
   autoSaveDrafts: true,
   compactView: false,
@@ -142,7 +142,7 @@ export function Settings() {
   const handleClearArchive = () => {
     const shouldClear = window.confirm('보관함에 저장된 로컬 결과물을 모두 삭제할까요?');
     if (!shouldClear) return;
-    localStorage.removeItem('polio_archive_items');
+    localStorage.removeItem('uni_foli_archive_items');
     toast.success('보관함 로컬 데이터가 삭제됐어요.');
   };
 

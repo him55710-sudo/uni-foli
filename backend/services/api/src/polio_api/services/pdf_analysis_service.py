@@ -540,3 +540,191 @@ def _resolve_pdf_analysis_model_name() -> str:
 
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def build_student_record_structure_metadata(
+    *,
+    parsed: ParsedDocumentPayload,
+    pdf_analysis: dict[str, Any] | None,
+    analysis_artifact: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if parsed.source_extension.lower() != ".pdf":
+        return None
+
+    page_items = _extract_page_items(parsed)
+    page_count = max(parsed.page_count, len(page_items), 1)
+    full_text = (parsed.content_text or "").strip()
+    compact_text = re.sub(r"\s+", " ", full_text)
+
+    section_keywords: dict[str, tuple[str, ...]] = {
+        "세특": ("세부능력", "특기사항", "교과학습발달상황", "subject_special_notes"),
+        "창체": ("창의적 체험활동", "동아리", "봉사", "자율활동", "extracurricular"),
+        "진로": ("진로", "진학", "희망학과", "career"),
+        "행동특성": ("행동특성", "종합의견", "behavior"),
+        "교과학습발달상황": ("교과학습발달상황", "성취도", "과목", "grades"),
+        "독서": ("독서", "reading"),
+    }
+
+    section_hits: dict[str, int] = {}
+    for section, keywords in section_keywords.items():
+        hits = 0
+        for page in page_items:
+            text = str(page.get("text") or "").lower()
+            if any(keyword.lower() in text for keyword in keywords):
+                hits += 1
+        if hits == 0 and compact_text:
+            lowered = compact_text.lower()
+            if any(keyword.lower() in lowered for keyword in keywords):
+                hits = 1
+        section_hits[section] = hits
+
+    max_hits = max(section_hits.values()) if section_hits else 1
+    section_density = {
+        key: round(min(1.0, (value / max_hits) if max_hits else 0.0), 3)
+        for key, value in section_hits.items()
+    }
+
+    weak_sections = [
+        section
+        for section, density in section_density.items()
+        if density <= 0.2
+    ]
+
+    timeline_patterns = (
+        r"\b[1-3]학년\b",
+        r"\b[12]학기\b",
+        r"\b20\d{2}\b",
+    )
+    timeline_signals = []
+    for pattern in timeline_patterns:
+        for match in re.findall(pattern, compact_text):
+            timeline_signals.append(str(match))
+    timeline_signals = _dedupe_list(timeline_signals, limit=10)
+
+    activity_clusters = _extract_cluster_hints(compact_text)
+    alignment_signals = _extract_alignment_hints(compact_text)
+    continuity_signals = _extract_keyword_sentences(
+        compact_text,
+        keywords=("심화", "확장", "후속", "비교", "연계", "지속"),
+        limit=5,
+    )
+    process_reflection_signals = _extract_keyword_sentences(
+        compact_text,
+        keywords=("과정", "방법", "한계", "개선", "성찰", "피드백"),
+        limit=5,
+    )
+
+    uncertain_items: list[str] = []
+    if parsed.needs_review:
+        uncertain_items.append("파싱 품질 경고가 있어 일부 섹션 분류 정확도가 낮을 수 있습니다.")
+    if page_count <= 1:
+        uncertain_items.append("페이지 수가 매우 적어 학기/연속성 추정의 신뢰도가 낮습니다.")
+    if not compact_text:
+        uncertain_items.append("추출 텍스트가 부족해 구조 추정이 제한되었습니다.")
+    if pdf_analysis and pdf_analysis.get("engine") == "fallback":
+        uncertain_items.append("PDF 요약이 heuristic fallback으로 생성되었습니다.")
+
+    if isinstance(analysis_artifact, dict):
+        canonical_data = analysis_artifact.get("canonical_data")
+        if isinstance(canonical_data, dict):
+            if canonical_data.get("grades"):
+                section_density["교과학습발달상황"] = max(section_density.get("교과학습발달상황", 0.0), 0.7)
+            if canonical_data.get("extracurricular_narratives"):
+                section_density["창체"] = max(section_density.get("창체", 0.0), 0.6)
+            if canonical_data.get("reading_activities"):
+                section_density["독서"] = max(section_density.get("독서", 0.0), 0.5)
+            if canonical_data.get("behavior_opinion"):
+                section_density["행동특성"] = max(section_density.get("행동특성", 0.0), 0.5)
+
+        quality_report = analysis_artifact.get("quality_report")
+        if isinstance(quality_report, dict):
+            missing_sections = quality_report.get("missing_critical_sections")
+            if isinstance(missing_sections, list):
+                for item in missing_sections:
+                    text = str(item).strip()
+                    if text:
+                        weak_sections.append(text)
+            score = quality_report.get("overall_score")
+            if isinstance(score, (int, float)) and float(score) < 0.6:
+                uncertain_items.append("고급 파이프라인 품질 점수가 낮아 수동 검토가 권장됩니다.")
+
+    return {
+        "major_sections": [
+            {
+                "section": key,
+                "density": value,
+                "confidence": "high" if value >= 0.6 else "medium" if value >= 0.3 else "low",
+            }
+            for key, value in section_density.items()
+        ],
+        "section_density": section_density,
+        "timeline_signals": timeline_signals,
+        "activity_clusters": activity_clusters,
+        "subject_major_alignment_signals": alignment_signals,
+        "weak_sections": _dedupe_list(weak_sections, limit=10),
+        "continuity_signals": continuity_signals,
+        "process_reflection_signals": process_reflection_signals,
+        "uncertain_items": _dedupe_list(uncertain_items, limit=8),
+    }
+
+
+def _extract_cluster_hints(text: str) -> list[str]:
+    cluster_keywords: dict[str, tuple[str, ...]] = {
+        "탐구/실험": ("탐구", "실험", "가설", "검증"),
+        "데이터 분석": ("데이터", "통계", "분석", "지표"),
+        "프로젝트/제안": ("프로젝트", "설계", "제안", "기획"),
+        "공동체/리더십": ("협업", "리더", "봉사", "공동체"),
+    }
+    found: list[str] = []
+    lowered = text.lower()
+    for label, keywords in cluster_keywords.items():
+        if any(keyword.lower() in lowered for keyword in keywords):
+            found.append(label)
+    return _dedupe_list(found, limit=6)
+
+
+def _extract_alignment_hints(text: str) -> list[str]:
+    patterns = (
+        "전공",
+        "진로",
+        "학과",
+        "관심 분야",
+        "희망",
+        "적합",
+        "연계",
+    )
+    hints = _extract_keyword_sentences(text, keywords=patterns, limit=6)
+    if not hints:
+        return ["전공 연계 문장 신호가 제한적입니다. 핵심 과목과 목표 전공 연결을 문장으로 보강하세요."]
+    return hints
+
+
+def _extract_keyword_sentences(text: str, *, keywords: tuple[str, ...], limit: int) -> list[str]:
+    if not text:
+        return []
+    sentences = re.split(r"(?<=[.!?。])\s+|\n+", text)
+    collected: list[str] = []
+    for sentence in sentences:
+        normalized = sentence.strip()
+        if len(normalized) < 8:
+            continue
+        lowered = normalized.lower()
+        if any(keyword.lower() in lowered for keyword in keywords):
+            collected.append(normalized[:180])
+        if len(collected) >= limit:
+            break
+    return _dedupe_list(collected, limit=limit)
+
+
+def _dedupe_list(items: list[str], *, limit: int) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for raw in items:
+        normalized = str(raw or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        output.append(normalized)
+        if len(output) >= limit:
+            break
+    return output

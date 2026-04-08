@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from polio_api.api.deps import get_current_user, get_db
+from polio_api.core.llm import LLMRequestError, get_llm_client, get_llm_temperature
 from polio_api.core.rate_limit import rate_limit
 from polio_api.db.models.project import Project
 from polio_api.db.models.quest import Quest
@@ -47,6 +48,10 @@ from polio_api.services.quality_control import (
 )
 from polio_api.services.project_service import get_project
 from polio_api.services.rag_service import RAGConfig
+from polio_api.services.chat_fallback_service import build_conversational_fallback
+from polio_api.services.chat_memory_service import build_workshop_memory_payload
+from polio_api.services.guided_chat_state_service import load_guided_chat_state
+from polio_api.services.prompt_registry import get_prompt_registry
 from polio_api.services.workshop_document_grounding_service import build_workshop_document_grounding_context
 from polio_api.services.workshop_render_service import SSEEvent, _parse_artifact, _sse_line, stream_render
 from polio_domain.enums import QualityLevel, TurnType, WorkshopStatus
@@ -169,9 +174,9 @@ def _build_state_response(
     artifact_payload = DraftArtifactResponse.model_validate(latest_artifact) if latest_artifact else None
 
     default_message = (
-        f"[{profile.label}] 학생 수준과 안전성을 우선으로 맥락을 모으고 있습니다."
+        f"[{profile.label}] ?숈깮 ?섏?怨??덉쟾?깆쓣 ?곗꽑?쇰줈 留λ씫??紐⑥쑝怨??덉뒿?덈떎."
         if session.status == WorkshopStatus.COLLECTING_CONTEXT.value
-        else f"[{profile.label}] 렌더링 가능한 맥락이 확보되었습니다."
+        else f"[{profile.label}] ?뚮뜑留?媛?ν븳 留λ씫???뺣낫?섏뿀?듬땲??"
     )
 
     return WorkshopStateResponse(
@@ -200,9 +205,42 @@ def _validate_quest_belongs_to_project(quest: Quest | None, project_id: str) -> 
         )
 
 
+def _chunk_text(text: str, chunk_size: int = 80) -> list[str]:
+    if not text:
+        return []
+    return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
+
+
+def _build_workshop_fallback_text(*, user_message: str, reason: str, memory_summary: dict[str, object]) -> str:
+    return build_conversational_fallback(
+        user_message=user_message,
+        reason=reason,
+        summary=memory_summary,
+    )
+
+
 @router.get("/quality-levels", response_model=list[QualityLevelInfo])
 def list_quality_levels_route() -> list[QualityLevelInfo]:
     return [QualityLevelInfo.model_validate(item) for item in list_quality_level_info()]
+
+
+@router.get("", response_model=list[WorkshopSessionResponse])
+def list_workshops_route(
+    project_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[WorkshopSessionResponse]:
+    stmt = (
+        select(WorkshopSession)
+        .join(Project, Project.id == WorkshopSession.project_id)
+        .options(joinedload(WorkshopSession.turns), joinedload(WorkshopSession.pinned_references))
+        .where(Project.owner_user_id == current_user.id)
+        .order_by(WorkshopSession.updated_at.desc())
+    )
+    if project_id:
+        stmt = stmt.where(WorkshopSession.project_id == project_id)
+    sessions = db.execute(stmt).unique().scalars().all()
+    return [WorkshopSessionResponse.model_validate(item) for item in sessions]
 
 
 @router.post("", response_model=WorkshopStateResponse, status_code=status.HTTP_201_CREATED)
@@ -237,7 +275,7 @@ def create_workshop_route(
     return _build_state_response(
         session=loaded_session,
         db=db,
-        message=f"[{profile.label}] 어떤 방식으로 시작할지 고르면, 그 수준에 맞는 안전한 워크샵 흐름으로 이어집니다.",
+        message=f"[{profile.label}] ?대뼡 諛⑹떇?쇰줈 ?쒖옉?좎? 怨좊Ⅴ硫? 洹??섏???留욌뒗 ?덉쟾???뚰겕???먮쫫?쇰줈 ?댁뼱吏묐땲??",
     )
 
 
@@ -270,7 +308,7 @@ def update_quality_level_route(
     return _build_state_response(
         session=loaded_session,
         db=db,
-        message=f"[{profile.label}] 수준을 변경했습니다. starter/follow-up 제안과 렌더 조건도 함께 조정됩니다.",
+        message=f"[{profile.label}] ?섏???蹂寃쏀뻽?듬땲?? starter/follow-up ?쒖븞怨??뚮뜑 議곌굔???④퍡 議곗젙?⑸땲??",
     )
 
 @router.put("/{workshop_id}/drafts/latest", response_model=dict)
@@ -338,7 +376,7 @@ def update_visual_approval_route(
 
     db.commit()
     db.refresh(artifact)
-    return _build_state_response(session=session, db=db, message="시각 자료의 승인 상태를 업데이트했습니다.")
+    return _build_state_response(session=session, db=db, message="?쒓컖 ?먮즺???뱀씤 ?곹깭瑜??낅뜲?댄듃?덉뒿?덈떎.")
 
 
 @router.post("/{workshop_id}/artifacts/{artifact_id}/visuals/{visual_id}/replace", response_model=WorkshopStateResponse)
@@ -389,7 +427,7 @@ def replace_visual_route(
 
     db.commit()
     db.refresh(artifact)
-    return _build_state_response(session=session, db=db, message="새로운 시각적 대안을 생성했습니다.")
+    return _build_state_response(session=session, db=db, message="?덈줈???쒓컖????덉쓣 ?앹꽦?덉뒿?덈떎.")
 
 
 @router.post("/{workshop_id}/choices", response_model=WorkshopStateResponse)
@@ -436,14 +474,9 @@ async def chat_stream_route(
     current_user: User = Depends(get_current_user),
     _: None = Depends(rate_limit(bucket="workshop_chat", limit=30, window_seconds=300)),
 ) -> StreamingResponse:
-    from polio_api.core.llm import get_llm_client
-    from polio_api.services.chat_memory_service import build_workshop_memory_context
-    from polio_api.services.prompt_registry import get_prompt_registry
-    
     session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     project, quest = _get_project_and_quest(db, session)
-    
-    # Persist the user turn immediately
+
     user_turn = WorkshopTurn(
         session_id=session.id,
         turn_type=TurnType.MESSAGE.value,
@@ -452,53 +485,83 @@ async def chat_stream_route(
         response=None,
     )
     db.add(user_turn)
-    # Increase context score based on basic length detection
     session.context_score += 12 if len(payload.message.strip()) < 100 else 16
     _sync_session_status(session)
     db.commit()
 
-    # Build the grounded memory context
-    memory_context = build_workshop_memory_context(session, project, quest)
+    guided_state = load_guided_chat_state(db, project.id) if project else None
+    memory_context, memory_summary = build_workshop_memory_payload(
+        session,
+        project,
+        quest,
+        max_recent_turns=5,
+        guided_state=guided_state,
+    )
     document_grounding_context = build_workshop_document_grounding_context(
         db=db,
         project=project,
         user_message=payload.message.strip(),
+        profile="standard",
     )
     base_instruction = get_prompt_registry().compose_prompt("chat.coaching-orchestration")
-    full_instruction = f"{memory_context}\n\n{document_grounding_context}\n\n[지침]\n{base_instruction}"
-
-    llm = get_llm_client()
+    full_instruction = (
+        f"{memory_context}\n\n"
+        f"{document_grounding_context}\n\n"
+        f"{base_instruction}"
+    )
 
     async def event_stream() -> AsyncIterator[str]:
         full_response = ""
+        limited_mode = False
+        limited_reason: str | None = None
+        profile = "standard"
+
+        yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': False, 'limited_reason': None}}, ensure_ascii=False)}\n\n"
+
         try:
+            llm = get_llm_client(profile="standard")
             async for token in llm.stream_chat(
                 prompt=f"[현재 사용자 메시지]\n{payload.message.strip()}",
                 system_instruction=full_instruction,
-                temperature=0.5,
+                temperature=get_llm_temperature(profile="standard"),
             ):
                 full_response += token
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+        except LLMRequestError as exc:
+            limited_mode = True
+            limited_reason = exc.limited_reason
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Workshop chat stream switched to fallback: %s", repr(exc))
+            limited_mode = True
+            limited_reason = "llm_unavailable"
 
-            # Persist assistant answer
-            assistant_turn = WorkshopTurn(
-                session_id=session.id,
-                turn_type=TurnType.MESSAGE.value,
-                speaker_role="assistant",
-                query=full_response.strip(),
-                response=None,
+        if limited_mode:
+            yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': True, 'limited_reason': limited_reason}}, ensure_ascii=False)}\n\n"
+            fallback = _build_workshop_fallback_text(
+                user_message=payload.message.strip(),
+                reason=limited_reason or "llm_unavailable",
+                memory_summary=memory_summary,
             )
-            db.add(assistant_turn)
-            db.commit()
+            for token in _chunk_text(fallback):
+                full_response += token
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
 
-            yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            logger.error(f"Workshop chat stream failed: {e}")
-            error_data = json.dumps(
-                {"error": "AI 생성 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."},
-                ensure_ascii=False,
-            )
-            yield f"data: {error_data}\n\n"
+        assistant_turn = WorkshopTurn(
+            session_id=session.id,
+            turn_type=TurnType.MESSAGE.value,
+            speaker_role="assistant",
+            query=full_response.strip(),
+            response=None,
+            action_payload={
+                "limited_mode": limited_mode,
+                "limited_reason": limited_reason,
+                "memory_summary": memory_summary,
+            },
+        )
+        db.add(assistant_turn)
+        db.commit()
+
+        yield f"data: {json.dumps({'status': 'DONE'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -529,7 +592,7 @@ def pin_reference_route(
     return _build_state_response(
         session=loaded_session,
         db=db,
-        message="참고자료를 고정했습니다. 현재 품질 수준의 참고자료 사용 강도에 맞춰 렌더링에 반영됩니다.",
+        message="李멸퀬?먮즺瑜?怨좎젙?덉뒿?덈떎. ?꾩옱 ?덉쭏 ?섏???李멸퀬?먮즺 ?ъ슜 媛뺣룄??留욎떠 ?뚮뜑留곸뿉 諛섏쁺?⑸땲??",
     )
 
 
@@ -574,7 +637,7 @@ def trigger_render(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "CONTEXT_INSUFFICIENT",
-                "message": "현재 품질 수준 기준으로 아직 렌더링에 필요한 맥락이 부족합니다.",
+                "message": "?꾩옱 ?덉쭏 ?섏? 湲곗??쇰줈 ?꾩쭅 ?뚮뜑留곸뿉 ?꾩슂??留λ씫??遺議깊빀?덈떎.",
                 **requirements,
             },
         )
@@ -733,7 +796,7 @@ async def sse_events(
                 full_session.status = WorkshopStatus.DONE.value
             elif artifact_db is not None:
                 artifact_db.render_status = "failed"
-                artifact_db.error_message = "렌더링 결과를 안전하게 파싱하지 못했습니다."
+                artifact_db.error_message = "?뚮뜑留?寃곌낵瑜??덉쟾?섍쾶 ?뚯떛?섏? 紐삵뻽?듬땲??"
                 full_session.status = WorkshopStatus.COLLECTING_CONTEXT.value
 
             full_session.stream_token = None
@@ -745,3 +808,4 @@ async def sse_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+

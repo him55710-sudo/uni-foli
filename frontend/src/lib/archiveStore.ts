@@ -7,7 +7,7 @@ export interface ArchiveItem {
   contentMarkdown: string;
 }
 
-const STORAGE_KEY = 'polio_archive_items';
+const STORAGE_KEY = 'uni_foli_archive_items';
 
 function readItems(): ArchiveItem[] {
   try {

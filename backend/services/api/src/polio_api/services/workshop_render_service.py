@@ -4,7 +4,7 @@ import json
 from typing import Any, AsyncIterator
 
 from polio_api.core.config import get_settings
-from polio_api.core.llm import get_llm_client
+from polio_api.core.llm import get_llm_client, get_llm_temperature
 
 from polio_api.services.quality_control import (
     build_quality_control_metadata,
@@ -355,12 +355,12 @@ async def _generate_with_llm(
     quality_level: str,
 ) -> AsyncIterator[str]:
     profile = get_quality_profile(quality_level)
-    llm = get_llm_client()
+    llm = get_llm_client(profile="render")
     system_instruction = _build_render_system_instruction(quality_level=profile.level)
     async for token in llm.stream_chat(
         prompt=prompt,
         system_instruction=system_instruction,
-        temperature=profile.temperature,
+        temperature=max(profile.temperature, get_llm_temperature(profile="render")),
     ):
         yield token
 

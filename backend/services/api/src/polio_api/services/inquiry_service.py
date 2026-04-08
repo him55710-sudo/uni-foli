@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from polio_api.core.config import Settings, get_settings
@@ -26,7 +27,7 @@ _SENSITIVE_PATTERN = re.compile(
 )
 
 
-def create_inquiry(db: Session, payload: InquiryCreate) -> Inquiry:
+def create_inquiry(db: Session, payload: InquiryCreate, background_tasks: BackgroundTasks | None = None) -> Inquiry:
     inquiry = Inquiry(
         inquiry_type=payload.inquiry_type,
         status="received",
@@ -45,8 +46,12 @@ def create_inquiry(db: Session, payload: InquiryCreate) -> Inquiry:
     db.commit()
     db.refresh(inquiry)
     
-    # Notify via email asynchronously so it doesn't block the API response
-    threading.Thread(target=_send_email_notification_safe, args=(payload,), daemon=True).start()
+    # Notify via email asynchronously
+    if background_tasks:
+        background_tasks.add_task(_send_email_notification_safe, payload)
+    else:
+        # Fallback to threading if BackgroundTasks is not available (e.g. in some tests or legacy calls)
+        threading.Thread(target=_send_email_notification_safe, args=(payload,), daemon=True).start()
     
     return inquiry
 
@@ -85,7 +90,11 @@ def _build_inquiry_email_message(*, payload: InquiryCreate, from_email: str, to_
     msg["From"] = from_email
     msg["To"] = to_email
     msg["Reply-To"] = payload.email
-    msg["Subject"] = f"[{payload.inquiry_type.upper()}] 새 문의가 접수되었습니다: {payload.name or '익명'}"
+    
+    # Explicitly encode subject to handle non-ASCII (Korean) characters safely
+    from email.header import Header
+    subject_text = f"[{payload.inquiry_type.upper()}] 새 문의가 접수되었습니다: {payload.name or '익명'}"
+    msg["Subject"] = Header(subject_text, "utf-8").encode()
 
     body = f"""유형: {payload.inquiry_type}
 카테고리: {payload.inquiry_category or '-'}

@@ -11,6 +11,7 @@ export const DIAGNOSIS_GAP_AXIS_VALUES = [
 export const DIAGNOSIS_AXIS_SEVERITY_VALUES = ['strong', 'watch', 'weak'] as const;
 export const DIAGNOSIS_DIRECTION_COMPLEXITY_VALUES = ['lighter', 'balanced', 'deeper'] as const;
 export const DIAGNOSIS_EXPORT_FORMAT_VALUES = ['pdf', 'pptx', 'hwpx'] as const;
+export const DIAGNOSIS_REPORT_MODE_VALUES = ['compact', 'premium_10p'] as const;
 export const DIAGNOSIS_ADMISSION_AXIS_VALUES = [
   'major_alignment',
   'inquiry_continuity',
@@ -26,6 +27,7 @@ export type DiagnosisGapAxisKey = (typeof DIAGNOSIS_GAP_AXIS_VALUES)[number];
 export type DiagnosisAxisSeverity = (typeof DIAGNOSIS_AXIS_SEVERITY_VALUES)[number];
 export type DiagnosisDirectionComplexity = (typeof DIAGNOSIS_DIRECTION_COMPLEXITY_VALUES)[number];
 export type DiagnosisExportFormat = (typeof DIAGNOSIS_EXPORT_FORMAT_VALUES)[number];
+export type DiagnosisReportMode = (typeof DIAGNOSIS_REPORT_MODE_VALUES)[number];
 export type DiagnosisAdmissionAxisKey = (typeof DIAGNOSIS_ADMISSION_AXIS_VALUES)[number];
 export type DiagnosisAxisPrioritySeverity = 'low' | 'medium' | 'high';
 
@@ -291,6 +293,87 @@ export interface DiagnosisRunResponse {
   response_trace_id: string | null;
   async_job_id: string | null;
   async_job_status: string | null;
+}
+
+export interface ConsultantDiagnosisEvidenceItem {
+  source_label: string;
+  page_number?: number | null;
+  excerpt: string;
+  relevance_score: number;
+  support_status: 'verified' | 'probable' | 'needs_verification';
+}
+
+export interface ConsultantDiagnosisScoreBlock {
+  key: string;
+  label: string;
+  score: number;
+  band: string;
+  interpretation: string;
+  uncertainty_note?: string | null;
+}
+
+export interface ConsultantDiagnosisRoadmapItem {
+  horizon: '1_month' | '3_months' | '6_months';
+  title: string;
+  actions: string[];
+  success_signals: string[];
+  caution_notes: string[];
+}
+
+export interface ConsultantDiagnosisSection {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  body_markdown: string;
+  evidence_items: ConsultantDiagnosisEvidenceItem[];
+  unsupported_claims: string[];
+  additional_verification_needed: string[];
+}
+
+export interface ConsultantDiagnosisReport {
+  diagnosis_run_id: string;
+  project_id: string;
+  report_mode: DiagnosisReportMode;
+  template_id: string;
+  title: string;
+  subtitle: string;
+  student_target_context: string;
+  generated_at: string;
+  score_blocks: ConsultantDiagnosisScoreBlock[];
+  sections: ConsultantDiagnosisSection[];
+  roadmap: ConsultantDiagnosisRoadmapItem[];
+  citations: ConsultantDiagnosisEvidenceItem[];
+  uncertainty_notes: string[];
+  final_consultant_memo: string;
+  appendix_notes: string[];
+  render_hints: Record<string, unknown>;
+}
+
+export interface DiagnosisReportCreateRequest {
+  report_mode?: DiagnosisReportMode;
+  template_id?: string | null;
+  include_appendix?: boolean;
+  include_citations?: boolean;
+  force_regenerate?: boolean;
+}
+
+export interface ConsultantDiagnosisArtifactResponse {
+  id: string;
+  diagnosis_run_id: string;
+  project_id: string;
+  report_mode: DiagnosisReportMode;
+  template_id: string;
+  export_format: 'pdf';
+  include_appendix: boolean;
+  include_citations: boolean;
+  status: 'READY' | 'FAILED';
+  version: number;
+  generated_file_path?: string | null;
+  download_url?: string | null;
+  error_message?: string | null;
+  payload?: ConsultantDiagnosisReport | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AsyncJobRead {

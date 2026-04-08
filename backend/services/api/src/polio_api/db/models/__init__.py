@@ -11,6 +11,7 @@ from polio_api.db.models.render_job import RenderJob
 from polio_api.db.models.upload_asset import UploadAsset
 from polio_api.db.models.user import User
 from polio_api.db.models.diagnosis_run import DiagnosisRun
+from polio_api.db.models.diagnosis_report_artifact import DiagnosisReportArtifact
 from polio_api.db.models.blueprint import Blueprint
 from polio_api.db.models.citation import Citation
 from polio_api.db.models.quest import Quest
@@ -25,6 +26,7 @@ __all__ = [
     "Blueprint",
     "Citation",
     "DiagnosisRun",
+    "DiagnosisReportArtifact",
     "DocumentChunk",
     "Draft",
     "Inquiry",

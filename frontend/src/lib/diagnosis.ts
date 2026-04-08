@@ -1,4 +1,4 @@
-export const DIAGNOSIS_STORAGE_KEY = 'folia_last_diagnosis';
+export const DIAGNOSIS_STORAGE_KEY = 'uni_foli_last_diagnosis';
 
 import type {
   AsyncJobRead,
@@ -10,6 +10,12 @@ import type {
 
 export type {
   AsyncJobRead,
+  ConsultantDiagnosisArtifactResponse,
+  ConsultantDiagnosisReport,
+  ConsultantDiagnosisRoadmapItem,
+  ConsultantDiagnosisSection,
+  DiagnosisReportCreateRequest,
+  DiagnosisReportMode,
   DiagnosisCitation,
   DiagnosisExportFormat,
   DiagnosisGuidedPlanRequest,

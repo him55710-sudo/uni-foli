@@ -1,16 +1,22 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from polio_api.api.deps import get_current_user, get_db
 from polio_api.core.config import get_settings
 from polio_api.core.rate_limit import rate_limit
+from polio_api.core.security import ensure_resolved_within_base
 from polio_api.db.models.diagnosis_run import DiagnosisRun
 from polio_api.db.models.project import Project
 from polio_api.db.models.response_trace import ResponseTrace
 from polio_api.db.models.user import User
 from polio_api.schemas.draft import DraftCreate
 from polio_api.schemas.diagnosis import (
+    ConsultantDiagnosisArtifactResponse,
+    DiagnosisReportCreateRequest,
     DiagnosisGuidedPlanRequest,
     DiagnosisGuidedPlanResponse,
     DiagnosisPolicyFlagRead,
@@ -25,6 +31,13 @@ from polio_api.services.async_job_service import (
     process_async_job,
 )
 from polio_api.services.diagnosis_runtime_service import build_policy_scan_text, combine_project_text
+from polio_api.services.diagnosis_report_service import (
+    build_report_artifact_response,
+    generate_consultant_report_artifact,
+    get_latest_report_artifact_for_run,
+    get_report_artifact_by_id,
+    report_artifact_file_path,
+)
 from polio_api.services.diagnosis_service import (
     DiagnosisCitation,
     attach_policy_flags_to_run,
@@ -38,6 +51,7 @@ from polio_api.services.diagnosis_service import (
 from polio_api.services.draft_service import create_draft
 from polio_api.services.project_service import get_project
 from polio_domain.enums import AsyncJobType
+from polio_shared.paths import get_export_root, resolve_project_path
 
 router = APIRouter()
 
@@ -73,6 +87,30 @@ def _build_run_response(db: Session, run: DiagnosisRun) -> DiagnosisRunResponse:
         async_job_id=async_job.id if async_job else None,
         async_job_status=async_job.status if async_job else None,
     )
+
+
+def _maybe_process_diagnosis_job_inline(db: Session, run: DiagnosisRun) -> None:
+    settings = get_settings()
+    if not settings.allow_inline_job_processing:
+        return
+    if run.status in {"COMPLETED", "FAILED"}:
+        return
+    async_job = get_latest_job_for_resource(db, resource_type="diagnosis_run", resource_id=run.id)
+    if async_job is None:
+        return
+    if async_job.status not in {"queued", "retrying"}:
+        return
+    process_async_job(db, async_job.id)
+
+
+def _resolve_report_output_path(output_path: str) -> Path:
+    try:
+        resolved = ensure_resolved_within_base(resolve_project_path(output_path), get_export_root())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis report artifact not found.") from exc
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis report artifact not found.")
+    return resolved
 
 
 @router.post("/run", response_model=DiagnosisRunResponse)
@@ -194,6 +232,137 @@ async def build_guided_plan_route(
     )
 
 
+@router.post("/{diagnosis_id}/report", response_model=ConsultantDiagnosisArtifactResponse)
+@router.post("/runs/{diagnosis_id}/report", response_model=ConsultantDiagnosisArtifactResponse)
+async def generate_consultant_report_route(
+    diagnosis_id: str,
+    payload: DiagnosisReportCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ConsultantDiagnosisArtifactResponse:
+    run = _get_run_for_user(db, diagnosis_id, current_user.id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
+    if not run.result_payload:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Diagnosis results are not ready yet.")
+
+    project = get_project(db, run.project_id, owner_user_id=current_user.id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    try:
+        artifact = await generate_consultant_report_artifact(
+            db,
+            run=run,
+            project=project,
+            report_mode=payload.report_mode,
+            template_id=payload.template_id,
+            include_appendix=payload.include_appendix,
+            include_citations=payload.include_citations,
+            force_regenerate=payload.force_regenerate,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    return build_report_artifact_response(artifact=artifact, include_payload=True)
+
+
+@router.get("/{diagnosis_id}/report", response_model=ConsultantDiagnosisArtifactResponse)
+@router.get("/runs/{diagnosis_id}/report", response_model=ConsultantDiagnosisArtifactResponse)
+async def get_consultant_report_route(
+    diagnosis_id: str,
+    artifact_id: str | None = Query(default=None),
+    report_mode: str | None = Query(default=None),
+    include_payload: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ConsultantDiagnosisArtifactResponse:
+    run = _get_run_for_user(db, diagnosis_id, current_user.id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
+
+    artifact = (
+        get_report_artifact_by_id(db, diagnosis_run_id=run.id, artifact_id=artifact_id)
+        if artifact_id
+        else get_latest_report_artifact_for_run(
+            db,
+            diagnosis_run_id=run.id,
+            report_mode=report_mode if report_mode in {"compact", "premium_10p"} else None,
+        )
+    )
+    if artifact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis report artifact not found.")
+    return build_report_artifact_response(artifact=artifact, include_payload=include_payload)
+
+
+@router.get("/{diagnosis_id}/report.pdf")
+@router.get("/runs/{diagnosis_id}/report.pdf")
+async def download_consultant_report_pdf_route(
+    diagnosis_id: str,
+    artifact_id: str | None = Query(default=None),
+    report_mode: str = Query(default="premium_10p"),
+    template_id: str | None = Query(default=None),
+    include_appendix: bool = Query(default=True),
+    include_citations: bool = Query(default=True),
+    force_regenerate: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    run = _get_run_for_user(db, diagnosis_id, current_user.id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
+    if not run.result_payload:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Diagnosis results are not ready yet.")
+
+    if report_mode not in {"compact", "premium_10p"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid report mode.")
+
+    project = get_project(db, run.project_id, owner_user_id=current_user.id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    artifact = (
+        get_report_artifact_by_id(db, diagnosis_run_id=run.id, artifact_id=artifact_id)
+        if artifact_id
+        else get_latest_report_artifact_for_run(
+            db,
+            diagnosis_run_id=run.id,
+            report_mode=report_mode,
+        )
+    )
+
+    if (
+        artifact is None
+        or force_regenerate
+        or artifact.status != "READY"
+        or bool(artifact.include_appendix) != include_appendix
+        or bool(artifact.include_citations) != include_citations
+        or (template_id is not None and artifact.template_id != template_id)
+        or report_artifact_file_path(artifact) is None
+    ):
+        artifact = await generate_consultant_report_artifact(
+            db,
+            run=run,
+            project=project,
+            report_mode=report_mode,  # type: ignore[arg-type]
+            template_id=template_id,
+            include_appendix=include_appendix,
+            include_citations=include_citations,
+            force_regenerate=force_regenerate,
+        )
+
+    output_path = report_artifact_file_path(artifact)
+    if output_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=artifact.error_message or "Diagnosis report artifact is not ready.",
+        )
+
+    resolved = _resolve_report_output_path(str(output_path))
+    filename = f"consultant-diagnosis-{run.id}-v{artifact.version}.pdf"
+    return FileResponse(path=resolved, filename=filename, media_type="application/pdf")
+
+
 @router.get("/{diagnosis_id}", response_model=DiagnosisRunResponse)
 @router.get("/runs/{diagnosis_id}", response_model=DiagnosisRunResponse)
 async def get_diagnosis_status(
@@ -204,6 +373,10 @@ async def get_diagnosis_status(
     run = _get_run_for_user(db, diagnosis_id, current_user.id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
+    _maybe_process_diagnosis_job_inline(db, run)
+    run = _get_run_for_user(db, diagnosis_id, current_user.id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
     return _build_run_response(db, run)
 @router.get("/project/{project_id}/latest", response_model=DiagnosisRunResponse)
 async def get_latest_diagnosis_for_project(
@@ -211,6 +384,21 @@ async def get_latest_diagnosis_for_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DiagnosisRunResponse:
+    run = db.scalar(
+        select(DiagnosisRun)
+        .join(Project, DiagnosisRun.project_id == Project.id)
+        .where(Project.id == project_id, Project.owner_user_id == current_user.id)
+        .order_by(DiagnosisRun.created_at.desc())
+        .limit(1)
+        .options(
+            selectinload(DiagnosisRun.policy_flags),
+            selectinload(DiagnosisRun.review_tasks),
+            selectinload(DiagnosisRun.response_traces).selectinload(ResponseTrace.citations),
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No diagnosis run found for this project.")
+    _maybe_process_diagnosis_job_inline(db, run)
     run = db.scalar(
         select(DiagnosisRun)
         .join(Project, DiagnosisRun.project_id == Project.id)

@@ -30,6 +30,7 @@ def initialize_database() -> None:
         blueprint,
         citation,
         diagnosis_run,
+        diagnosis_report_artifact,
         document_chunk,
         draft,
         inquiry,

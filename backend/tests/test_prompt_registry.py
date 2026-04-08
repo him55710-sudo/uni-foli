@@ -17,11 +17,11 @@ def test_prompt_registry_loads_known_asset() -> None:
     asset = registry.get_asset("diagnosis.grounded-analysis")
 
     assert asset.meta.category == "diagnosis"
-    assert asset.meta.version == "1.0.0"
+    assert asset.meta.version == "1.1.0"
     assert "## Prompt Body" in asset.markdown
     composed = registry.compose_prompt("diagnosis.grounded-analysis")
     assert "Never fabricate student activities" in composed
-    assert "You are Polio's diagnosis engine." in composed
+    assert "diagnosis engine and guided-choice planner" in composed
 
 
 def test_prompt_registry_missing_prompt_has_clear_error() -> None:
