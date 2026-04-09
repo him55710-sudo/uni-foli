@@ -27,7 +27,9 @@ def test_public_inquiry_submission_persists_record() -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["inquiry_type"] == "partnership"
-    assert body["status"] == "received"
+    assert body["status"] in {"delivery_queued", "delivery_skipped", "delivery_sent", "delivery_failed"}
+    assert body["delivery_status"] in {"queued", "sending", "sent", "failed", "retrying", "skipped"}
+    assert isinstance(body.get("delivery_retry_needed"), bool)
     assert body["message"]
 
     with SessionLocal() as db:
@@ -41,6 +43,9 @@ def test_public_inquiry_submission_persists_record() -> None:
         assert inquiry.extra_fields["triage"]["category"] == "partnership_request"
         assert inquiry.extra_fields["triage"]["priority"] == "medium"
         assert inquiry.extra_fields["triage"]["follow_up_questions"]
+        assert inquiry.extra_fields["delivery"]["status"] in {"queued", "sending", "sent", "failed", "skipped"}
+        assert inquiry.extra_fields["delivery"].get("async_job_id")
+        assert "history" in inquiry.extra_fields["delivery"]
 
 
 def test_inquiry_validation_rejects_missing_fields() -> None:

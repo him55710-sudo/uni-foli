@@ -70,6 +70,114 @@ export function getDiagnosisFailureMessage(
   );
 }
 
+export type DiagnosisDeliveryState =
+  | 'idle'
+  | 'diagnosing'
+  | 'diagnosis_ready'
+  | 'report_generating'
+  | 'report_ready'
+  | 'failed';
+
+export interface DiagnosisDeliveryResolution {
+  state: DiagnosisDeliveryState;
+  diagnosisFailed: boolean;
+  reportFailed: boolean;
+  diagnosisStatus: string | null;
+  reportStatus: string | null;
+  message: string | null;
+}
+
+function normalizeStatus(status: string | null | undefined): string | null {
+  const normalized = (status || '').trim();
+  return normalized ? normalized.toUpperCase() : null;
+}
+
+export function resolveDiagnosisDeliveryState(
+  run: DiagnosisRunResponse | null,
+  job: AsyncJobRead | null,
+): DiagnosisDeliveryResolution {
+  const diagnosisStatus = normalizeStatus(run?.status);
+  const reportStatus =
+    normalizeStatus(run?.report_status) ?? normalizeStatus(run?.report_async_job_status);
+  const diagnosisFailed = isDiagnosisFailed(run, job);
+  const reportFailed = reportStatus === 'FAILED';
+
+  if (!run) {
+    return {
+      state: 'idle',
+      diagnosisFailed: false,
+      reportFailed: false,
+      diagnosisStatus: null,
+      reportStatus: null,
+      message: null,
+    };
+  }
+
+  if (diagnosisFailed) {
+    return {
+      state: 'failed',
+      diagnosisFailed: true,
+      reportFailed: false,
+      diagnosisStatus,
+      reportStatus,
+      message: getDiagnosisFailureMessage(run, job),
+    };
+  }
+
+  if (!isDiagnosisComplete(run)) {
+    return {
+      state: 'diagnosing',
+      diagnosisFailed: false,
+      reportFailed: false,
+      diagnosisStatus,
+      reportStatus,
+      message: null,
+    };
+  }
+
+  if (reportStatus === 'READY') {
+    return {
+      state: 'report_ready',
+      diagnosisFailed: false,
+      reportFailed: false,
+      diagnosisStatus,
+      reportStatus,
+      message: null,
+    };
+  }
+
+  if (reportFailed) {
+    return {
+      state: 'failed',
+      diagnosisFailed: false,
+      reportFailed: true,
+      diagnosisStatus,
+      reportStatus,
+      message: run.report_error_message || 'Report generation failed. Please retry generation.',
+    };
+  }
+
+  if (reportStatus && reportStatus !== 'NOT_REQUESTED') {
+    return {
+      state: 'report_generating',
+      diagnosisFailed: false,
+      reportFailed: false,
+      diagnosisStatus,
+      reportStatus,
+      message: null,
+    };
+  }
+
+  return {
+    state: 'diagnosis_ready',
+    diagnosisFailed: false,
+    reportFailed: false,
+    diagnosisStatus,
+    reportStatus,
+    message: null,
+  };
+}
+
 export function formatAsyncJobStatus(status: string | null | undefined): string {
   if (!status) return 'Waiting';
   return status

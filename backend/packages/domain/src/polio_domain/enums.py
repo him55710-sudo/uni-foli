@@ -125,9 +125,11 @@ class AsyncJobStatus(StrEnum):
 
 class AsyncJobType(StrEnum):
     DIAGNOSIS = "diagnosis"
+    DIAGNOSIS_REPORT = "diagnosis_report"
     DOCUMENT_PARSE = "document_parse"
     RENDER = "render"
     RESEARCH_INGEST = "research_ingest"
+    INQUIRY_EMAIL = "inquiry_email"
 
 
 class VisualApprovalStatus(StrEnum):

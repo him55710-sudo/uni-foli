@@ -88,6 +88,10 @@ class InquiryCreateResponse(BaseModel):
     id: str
     inquiry_type: InquiryType
     status: str
+    delivery_status: str | None = None
+    delivery_reason: str | None = None
+    delivery_async_job_id: str | None = None
+    delivery_retry_needed: bool | None = None
     created_at: datetime
     message: str
 

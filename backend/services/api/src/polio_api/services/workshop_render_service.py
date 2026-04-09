@@ -20,6 +20,7 @@ from polio_api.services.rag_service import (
     build_rag_injection_prompt,
     extract_query_keywords,
 )
+from polio_api.services.search_provider_service import normalize_grounding_source_type
 from polio_api.services.safety_guard import SafetyFlag, run_safety_check
 from polio_api.services.visual_support_service import build_visual_support_plan
 from polio_domain.enums import QualityLevel
@@ -101,7 +102,7 @@ def _serialize_references(references: list[Any]) -> str:
     if not references:
         return "(핀된 참고자료 없음)"
     return "\n".join(
-        f"- [{getattr(reference, 'source_type', 'reference')}] {_clip(getattr(reference, 'text_content', '') or '', length=260)}"
+        f"- [{normalize_grounding_source_type(getattr(reference, 'source_type', None))}] {_clip(getattr(reference, 'text_content', '') or '', length=260)}"
         for reference in references
     )
 

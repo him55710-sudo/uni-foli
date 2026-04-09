@@ -15,6 +15,7 @@ from polio_api.db.models.parsed_document import ParsedDocument
 from polio_api.db.models.upload_asset import UploadAsset
 from polio_api.services.pdf_analysis_service import (
     build_pdf_analysis_metadata,
+    build_student_record_canonical_metadata,
     build_student_record_structure_metadata,
 )
 from polio_api.services.student_record_pipeline_service import StudentRecordPipelineService
@@ -265,10 +266,18 @@ def ingest_upload_asset(
         pdf_analysis = build_pdf_analysis_metadata(parsed)
         if pdf_analysis:
             document.parse_metadata["pdf_analysis"] = pdf_analysis
+        student_record_canonical = build_student_record_canonical_metadata(
+            parsed=parsed,
+            pdf_analysis=pdf_analysis,
+            analysis_artifact=document.parse_metadata.get("analysis_artifact"),
+        )
+        if student_record_canonical:
+            document.parse_metadata["student_record_canonical"] = student_record_canonical
         student_record_structure = build_student_record_structure_metadata(
             parsed=parsed,
             pdf_analysis=pdf_analysis,
             analysis_artifact=document.parse_metadata.get("analysis_artifact"),
+            canonical_schema=student_record_canonical,
         )
         if student_record_structure:
             document.parse_metadata["student_record_structure"] = student_record_structure

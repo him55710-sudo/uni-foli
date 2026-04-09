@@ -12,11 +12,14 @@ from polio_api.services.research_service import (
     build_research_query_text,
     search_relevant_research_chunks,
 )
+from polio_api.services.search_provider_service import (
+    normalize_grounding_source_type,
+    search_research_sources,
+    source_type_label,
+)
 from polio_api.services.scholar_service import (
     ScholarPaper,
     ScholarServiceError,
-    search_kci_papers,
-    search_semantic_scholar_papers,
 )
 
 
@@ -29,13 +32,14 @@ class RAGContext:
     injection_text: str = ""
     evidence_keys: list[str] = field(default_factory=list)
     source_label: str = "none"
+    source_limitation_note: str | None = None
     is_enhanced: bool = False
 
 
 @dataclass(slots=True)
 class RAGConfig:
     enabled: bool = False
-    source: str = "semantic"  # "semantic" | "kci" | "both" | "internal"
+    source: str = "semantic"  # "semantic" | "kci" | "both" | "live_web" | "internal"
     max_papers: int = 3
     max_internal_chunks: int = 5
     max_research_chunks: int = 4
@@ -63,10 +67,17 @@ def _format_paper_context(paper: ScholarPaper) -> str:
         authors += " et al."
     year_str = f" ({paper.year})" if paper.year else ""
     citation_str = f" [citations: {paper.citationCount}]" if paper.citationCount else ""
+    source_type = normalize_grounding_source_type(paper.source_type, fallback="academic_source")
+    source_label = paper.source_label or source_type_label(source_type)
+    provider = paper.source_provider or "unknown_provider"
+    freshness = paper.freshness_label or "unknown"
+    domain = f" / Domain: {paper.source_domain}" if paper.source_domain else ""
+    link = f"\nURL: {paper.url}" if paper.url else ""
     return (
-        f"[EXTERNAL_RESEARCH:{paper.title}{year_str}{citation_str}]\n"
+        f"[EXTERNAL_RESEARCH:{source_type}] {paper.title}{year_str}{citation_str}\n"
+        f"Source: {source_label} ({provider}, freshness={freshness}){domain}\n"
         f"Authors: {authors or 'Unknown'}\n"
-        f"Summary: {_truncate_abstract(paper.abstract)}"
+        f"Summary: {_truncate_abstract(paper.abstract)}{link}"
     )
 
 
@@ -77,7 +88,7 @@ def _format_pinned_snippets(pinned_references: list[Any]) -> list[str]:
         text = text.strip()
         if not text:
             continue
-        source_type = getattr(ref, "source_type", "manual") or "manual"
+        source_type = normalize_grounding_source_type(getattr(ref, "source_type", None))
         snippets.append(f"[STUDENT_RECORD:{source_type}] {text[:500]}")
     return snippets
 
@@ -94,8 +105,12 @@ def _format_research_chunk_context(chunk: Any) -> str:
     if document is None:
         return f"[EXTERNAL_RESEARCH]\nContent: {getattr(chunk, 'content_text', '').strip()}"
 
+    source_classification = getattr(document, "source_classification", "EXPERT_COMMENTARY")
+    source_type = "official_guideline" if source_classification == "OFFICIAL_SOURCE" else "academic_source"
+    source_label = source_type_label(source_type)
     source_bits = [
-        getattr(document, "source_classification", "EXPERT_COMMENTARY"),
+        source_label,
+        source_classification,
         f"trust={getattr(document, 'trust_rank', 0)}",
         document.title,
     ]
@@ -103,7 +118,7 @@ def _format_research_chunk_context(chunk: Any) -> str:
         source_bits.append(document.publisher)
     if document.canonical_url:
         source_bits.append(document.canonical_url)
-    return f"[EXTERNAL_RESEARCH:{' | '.join(source_bits)}]\nContent: {chunk.content_text.strip()}"
+    return f"[EXTERNAL_RESEARCH:{source_type} | {' | '.join(source_bits)}]\nContent: {chunk.content_text.strip()}"
 
 
 async def build_rag_context(
@@ -147,21 +162,21 @@ async def build_rag_context(
 
     papers: list[ScholarPaper] = []
     source_label = config.source
+    source_limitation_note: str | None = None
     if query_keywords and config.source != "internal":
         combined_query = " ".join(query_keywords[:3])
         try:
-            if config.source in ("semantic", "both"):
-                semantic_result = await search_semantic_scholar_papers(
-                    query=combined_query,
-                    limit=config.max_papers,
-                )
-                papers.extend(semantic_result.papers)
-            if config.source in ("kci", "both"):
-                kci_result = await search_kci_papers(
-                    query=combined_query,
-                    limit=config.max_papers,
-                )
-                papers.extend(kci_result.papers)
+            resolved_source = config.source if config.source in {"semantic", "kci", "both", "live_web"} else "semantic"
+            search_result = await search_research_sources(
+                query=combined_query,
+                limit=config.max_papers,
+                source=resolved_source,
+            )
+            papers.extend(search_result.papers)
+            source_label = search_result.source
+            source_limitation_note = search_result.limitation_note
+            if search_result.fallback_applied:
+                source_label = f"{search_result.source}_fallback"
         except ScholarServiceError:
             source_label = f"{config.source}_fallback"
 
@@ -225,6 +240,7 @@ async def build_rag_context(
             *(f"paper:{paper.url or _hash_query(paper.title)}" for paper in papers),
         ],
         source_label=source_label,
+        source_limitation_note=source_limitation_note,
         is_enhanced=bool(papers or internal_chunks or research_chunks or pinned_snippets),
     )
 
@@ -253,6 +269,12 @@ def build_rag_injection_prompt(rag_context: RAGContext) -> str:
     if not rag_context.is_enhanced:
         return ""
 
+    limitation_block = (
+        f"\n[Search Limitation]\n{rag_context.source_limitation_note}\n"
+        if rag_context.source_limitation_note
+        else ""
+    )
+
     return f"""
 [RAG Context]
 The evidence below is separated into STUDENT_RECORD and EXTERNAL_RESEARCH.
@@ -262,6 +284,7 @@ The evidence below is separated into STUDENT_RECORD and EXTERNAL_RESEARCH.
 - For EXTERNAL_RESEARCH, prefer OFFICIAL_SOURCE first, then STUDENT_OWNED_SOURCE, then EXPERT_COMMENTARY.
 - COMMUNITY_POST and SCRAPED_OPINION are weak context only and must not override official guidance.
 - Keep provenance explicit in the evidence map and final writing.
+{limitation_block}
 
 {rag_context.injection_text}
 

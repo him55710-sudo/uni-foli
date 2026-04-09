@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     semantic_scholar_api_key: str | None = None
     semantic_scholar_max_limit: int = 10
     kci_api_key: str | None = None
+    live_web_search_enabled: bool = False
+    live_web_search_provider: str = "none"  # none | serpapi
+    live_web_search_api_key: str | None = None
+    live_web_search_endpoint: str = "https://serpapi.com/search.json"
+    live_web_search_timeout_seconds: float = 12.0
     research_fetch_max_bytes: int = 2 * 1024 * 1024
     llm_cache_enabled: bool = True
     llm_cache_ttl_seconds: int = 21600
@@ -230,6 +235,10 @@ class Settings(BaseSettings):
             raise ValueError("UPLOAD_MAX_BYTES must be greater than zero.")
         if self.research_fetch_max_bytes <= 0:
             raise ValueError("RESEARCH_FETCH_MAX_BYTES must be greater than zero.")
+        if self.live_web_search_timeout_seconds <= 0:
+            raise ValueError("LIVE_WEB_SEARCH_TIMEOUT_SECONDS must be greater than zero.")
+        if not _is_valid_http_url(self.live_web_search_endpoint):
+            raise ValueError("LIVE_WEB_SEARCH_ENDPOINT must be a valid http(s) URL.")
         if not 0.0 <= float(self.neis_auto_detect_min_confidence) <= 1.0:
             raise ValueError("NEIS_AUTO_DETECT_MIN_CONFIDENCE must be between 0 and 1.")
         if not 0.0 <= float(self.neis_provider_min_quality_score) <= 1.0:
@@ -297,6 +306,14 @@ class Settings(BaseSettings):
         if self.polio_storage_provider == "s3":
             if not self.s3_bucket_name:
                 raise ValueError("S3_BUCKET_NAME is required when POLIO_STORAGE_PROVIDER=s3")
+
+        normalized_live_web_provider = (self.live_web_search_provider or "").strip().lower()
+        if normalized_live_web_provider in {"", "disabled"}:
+            normalized_live_web_provider = "none"
+        allowed_live_web_providers = {"none", "serpapi"}
+        if normalized_live_web_provider not in allowed_live_web_providers:
+            raise ValueError("LIVE_WEB_SEARCH_PROVIDER must be 'none' or 'serpapi'.")
+        object.__setattr__(self, "live_web_search_provider", normalized_live_web_provider)
 
         normalized_provider = (self.llm_provider or "").strip().lower()
         object.__setattr__(self, "llm_provider", normalized_provider or "gemini")

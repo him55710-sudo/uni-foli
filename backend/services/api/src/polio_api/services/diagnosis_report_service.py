@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -31,6 +32,7 @@ from polio_api.schemas.diagnosis import (
 from polio_api.services.document_service import list_documents_for_project
 from polio_api.services.prompt_registry import get_prompt_registry
 from polio_domain.enums import RenderFormat
+from polio_render.diagnosis_report_design_contract import get_diagnosis_report_design_contract
 from polio_render.diagnosis_report_pdf_renderer import render_consultant_diagnosis_pdf
 from polio_render.template_registry import get_template
 from polio_shared.storage import get_storage_provider, get_storage_provider_name
@@ -47,12 +49,46 @@ _REPORT_FAILURE_FALLBACK = "Diagnosis report generation failed. Retry after chec
 
 class _ConsultantNarrativePayload(BaseModel):
     executive_summary: str = Field(min_length=1, max_length=1600)
+    current_record_status_brief: str | None = Field(default=None, max_length=900)
+    strengths_brief: str | None = Field(default=None, max_length=900)
+    weaknesses_risks_brief: str | None = Field(default=None, max_length=900)
+    major_fit_brief: str | None = Field(default=None, max_length=900)
+    section_diagnosis_brief: str | None = Field(default=None, max_length=900)
+    topic_strategy_brief: str | None = Field(default=None, max_length=900)
+    roadmap_bridge: str | None = Field(default=None, max_length=900)
+    uncertainty_bridge: str | None = Field(default=None, max_length=900)
     final_consultant_memo: str = Field(min_length=1, max_length=1400)
 
 
 class _NarrativeGenerationResult(BaseModel):
     narrative: _ConsultantNarrativePayload
     execution_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+_PREMIUM_SECTION_ORDER: tuple[str, ...] = (
+    "cover_context",
+    "executive_summary",
+    "current_record_status",
+    "evaluation_axis",
+    "strength_analysis",
+    "weakness_risk",
+    "major_fit",
+    "section_level_diagnosis",
+    "roadmap",
+    "topic_strategy",
+    "final_memo",
+    "appendix",
+)
+
+_COMPACT_SECTION_ORDER: tuple[str, ...] = (
+    "cover_context",
+    "executive_summary",
+    "current_record_status",
+    "strength_analysis",
+    "weakness_risk",
+    "roadmap",
+    "final_memo",
+)
 
 
 def resolve_consultant_report_template_id(
@@ -385,7 +421,18 @@ async def build_consultant_report_payload(
                 "fallback_reason": None,
             },
         )
-    narratives = narratives_result.narrative
+    narratives = _enforce_narrative_contract(
+        narratives_result.narrative,
+        result=result,
+        document_structure=document_structure,
+        uncertainty_notes=uncertainty_notes,
+    )
+    template = get_template(template_id, render_format=RenderFormat.PDF)
+    design_contract = get_diagnosis_report_design_contract(
+        report_mode=report_mode,
+        template_id=template_id,
+        template_section_schema=template.section_schema,
+    )
 
     sections = _build_sections(
         result=result,
@@ -395,21 +442,10 @@ async def build_consultant_report_payload(
         score_blocks=score_blocks,
         document_structure=document_structure,
         roadmap=roadmap,
-        executive_summary=narratives.executive_summary,
-        final_memo=narratives.final_consultant_memo,
+        narratives=narratives,
+        uncertainty_notes=uncertainty_notes,
     )
-
-    if report_mode == "compact":
-        allowed_ids = {
-            "cover_context",
-            "executive_summary",
-            "current_record_status",
-            "strength_analysis",
-            "weakness_risk",
-            "roadmap",
-            "final_memo",
-        }
-        sections = [item for item in sections if item.id in allowed_ids]
+    sections = _enforce_section_architecture(sections, report_mode=report_mode)
 
     appendix_notes: list[str] = []
     if include_appendix:
@@ -439,6 +475,8 @@ async def build_consultant_report_payload(
             "visual_tone": "consultant_premium",
             "include_appendix": include_appendix,
             "include_citations": include_citations,
+            "section_order": list(_PREMIUM_SECTION_ORDER if report_mode == "premium_10p" else _COMPACT_SECTION_ORDER),
+            "design_contract": design_contract,
             "execution_metadata": {
                 **narratives_result.execution_metadata,
                 "diagnosis_backbone_requested_llm_provider": result.requested_llm_provider,
@@ -556,23 +594,56 @@ def _collect_student_record_structure(documents: list[Any]) -> dict[str, Any]:
         metadata = getattr(document, "parse_metadata", None)
         if not isinstance(metadata, dict):
             continue
-        structure = metadata.get("student_record_structure")
-        if not isinstance(structure, dict):
-            continue
+        canonical = metadata.get("student_record_canonical")
+        if isinstance(canonical, dict):
+            timeline_signals.extend(_extract_canonical_values(canonical.get("timeline_signals"), "signal"))
+            alignment_signals.extend(_extract_canonical_values(canonical.get("major_alignment_hints"), "hint"))
+            weak_sections.extend(_extract_canonical_values(canonical.get("weak_or_missing_sections"), "section"))
+            uncertain_items.extend(_extract_canonical_values(canonical.get("uncertainties"), "message"))
+            activity_clusters.extend(_extract_canonical_values(canonical.get("extracurricular"), "label"))
+            process_signals.extend(_extract_canonical_values(canonical.get("subject_special_notes"), "label"))
+            career_signals = _extract_canonical_values(canonical.get("career_signals"), "label")
+            continuity_signals.extend(career_signals)
 
-        for key, value in (structure.get("section_density") or {}).items():
-            try:
-                section_density[str(key)] = max(section_density.get(str(key), 0.0), float(value))
-            except (TypeError, ValueError):
-                continue
+            section_classification = canonical.get("section_classification")
+            if isinstance(section_classification, dict):
+                for legacy_key, canonical_key in (
+                    ("교과학습발달상황", "grades_subjects"),
+                    ("세특", "subject_special_notes"),
+                    ("창체", "extracurricular"),
+                    ("진로", "career_signals"),
+                    ("독서", "reading_activity"),
+                    ("행동특성", "behavior_opinion"),
+                ):
+                    payload = section_classification.get(canonical_key)
+                    if not isinstance(payload, dict):
+                        continue
+                    try:
+                        normalized = max(0.0, min(1.0, float(payload.get("density") or 0.0)))
+                    except (TypeError, ValueError):
+                        continue
+                    section_density[legacy_key] = max(section_density.get(legacy_key, 0.0), normalized)
+        structure_candidates = _extract_structure_candidates(metadata)
 
-        weak_sections.extend([str(item).strip() for item in structure.get("weak_sections", []) if str(item).strip()])
-        timeline_signals.extend([str(item).strip() for item in structure.get("timeline_signals", []) if str(item).strip()])
-        activity_clusters.extend([str(item).strip() for item in structure.get("activity_clusters", []) if str(item).strip()])
-        alignment_signals.extend([str(item).strip() for item in structure.get("subject_major_alignment_signals", []) if str(item).strip()])
-        continuity_signals.extend([str(item).strip() for item in structure.get("continuity_signals", []) if str(item).strip()])
-        process_signals.extend([str(item).strip() for item in structure.get("process_reflection_signals", []) if str(item).strip()])
-        uncertain_items.extend([str(item).strip() for item in structure.get("uncertain_items", []) if str(item).strip()])
+        for structure in structure_candidates:
+            for key, value in (structure.get("section_density") or {}).items():
+                try:
+                    normalized = max(0.0, min(1.0, float(value)))
+                except (TypeError, ValueError):
+                    continue
+                section_density[str(key)] = max(section_density.get(str(key), 0.0), normalized)
+
+            weak_sections.extend([str(item).strip() for item in structure.get("weak_sections", []) if str(item).strip()])
+            timeline_signals.extend([str(item).strip() for item in structure.get("timeline_signals", []) if str(item).strip()])
+            activity_clusters.extend([str(item).strip() for item in structure.get("activity_clusters", []) if str(item).strip()])
+            alignment_signals.extend([str(item).strip() for item in structure.get("subject_major_alignment_signals", []) if str(item).strip()])
+            continuity_signals.extend([str(item).strip() for item in structure.get("continuity_signals", []) if str(item).strip()])
+            process_signals.extend([str(item).strip() for item in structure.get("process_reflection_signals", []) if str(item).strip()])
+            uncertain_items.extend([str(item).strip() for item in structure.get("uncertain_items", []) if str(item).strip()])
+
+        pdf_analysis = metadata.get("pdf_analysis")
+        if isinstance(pdf_analysis, dict):
+            uncertain_items.extend([str(item).strip() for item in pdf_analysis.get("evidence_gaps", []) if str(item).strip()])
 
     return {
         "section_density": section_density,
@@ -584,6 +655,77 @@ def _collect_student_record_structure(documents: list[Any]) -> dict[str, Any]:
         "process_reflection_signals": _dedupe(process_signals, limit=10),
         "uncertain_items": _dedupe(uncertain_items, limit=12),
     }
+
+
+def _extract_structure_candidates(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+
+    canonical = metadata.get("student_record_canonical")
+    if isinstance(canonical, dict):
+        converted = _canonical_to_structure_candidate(canonical)
+        if converted:
+            candidates.append(converted)
+
+    direct = metadata.get("student_record_structure")
+    if isinstance(direct, dict):
+        candidates.append(direct)
+
+    analysis_artifact = metadata.get("analysis_artifact")
+    if isinstance(analysis_artifact, dict):
+        nested = analysis_artifact.get("student_record_structure")
+        if isinstance(nested, dict):
+            candidates.append(nested)
+        fallback = analysis_artifact.get("structure")
+        if isinstance(fallback, dict):
+            candidates.append(fallback)
+
+    return candidates
+
+
+def _canonical_to_structure_candidate(canonical: dict[str, Any]) -> dict[str, Any]:
+    section_classification = canonical.get("section_classification")
+    section_density: dict[str, float] = {}
+    if isinstance(section_classification, dict):
+        for legacy_key, canonical_key in (
+            ("교과학습발달상황", "grades_subjects"),
+            ("세특", "subject_special_notes"),
+            ("창체", "extracurricular"),
+            ("진로", "career_signals"),
+            ("독서", "reading_activity"),
+            ("행동특성", "behavior_opinion"),
+        ):
+            payload = section_classification.get(canonical_key)
+            if not isinstance(payload, dict):
+                continue
+            try:
+                density = max(0.0, min(1.0, float(payload.get("density") or 0.0)))
+            except (TypeError, ValueError):
+                continue
+            section_density[legacy_key] = density
+
+    return {
+        "section_density": section_density,
+        "weak_sections": _extract_canonical_values(canonical.get("weak_or_missing_sections"), "section"),
+        "timeline_signals": _extract_canonical_values(canonical.get("timeline_signals"), "signal"),
+        "activity_clusters": _extract_canonical_values(canonical.get("extracurricular"), "label"),
+        "subject_major_alignment_signals": _extract_canonical_values(canonical.get("major_alignment_hints"), "hint"),
+        "continuity_signals": _extract_canonical_values(canonical.get("career_signals"), "label"),
+        "process_reflection_signals": _extract_canonical_values(canonical.get("subject_special_notes"), "label"),
+        "uncertain_items": _extract_canonical_values(canonical.get("uncertainties"), "message"),
+    }
+
+
+def _extract_canonical_values(values: Any, key: str) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    output: list[str] = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get(key) or "").strip()
+        if value:
+            output.append(value)
+    return output
 
 
 def _build_uncertainty_notes(
@@ -706,6 +848,19 @@ async def _generate_narratives(
         "recommended_topics": result.recommended_topics[:4],
         "weak_sections": document_structure.get("weak_sections", [])[:6],
         "uncertainty_notes": uncertainty_notes[:4],
+        "required_section_order": list(_PREMIUM_SECTION_ORDER),
+        "narrative_contract": {
+            "executive_summary": "4-6문장, 근거와 불확실성 경계 포함",
+            "current_record_status_brief": "현재 상태를 1-2문장으로 요약",
+            "strengths_brief": "검증된 강점 축 요약 1-2문장",
+            "weaknesses_risks_brief": "보완/리스크 축 요약 1-2문장",
+            "major_fit_brief": "전공 적합성 축 요약 1-2문장",
+            "section_diagnosis_brief": "섹션별 진단 해석 요약 1-2문장",
+            "topic_strategy_brief": "주제·전략 요약 1-2문장",
+            "roadmap_bridge": "1m/3m/6m 연결 문장 1개",
+            "uncertainty_bridge": "불확실성 경계 문장 1개",
+            "final_consultant_memo": "최종 실행 코멘트 3-4문장",
+        },
     }
 
     registry = get_prompt_registry()
@@ -738,6 +893,14 @@ async def _generate_narratives(
         return _NarrativeGenerationResult(
             narrative=_ConsultantNarrativePayload(
                 executive_summary=response.executive_summary.strip() or fallback_summary,
+                current_record_status_brief=(response.current_record_status_brief or "").strip() or None,
+                strengths_brief=(response.strengths_brief or "").strip() or None,
+                weaknesses_risks_brief=(response.weaknesses_risks_brief or "").strip() or None,
+                major_fit_brief=(response.major_fit_brief or "").strip() or None,
+                section_diagnosis_brief=(response.section_diagnosis_brief or "").strip() or None,
+                topic_strategy_brief=(response.topic_strategy_brief or "").strip() or None,
+                roadmap_bridge=(response.roadmap_bridge or "").strip() or None,
+                uncertainty_bridge=(response.uncertainty_bridge or "").strip() or None,
                 final_consultant_memo=response.final_consultant_memo.strip() or fallback_memo,
             ),
             execution_metadata={
@@ -768,10 +931,150 @@ async def _generate_narratives(
     return _NarrativeGenerationResult(
         narrative=_ConsultantNarrativePayload(
             executive_summary=fallback_summary,
+            current_record_status_brief=None,
+            strengths_brief=None,
+            weaknesses_risks_brief=None,
+            major_fit_brief=None,
+            section_diagnosis_brief=None,
+            topic_strategy_brief=None,
+            roadmap_bridge=None,
+            uncertainty_bridge=None,
             final_consultant_memo=fallback_memo,
         ),
         execution_metadata=fallback_execution,
     )
+
+
+def _enforce_narrative_contract(
+    narrative: _ConsultantNarrativePayload,
+    *,
+    result: DiagnosisResultPayload,
+    document_structure: dict[str, Any],
+    uncertainty_notes: list[str],
+) -> _ConsultantNarrativePayload:
+    weak_sections = [str(item).strip() for item in document_structure.get("weak_sections", []) if str(item).strip()]
+    verified_strength = (result.strengths or ["검증 가능한 강점 신호가 제한적입니다."])[0]
+    primary_gap = (result.gaps or ["근거 밀도와 과정 설명 보강이 필요합니다."])[0]
+    major_fit_seed = (document_structure.get("subject_major_alignment_signals") or ["전공 연계 근거 문장이 제한적입니다."])[0]
+    section_density = document_structure.get("section_density") if isinstance(document_structure.get("section_density"), dict) else {}
+    density_focus = ", ".join(f"{k}:{int(float(v) * 100)}%" for k, v in list(section_density.items())[:3]) if section_density else "섹션 밀도 정보가 제한적입니다."
+
+    executive_summary = _guardrail_text(
+        narrative.executive_summary,
+        fallback=(
+            f"현재 진단 기준에서 확인된 핵심 강점은 '{verified_strength}'입니다. "
+            f"우선 보완축은 '{primary_gap}'이며, 문장-근거 정합성 개선이 필요합니다. "
+            "검증이 약한 항목은 '추가 확인 필요'로 분리해 과장 위험을 차단했습니다."
+        ),
+        max_len=1200,
+    )
+    if "추가 확인 필요" not in executive_summary:
+        executive_summary = f"{executive_summary} 근거가 약한 항목은 추가 확인 필요로 표기합니다."
+
+    final_memo = _guardrail_text(
+        narrative.final_consultant_memo,
+        fallback=_build_fallback_final_memo(result=result),
+        max_len=1100,
+    )
+
+    return _ConsultantNarrativePayload(
+        executive_summary=executive_summary,
+        current_record_status_brief=_guardrail_text(
+            narrative.current_record_status_brief,
+            fallback=f"현재 기록 상태는 '{result.recommended_focus or '근거 중심 보강'}' 축을 우선 정렬해야 합니다.",
+            max_len=360,
+        ),
+        strengths_brief=_guardrail_text(
+            narrative.strengths_brief,
+            fallback=f"확인된 강점은 '{verified_strength}'이며 근거 연결성을 유지해야 합니다.",
+            max_len=360,
+        ),
+        weaknesses_risks_brief=_guardrail_text(
+            narrative.weaknesses_risks_brief,
+            fallback=f"핵심 리스크는 '{primary_gap}'이고 약한 섹션은 {', '.join(weak_sections[:3]) or '추가 확인 필요 항목'}입니다.",
+            max_len=360,
+        ),
+        major_fit_brief=_guardrail_text(
+            narrative.major_fit_brief,
+            fallback=f"전공 적합성 해석은 '{major_fit_seed}' 근거를 기준으로 보수적으로 제시합니다.",
+            max_len=360,
+        ),
+        section_diagnosis_brief=_guardrail_text(
+            narrative.section_diagnosis_brief,
+            fallback=f"섹션 밀도 기준 핵심 점검 축은 {density_focus} 입니다.",
+            max_len=360,
+        ),
+        topic_strategy_brief=_guardrail_text(
+            narrative.topic_strategy_brief,
+            fallback=f"주제 전략은 '{(result.recommended_topics or ['전공 연계 심화 주제'])[0]}' 중심으로 단계적 확장을 권장합니다.",
+            max_len=360,
+        ),
+        roadmap_bridge=_guardrail_text(
+            narrative.roadmap_bridge,
+            fallback="로드맵은 1개월 정합성 정리, 3개월 보완축 개선, 6개월 전공 스토리 완성 순으로 운영합니다.",
+            max_len=360,
+        ),
+        uncertainty_bridge=_guardrail_text(
+            narrative.uncertainty_bridge,
+            fallback=f"불확실성 경계: {(uncertainty_notes or ['검증 부족 항목은 추가 확인 필요로 유지']) [0]}",
+            max_len=360,
+        ),
+        final_consultant_memo=final_memo,
+    )
+
+
+def _guardrail_text(value: str | None, *, fallback: str, max_len: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        text = fallback
+    text = re.sub(r"\s+", " ", text).strip()
+    for forbidden in ("합격 보장", "무조건 합격", "확정 합격", "반드시 합격", "대신 수행"):
+        text = text.replace(forbidden, "검증 필요")
+    if len(text) > max_len:
+        text = f"{text[: max_len - 1].rstrip()}…"
+    return text
+
+
+def _enforce_section_architecture(
+    sections: list[ConsultantDiagnosisSection],
+    *,
+    report_mode: DiagnosisReportMode,
+) -> list[ConsultantDiagnosisSection]:
+    expected = _PREMIUM_SECTION_ORDER if report_mode == "premium_10p" else _COMPACT_SECTION_ORDER
+    section_map = {section.id: section for section in sections}
+    ordered: list[ConsultantDiagnosisSection] = []
+    for section_id in expected:
+        existing = section_map.get(section_id)
+        if existing is not None:
+            ordered.append(existing)
+            continue
+        ordered.append(
+            ConsultantDiagnosisSection(
+                id=section_id,
+                title=_humanize_section_title(section_id),
+                subtitle="자동 보완 섹션",
+                body_markdown="- 구조 일관성을 위해 기본 섹션 틀을 유지했습니다.\n- 근거가 부족한 항목은 추가 확인 필요로 관리합니다.",
+            )
+        )
+    return ordered
+
+
+def _humanize_section_title(section_id: str) -> str:
+    title_map = {
+        "cover_context": "Cover / 학생 목표 컨텍스트",
+        "executive_summary": "Executive Summary",
+        "current_record_status": "Current Record Status Diagnosis",
+        "evaluation_axis": "Evaluation-Axis Analysis",
+        "strength_analysis": "Strength Analysis",
+        "weakness_risk": "Weakness / Risk Analysis",
+        "major_fit": "Major / University Fit Analysis",
+        "section_level_diagnosis": "Evidence-Backed Section-Level Diagnosis",
+        "roadmap": "Action Roadmap (1m / 3m / 6m)",
+        "topic_strategy": "Topic / Report Strategy Recommendations",
+        "final_memo": "Final Consultant Memo",
+        "appendix": "Appendix / Evidence Note",
+    }
+    return title_map.get(section_id, section_id)
 
 
 def _build_fallback_executive_summary(*, result: DiagnosisResultPayload) -> str:
@@ -804,8 +1107,8 @@ def _build_sections(
     score_blocks: list[ConsultantDiagnosisScoreBlock],
     document_structure: dict[str, Any],
     roadmap: list[ConsultantDiagnosisRoadmapItem],
-    executive_summary: str,
-    final_memo: str,
+    narratives: _ConsultantNarrativePayload,
+    uncertainty_notes: list[str],
 ) -> list[ConsultantDiagnosisSection]:
     top_evidence = evidence_items[:8]
     weak_sections = document_structure.get("weak_sections", [])
@@ -823,6 +1126,15 @@ def _build_sections(
     for item in roadmap:
         roadmap_lines.append(f"{item.title}")
         roadmap_lines.extend([f"- {action}" for action in item.actions[:3]])
+
+    current_status_intro = _clean_line(narratives.current_record_status_brief, max_len=220)
+    strength_intro = _clean_line(narratives.strengths_brief, max_len=220)
+    weakness_intro = _clean_line(narratives.weaknesses_risks_brief, max_len=220)
+    major_fit_intro = _clean_line(narratives.major_fit_brief, max_len=220)
+    section_diag_intro = _clean_line(narratives.section_diagnosis_brief, max_len=220)
+    topic_strategy_intro = _clean_line(narratives.topic_strategy_brief, max_len=220)
+    roadmap_bridge = _clean_line(narratives.roadmap_bridge, max_len=220)
+    uncertainty_bridge = _clean_line(narratives.uncertainty_bridge, max_len=220)
 
     sections = [
         ConsultantDiagnosisSection(
@@ -842,7 +1154,7 @@ def _build_sections(
             id="executive_summary",
             title="Executive Summary",
             subtitle="핵심 진단 요약",
-            body_markdown=executive_summary,
+            body_markdown=narratives.executive_summary,
             evidence_items=top_evidence[:3],
         ),
         ConsultantDiagnosisSection(
@@ -851,6 +1163,7 @@ def _build_sections(
             subtitle="현재 기록 상태 점검",
             body_markdown=_bulleted(
                 [
+                    *( [current_status_intro] if current_status_intro else [] ),
                     result.overview or "구조화 진단 개요가 요약되지 않아 기본 점검 프레임으로 작성했습니다.",
                     f"권장 집중축: {result.recommended_focus}",
                     *[f"리스크: {risk}" for risk in (result.risks or [])[:3]],
@@ -872,7 +1185,12 @@ def _build_sections(
             id="strength_analysis",
             title="Strength Analysis",
             subtitle="검증된 강점",
-            body_markdown=_bulleted(result.strengths or ["강점 문장이 부족하여 보수적 해석을 사용했습니다."]),
+            body_markdown=_bulleted(
+                [
+                    *( [strength_intro] if strength_intro else [] ),
+                    *(result.strengths or ["강점 문장이 부족하여 보수적 해석을 사용했습니다."]),
+                ]
+            ),
             evidence_items=[item for item in top_evidence if item.support_status == "verified"][:3],
         ),
         ConsultantDiagnosisSection(
@@ -881,6 +1199,7 @@ def _build_sections(
             subtitle="보완 필요 영역",
             body_markdown=_bulleted(
                 [
+                    *( [weakness_intro] if weakness_intro else [] ),
                     *(result.gaps or ["보완 포인트가 명시되지 않아 기본 리스크 프레임을 적용했습니다."]),
                     *[f"약한 섹션 추정: {item}" for item in weak_sections[:3]],
                 ]
@@ -895,6 +1214,7 @@ def _build_sections(
             subtitle="목표 진로 적합성",
             body_markdown=_bulleted(
                 [
+                    *( [major_fit_intro] if major_fit_intro else [] ),
                     *(alignment_signals[:4] or ["전공 적합성 직접 신호가 제한적입니다."]),
                     *(continuity_signals[:3] or ["연속성 신호가 부족해 후속활동 설계가 필요합니다."]),
                 ]
@@ -908,6 +1228,7 @@ def _build_sections(
             subtitle="섹션별 근거 밀도 진단",
             body_markdown=_bulleted(
                 [
+                    *( [section_diag_intro] if section_diag_intro else [] ),
                     *density_lines[:8],
                     *(timeline_signals[:3] or ["학기/학년 흐름 신호가 제한적으로 추출되었습니다."]),
                     *(process_signals[:3] or ["과정·성찰 신호를 명시적으로 보강할 필요가 있습니다."]),
@@ -919,7 +1240,12 @@ def _build_sections(
             id="roadmap",
             title="Action Roadmap (1m / 3m / 6m)",
             subtitle="실행 가능한 단계별 계획",
-            body_markdown=_bulleted(roadmap_lines),
+            body_markdown=_bulleted(
+                [
+                    *( [roadmap_bridge] if roadmap_bridge else [] ),
+                    *roadmap_lines,
+                ]
+            ),
             evidence_items=top_evidence[:2],
         ),
         ConsultantDiagnosisSection(
@@ -928,6 +1254,7 @@ def _build_sections(
             subtitle="탐구 주제 및 보고서 전략",
             body_markdown=_bulleted(
                 [
+                    *( [topic_strategy_intro] if topic_strategy_intro else [] ),
                     *(result.recommended_topics or ["추천 주제 신호가 부족하여 기본 전공연계 전략을 사용했습니다."]),
                     *[f"후속 행동: {item}" for item in (result.next_actions or [])[:3]],
                 ]
@@ -939,24 +1266,32 @@ def _build_sections(
             id="final_memo",
             title="Final Consultant Memo",
             subtitle="최종 점검 코멘트",
-            body_markdown=final_memo,
+            body_markdown=narratives.final_consultant_memo,
             evidence_items=top_evidence[:2],
         ),
     ]
 
     if report_mode == "premium_10p":
+        appendix_lines = [
+            "인용 부록에서 주장-근거 라인을 교차 점검하십시오.",
+            "추가 확인 필요 문장은 최종본에서도 표기를 유지하십시오.",
+            "내부 검토 로그는 제출본에서 과도하게 노출하지 않도록 관리하십시오.",
+        ]
+        if uncertainty_bridge:
+            appendix_lines.insert(0, uncertainty_bridge)
+        for note in uncertainty_notes[:4]:
+            appendix_lines.append(f"불확실성 노트: {note}")
+        for citation in top_evidence[:4]:
+            label = citation.source_label
+            if citation.page_number:
+                label = f"{label} p.{citation.page_number}"
+            appendix_lines.append(f"인용 근거: {label} ({citation.support_status})")
         sections.append(
             ConsultantDiagnosisSection(
                 id="appendix",
                 title="Appendix / Evidence Note",
                 subtitle="근거·불확실성 부록",
-                body_markdown=_bulleted(
-                    [
-                        "인용 부록에서 주장-근거 라인을 교차 점검하십시오.",
-                        "추가 확인 필요 문장은 최종본에서도 표기를 유지하십시오.",
-                        "내부 검토 로그는 제출본에서 과도하게 노출하지 않도록 관리하십시오.",
-                    ]
-                ),
+                body_markdown=_bulleted(appendix_lines),
                 evidence_items=top_evidence[:4],
             )
         )
@@ -1016,6 +1351,16 @@ def _build_failed_report_payload(
         render_hints={"a4": True, "minimum_pages": 1},
     )
     return payload.model_dump_json()
+
+
+def _clean_line(value: str | None, *, max_len: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_len:
+        return text
+    return f"{text[: max_len - 1].rstrip()}…"
 
 
 def _bulleted(lines: list[str]) -> str:

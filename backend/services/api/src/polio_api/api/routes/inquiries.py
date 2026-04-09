@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, BackgroundTasks
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from polio_api.api.deps import get_db
@@ -17,14 +17,18 @@ router = APIRouter()
 )
 def create_inquiry_route(
     payload: InquiryCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> InquiryCreateResponse:
-    inquiry = create_inquiry(db, payload, background_tasks)
+    inquiry = create_inquiry(db, payload)
+    delivery = inquiry.extra_fields.get("delivery", {}) if isinstance(inquiry.extra_fields, dict) else {}
     return InquiryCreateResponse(
         id=inquiry.id,
         inquiry_type=inquiry.inquiry_type,
         status=inquiry.status,
+        delivery_status=delivery.get("status") if isinstance(delivery, dict) else None,
+        delivery_reason=delivery.get("reason") if isinstance(delivery, dict) else None,
+        delivery_async_job_id=delivery.get("async_job_id") if isinstance(delivery, dict) else None,
+        delivery_retry_needed=delivery.get("retry_needed") if isinstance(delivery, dict) else None,
         created_at=inquiry.created_at,
         message="Inquiry received. We will review it and respond through the provided contact details.",
     )

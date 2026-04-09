@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,6 +28,7 @@ from polio_api.schemas.diagnosis import (
 from polio_api.services.async_job_service import (
     create_async_job,
     dispatch_job_if_enabled,
+    ensure_default_diagnosis_report_job,
     get_latest_job_for_resource,
     process_async_job,
 )
@@ -56,6 +58,7 @@ from polio_domain.enums import AsyncJobType
 from polio_shared.paths import get_export_root, resolve_project_path
 
 router = APIRouter()
+logger = logging.getLogger("polio.api.diagnosis")
 
 
 def _get_run_for_user(db: Session, diagnosis_id: str, user_id: str) -> DiagnosisRun | None:
@@ -76,6 +79,25 @@ def _build_run_response(db: Session, run: DiagnosisRun) -> DiagnosisRunResponse:
     trace = latest_response_trace(run)
     citations = [DiagnosisCitation.model_validate(serialize_citation(item)) for item in (trace.citations if trace else [])]
     async_job = get_latest_job_for_resource(db, resource_type="diagnosis_run", resource_id=run.id)
+    report_job = get_latest_job_for_resource(db, resource_type="diagnosis_report", resource_id=run.id)
+    latest_report = get_latest_report_artifact_for_run(
+        db,
+        diagnosis_run_id=run.id,
+        report_mode="premium_10p",
+    )
+
+    report_status: str | None = None
+    if latest_report is not None and latest_report.status in {"READY", "FAILED"}:
+        report_status = latest_report.status
+    elif report_job is not None:
+        normalized_report_job_status = report_job.status.upper()
+        if normalized_report_job_status == "SUCCEEDED":
+            report_status = "AUTO_STARTING"
+        else:
+            report_status = normalized_report_job_status
+    elif run.status == "COMPLETED" and run.result_payload:
+        report_status = "AUTO_STARTING"
+
     return DiagnosisRunResponse(
         id=run.id,
         project_id=run.project_id,
@@ -88,7 +110,34 @@ def _build_run_response(db: Session, run: DiagnosisRun) -> DiagnosisRunResponse:
         response_trace_id=trace.id if trace else None,
         async_job_id=async_job.id if async_job else None,
         async_job_status=async_job.status if async_job else None,
+        report_status=report_status,
+        report_async_job_id=report_job.id if report_job else None,
+        report_async_job_status=report_job.status if report_job else None,
+        report_artifact_id=latest_report.id if latest_report else None,
+        report_error_message=(
+            (latest_report.error_message if latest_report and latest_report.status == "FAILED" else None)
+            or (report_job.failure_reason if report_job and report_job.status == "failed" else None)
+        ),
     )
+
+
+def _ensure_default_report_bootstrap(db: Session, run: DiagnosisRun) -> None:
+    if run.status != "COMPLETED" or not run.result_payload:
+        return
+    try:
+        decision = ensure_default_diagnosis_report_job(
+            db,
+            run=run,
+            owner_user_id=None,
+            fallback_target_university=None,
+            fallback_target_major=None,
+            report_mode="premium_10p",
+            include_appendix=True,
+            include_citations=True,
+        )
+        logger.info("Diagnosis route ensured report bootstrap. run_id=%s decision=%s", run.id, decision)
+    except Exception:  # noqa: BLE001
+        logger.exception("Diagnosis route failed to ensure report bootstrap. run_id=%s", run.id)
 
 
 def _maybe_process_diagnosis_job_inline(db: Session, run: DiagnosisRun) -> None:
@@ -103,6 +152,20 @@ def _maybe_process_diagnosis_job_inline(db: Session, run: DiagnosisRun) -> None:
     if async_job.status not in {"queued", "retrying"}:
         return
     process_async_job(db, async_job.id)
+
+
+def _maybe_process_report_job_inline(db: Session, run: DiagnosisRun) -> None:
+    settings = get_settings()
+    if not settings.allow_inline_job_processing:
+        return
+    if run.status != "COMPLETED":
+        return
+    report_job = get_latest_job_for_resource(db, resource_type="diagnosis_report", resource_id=run.id)
+    if report_job is None:
+        return
+    if report_job.status not in {"queued", "retrying"}:
+        return
+    process_async_job(db, report_job.id)
 
 
 def _resolve_report_output_path(output_path: str) -> Path:
@@ -160,6 +223,9 @@ async def trigger_diagnosis(
             "owner_user_id": current_user.id,
             "fallback_target_university": current_user.target_university or project.target_university,
             "fallback_target_major": current_user.target_major or project.target_major,
+            "auto_report_mode": "premium_10p",
+            "auto_report_include_appendix": True,
+            "auto_report_include_citations": True,
         },
     )
     if wait_for_completion:
@@ -179,6 +245,11 @@ async def trigger_diagnosis(
         policy_flags=[DiagnosisPolicyFlagRead.model_validate(serialize_policy_flag(item)) for item in flag_records],
         async_job_id=async_job.id,
         async_job_status=async_job.status,
+        report_status=None,
+        report_async_job_id=None,
+        report_async_job_status=None,
+        report_artifact_id=None,
+        report_error_message=None,
     )
 
 
@@ -390,6 +461,11 @@ async def get_diagnosis_status(
     run = _get_run_for_user(db, diagnosis_id, current_user.id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
+    _ensure_default_report_bootstrap(db, run)
+    _maybe_process_report_job_inline(db, run)
+    run = _get_run_for_user(db, diagnosis_id, current_user.id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
     return _build_run_response(db, run)
 @router.get("/project/{project_id}/latest", response_model=DiagnosisRunResponse)
 async def get_latest_diagnosis_for_project(
@@ -412,6 +488,22 @@ async def get_latest_diagnosis_for_project(
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No diagnosis run found for this project.")
     _maybe_process_diagnosis_job_inline(db, run)
+    run = db.scalar(
+        select(DiagnosisRun)
+        .join(Project, DiagnosisRun.project_id == Project.id)
+        .where(Project.id == project_id, Project.owner_user_id == current_user.id)
+        .order_by(DiagnosisRun.created_at.desc())
+        .limit(1)
+        .options(
+            selectinload(DiagnosisRun.policy_flags),
+            selectinload(DiagnosisRun.review_tasks),
+            selectinload(DiagnosisRun.response_traces).selectinload(ResponseTrace.citations),
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No diagnosis run found for this project.")
+    _ensure_default_report_bootstrap(db, run)
+    _maybe_process_report_job_inline(db, run)
     run = db.scalar(
         select(DiagnosisRun)
         .join(Project, DiagnosisRun.project_id == Project.id)

@@ -83,6 +83,16 @@ def test_build_consultant_report_payload_contains_expected_sections(monkeypatch)
     assert "section_level_diagnosis" in section_ids
     assert "final_memo" in section_ids
     assert report.render_hints["minimum_pages"] == 10
+    assert report.render_hints["section_order"] == list(report_service._PREMIUM_SECTION_ORDER)
+    design_contract = report.render_hints.get("design_contract")
+    assert isinstance(design_contract, dict)
+    assert design_contract.get("contract_id") == "diagnosis_report_premium_v2"
+    section_hierarchy = design_contract.get("section_hierarchy")
+    assert isinstance(section_hierarchy, dict)
+    required_order = section_hierarchy.get("required_order")
+    assert isinstance(required_order, list)
+    assert required_order[0] == "cover_context"
+    assert required_order[-1] == "appendix"
     assert len(report.roadmap) == 3
     assert report.citations
 

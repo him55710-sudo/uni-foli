@@ -19,6 +19,46 @@ _MAX_PAGES_FOR_PROMPT = 8
 _MAX_PAGE_TEXT_CHARS = 1400
 _MAX_RAW_LLM_RESPONSE_CHARS = 16000
 _PDF_ANALYSIS_FALLBACK_REASON = "LLM PDF analysis failed. Generated heuristic summary instead."
+_CANONICAL_SCHEMA_VERSION = "2026-04-10"
+_CANONICAL_MAX_ITEMS_PER_FIELD = 8
+_CANONICAL_MAX_EVIDENCE_PER_ITEM = 3
+
+_SECTION_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "grades_subjects": ("교과학습발달상황", "과목", "성취도", "등급", "평균", "grades"),
+    "subject_special_notes": ("세특", "세부능력", "특기사항", "subject_special_notes"),
+    "extracurricular": ("창의적 체험활동", "창체", "동아리", "봉사", "자율활동", "진로활동"),
+    "career_signals": ("진로", "진학", "희망학과", "희망 전공", "목표", "career"),
+    "reading_activity": ("독서", "도서", "읽은", "reading"),
+    "behavior_opinion": ("행동특성", "종합의견", "인성", "태도", "behavior"),
+}
+
+_SUBJECT_KEYWORDS: tuple[str, ...] = (
+    "국어",
+    "수학",
+    "영어",
+    "한국사",
+    "사회",
+    "역사",
+    "과학",
+    "물리",
+    "화학",
+    "생명과학",
+    "지구과학",
+    "정보",
+    "컴퓨터",
+    "프로그래밍",
+    "기하",
+    "확률과 통계",
+    "미적분",
+    "경제",
+    "정치",
+    "법",
+    "심리",
+    "철학",
+    "미술",
+    "음악",
+    "체육",
+)
 
 
 class PdfPageInsight(BaseModel):
@@ -585,7 +625,7 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def build_student_record_structure_metadata(
+def build_student_record_canonical_metadata(
     *,
     parsed: ParsedDocumentPayload,
     pdf_analysis: dict[str, Any] | None,
@@ -595,9 +635,849 @@ def build_student_record_structure_metadata(
         return None
 
     page_items = _extract_page_items(parsed)
+    compact_text = re.sub(r"\s+", " ", (parsed.content_text or "").strip())
+    pipeline_stages: list[dict[str, Any]] = []
+
+    file_validation_ok = parsed.page_count >= 0 and parsed.word_count >= 0
+    pipeline_stages.append(
+        _build_stage_result(
+            "file_validation",
+            mode="deterministic_extraction",
+            status="ok" if file_validation_ok else "failed",
+            details={
+                "source_extension": parsed.source_extension.lower(),
+                "page_count": parsed.page_count,
+                "word_count": parsed.word_count,
+            },
+        )
+    )
+    if not file_validation_ok:
+        return {
+            "schema_version": _CANONICAL_SCHEMA_VERSION,
+            "record_type": "korean_student_record_pdf",
+            "document_confidence": 0.0,
+            "timeline_signals": [],
+            "grades_subjects": [],
+            "subject_special_notes": [],
+            "extracurricular": [],
+            "career_signals": [],
+            "reading_activity": [],
+            "behavior_opinion": [],
+            "major_alignment_hints": [],
+            "weak_or_missing_sections": [],
+            "uncertainties": [
+                {
+                    "message": "문서 기본 검증 단계에서 오류가 감지되었습니다.",
+                    "related_field": "file_validation",
+                    "confidence_impact": 1.0,
+                    "evidence": [],
+                }
+            ],
+            "pipeline_stages": pipeline_stages,
+        }
+
+    raw_chars = sum(len(str(item.get("text") or "")) for item in page_items)
+    pipeline_stages.append(
+        _build_stage_result(
+            "raw_text_ocr_extraction",
+            mode="deterministic_extraction",
+            status="ok" if raw_chars > 0 else "degraded",
+            details={
+                "page_items": len(page_items),
+                "extracted_chars": raw_chars,
+                "parser_name": parsed.parser_name,
+            },
+        )
+    )
+
+    masked_pages = parsed.masked_artifact.get("pages") if isinstance(parsed.masked_artifact, dict) else None
+    mask_applied = bool(parsed.masking_status == "masked" or isinstance(masked_pages, list))
+    pipeline_stages.append(
+        _build_stage_result(
+            "masking_privacy_pass",
+            mode="deterministic_extraction",
+            status="ok" if mask_applied else "degraded",
+            details={
+                "masking_status": parsed.masking_status,
+                "masked_page_count": len(masked_pages) if isinstance(masked_pages, list) else 0,
+                "needs_review": bool(parsed.needs_review),
+            },
+        )
+    )
+
+    normalized_pages = _normalize_page_items(page_items)
+    pipeline_stages.append(
+        _build_stage_result(
+            "page_normalization",
+            mode="deterministic_extraction",
+            status="ok" if normalized_pages else "degraded",
+            details={
+                "normalized_pages": len(normalized_pages),
+                "normalized_characters": sum(int(item.get("char_count") or 0) for item in normalized_pages),
+            },
+        )
+    )
+
+    section_classification = _classify_record_sections(normalized_pages)
+    present_sections = [
+        section
+        for section, payload in section_classification.items()
+        if payload.get("status") == "present"
+    ]
+    pipeline_stages.append(
+        _build_stage_result(
+            "section_classification",
+            mode="heuristic_inference",
+            status="ok" if section_classification else "degraded",
+            details={
+                "present_sections": present_sections,
+                "classified_section_count": len(section_classification),
+            },
+        )
+    )
+
+    timeline_signals = _extract_timeline_signals(normalized_pages)
+    grades_subjects = _extract_grade_subject_signals(normalized_pages)
+    subject_special_notes = _extract_section_items(
+        normalized_pages=normalized_pages,
+        section_key="subject_special_notes",
+        label_prefix="세특 신호",
+    )
+    extracurricular = _extract_section_items(
+        normalized_pages=normalized_pages,
+        section_key="extracurricular",
+        label_prefix="창체 신호",
+    )
+    career_signals = _extract_section_items(
+        normalized_pages=normalized_pages,
+        section_key="career_signals",
+        label_prefix="진로 신호",
+    )
+    reading_activity = _extract_section_items(
+        normalized_pages=normalized_pages,
+        section_key="reading_activity",
+        label_prefix="독서 신호",
+    )
+    behavior_opinion = _extract_section_items(
+        normalized_pages=normalized_pages,
+        section_key="behavior_opinion",
+        label_prefix="행동특성 신호",
+    )
+    major_alignment_hints = _extract_major_alignment_hints(normalized_pages)
+
+    entity_count = (
+        len(timeline_signals)
+        + len(grades_subjects)
+        + len(subject_special_notes)
+        + len(extracurricular)
+        + len(career_signals)
+        + len(reading_activity)
+        + len(behavior_opinion)
+        + len(major_alignment_hints)
+    )
+    pipeline_stages.append(
+        _build_stage_result(
+            "entity_extraction",
+            mode="heuristic_inference",
+            status="ok" if entity_count > 0 else "degraded",
+            details={
+                "entity_count": entity_count,
+                "timeline_signals": len(timeline_signals),
+                "grades_subjects": len(grades_subjects),
+                "major_alignment_hints": len(major_alignment_hints),
+            },
+        )
+    )
+
+    weak_or_missing_sections = _build_weak_or_missing_sections(
+        section_classification=section_classification,
+        normalized_pages=normalized_pages,
+    )
+    uncertainties = _build_canonical_uncertainties(
+        parsed=parsed,
+        pdf_analysis=pdf_analysis,
+        section_classification=section_classification,
+        weak_or_missing_sections=weak_or_missing_sections,
+        normalized_pages=normalized_pages,
+    )
+
+    if isinstance(analysis_artifact, dict):
+        _merge_analysis_artifact_into_canonical(
+            analysis_artifact=analysis_artifact,
+            normalized_pages=normalized_pages,
+            grades_subjects=grades_subjects,
+            subject_special_notes=subject_special_notes,
+            extracurricular=extracurricular,
+            reading_activity=reading_activity,
+            behavior_opinion=behavior_opinion,
+            uncertainties=uncertainties,
+        )
+
+    pipeline_stages.append(
+        _build_stage_result(
+            "canonical_student_record_schema_generation",
+            mode="deterministic_extraction",
+            status="ok",
+            details={
+                "schema_version": _CANONICAL_SCHEMA_VERSION,
+                "required_field_count": 12,
+            },
+        )
+    )
+
+    evidence_link_count = _count_linked_evidence(
+        timeline_signals=timeline_signals,
+        grades_subjects=grades_subjects,
+        subject_special_notes=subject_special_notes,
+        extracurricular=extracurricular,
+        career_signals=career_signals,
+        reading_activity=reading_activity,
+        behavior_opinion=behavior_opinion,
+        major_alignment_hints=major_alignment_hints,
+        weak_or_missing_sections=weak_or_missing_sections,
+        uncertainties=uncertainties,
+    )
+    pipeline_stages.append(
+        _build_stage_result(
+            "evidence_span_linking",
+            mode="deterministic_extraction",
+            status="ok" if evidence_link_count > 0 else "degraded",
+            details={
+                "linked_evidence_count": evidence_link_count,
+            },
+        )
+    )
+
+    document_confidence = _compute_document_confidence(
+        parsed=parsed,
+        pdf_analysis=pdf_analysis,
+        entity_count=entity_count,
+        weak_or_missing_sections=weak_or_missing_sections,
+        uncertainties=uncertainties,
+        normalized_pages=normalized_pages,
+    )
+    pipeline_stages.append(
+        _build_stage_result(
+            "uncertainty_confidence_scoring",
+            mode="heuristic_inference",
+            status="ok",
+            details={
+                "document_confidence": document_confidence,
+                "uncertainty_count": len(uncertainties),
+            },
+        )
+    )
+
+    return {
+        "schema_version": _CANONICAL_SCHEMA_VERSION,
+        "record_type": "korean_student_record_pdf",
+        "document_confidence": document_confidence,
+        "timeline_signals": timeline_signals,
+        "grades_subjects": grades_subjects,
+        "subject_special_notes": subject_special_notes,
+        "extracurricular": extracurricular,
+        "career_signals": career_signals,
+        "reading_activity": reading_activity,
+        "behavior_opinion": behavior_opinion,
+        "major_alignment_hints": major_alignment_hints,
+        "weak_or_missing_sections": weak_or_missing_sections,
+        "uncertainties": uncertainties,
+        "section_classification": section_classification,
+        "pipeline_stages": pipeline_stages,
+        "evidence_linked": evidence_link_count > 0,
+    }
+
+
+def _normalize_page_items(page_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for page in page_items:
+        page_number = page.get("page_number")
+        text = str(page.get("text") or "").strip()
+        if not isinstance(page_number, int) or page_number <= 0 or not text:
+            continue
+        normalized_text = re.sub(r"\s+", " ", text).strip()
+        if not normalized_text:
+            continue
+        normalized.append(
+            {
+                "page_number": page_number,
+                "text": normalized_text,
+                "char_count": len(normalized_text),
+                "snippet": normalized_text[:180],
+            }
+        )
+    return normalized
+
+
+def _build_stage_result(
+    stage_name: str,
+    *,
+    mode: str,
+    status: str,
+    details: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "stage": stage_name,
+        "mode": mode,
+        "status": status,
+        "details": details,
+    }
+
+
+def _classify_record_sections(normalized_pages: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    total_pages = max(len(normalized_pages), 1)
+    classification: dict[str, dict[str, Any]] = {}
+    for section, keywords in _SECTION_KEYWORDS.items():
+        matches: list[dict[str, Any]] = []
+        keyword_hits = 0
+        for page in normalized_pages:
+            text = str(page.get("text") or "")
+            page_hits = [keyword for keyword in keywords if keyword.lower() in text.lower()]
+            if not page_hits:
+                continue
+            keyword_hits += len(page_hits)
+            matches.append(
+                {
+                    "page_number": page["page_number"],
+                    "keywords": page_hits[:4],
+                    "excerpt": _clean_line(text, max_len=180),
+                }
+            )
+
+        density = round(min(1.0, len(matches) / total_pages), 3)
+        confidence = round(min(0.98, 0.35 + (density * 0.45) + min(keyword_hits, 6) * 0.04), 3)
+        if density == 0.0:
+            status = "missing"
+        elif density < 0.25:
+            status = "weak"
+        else:
+            status = "present"
+        classification[section] = {
+            "density": density,
+            "confidence": confidence,
+            "status": status,
+            "matches": matches[:6],
+        }
+    return classification
+
+
+def _extract_timeline_signals(normalized_pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    patterns = (
+        re.compile(r"\b[1-3]학년\s*[12]학기\b"),
+        re.compile(r"\b[1-3]학년\b"),
+        re.compile(r"\b[12]학기\b"),
+        re.compile(r"\b20\d{2}\b"),
+    )
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for page in normalized_pages:
+        text = str(page.get("text") or "")
+        for pattern in patterns:
+            for match in pattern.finditer(text):
+                signal = match.group(0).strip()
+                if not signal or signal in seen:
+                    continue
+                seen.add(signal)
+                entries.append(
+                    {
+                        "signal": signal,
+                        "confidence": 0.86,
+                        "source": "deterministic_pattern",
+                        "evidence": [
+                            _build_evidence(
+                                page_number=int(page["page_number"]),
+                                text=text,
+                                start=match.start(),
+                                end=match.end(),
+                            )
+                        ],
+                    }
+                )
+                if len(entries) >= _CANONICAL_MAX_ITEMS_PER_FIELD:
+                    return entries
+    return entries
+
+
+def _extract_grade_subject_signals(normalized_pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    signals: list[dict[str, Any]] = []
+    seen_subjects: set[str] = set()
+    for subject in _SUBJECT_KEYWORDS:
+        evidence = _find_keyword_evidence(
+            normalized_pages=normalized_pages,
+            keyword=subject,
+            limit=_CANONICAL_MAX_EVIDENCE_PER_ITEM,
+        )
+        if not evidence or subject in seen_subjects:
+            continue
+        seen_subjects.add(subject)
+        signals.append(
+            {
+                "subject": subject,
+                "confidence": round(min(0.95, 0.58 + len(evidence) * 0.12), 3),
+                "source": "deterministic_keyword",
+                "evidence": evidence,
+            }
+        )
+        if len(signals) >= _CANONICAL_MAX_ITEMS_PER_FIELD:
+            break
+    return signals
+
+
+def _extract_section_items(
+    *,
+    normalized_pages: list[dict[str, Any]],
+    section_key: str,
+    label_prefix: str,
+) -> list[dict[str, Any]]:
+    keywords = _SECTION_KEYWORDS.get(section_key, ())
+    if not keywords:
+        return []
+    items: list[dict[str, Any]] = []
+    seen_labels: set[str] = set()
+    for keyword in keywords:
+        evidence = _find_keyword_evidence(
+            normalized_pages=normalized_pages,
+            keyword=keyword,
+            limit=_CANONICAL_MAX_EVIDENCE_PER_ITEM,
+        )
+        if not evidence:
+            continue
+        label = f"{label_prefix}:{keyword}"
+        if label in seen_labels:
+            continue
+        seen_labels.add(label)
+        items.append(
+            {
+                "label": label,
+                "confidence": round(min(0.92, 0.55 + len(evidence) * 0.1), 3),
+                "source": "deterministic_keyword",
+                "evidence": evidence,
+            }
+        )
+        if len(items) >= _CANONICAL_MAX_ITEMS_PER_FIELD:
+            break
+    return items
+
+
+def _extract_major_alignment_hints(normalized_pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    major_keywords = ("전공", "진로", "학과", "희망", "적합", "연계", "목표")
+    action_keywords = ("탐구", "실험", "프로젝트", "활동", "보고서", "심화")
+    hints: list[dict[str, Any]] = []
+    seen_labels: set[str] = set()
+    for page in normalized_pages:
+        text = str(page.get("text") or "")
+        lowered = text.lower()
+        if not any(keyword.lower() in lowered for keyword in major_keywords):
+            continue
+        if not any(keyword.lower() in lowered for keyword in action_keywords):
+            continue
+        signal = _clean_line(text, max_len=180)
+        if not signal or signal in seen_labels:
+            continue
+        seen_labels.add(signal)
+        evidence = _find_keyword_evidence(
+            normalized_pages=[page],
+            keyword="전공" if "전공" in text else "진로" if "진로" in text else "학과",
+            limit=1,
+        )
+        if not evidence:
+            evidence = [
+                _build_evidence(
+                    page_number=int(page["page_number"]),
+                    text=text,
+                    start=0,
+                    end=min(len(text), 50),
+                )
+            ]
+        hints.append(
+            {
+                "hint": signal,
+                "confidence": 0.72,
+                "source": "heuristic_sentence_inference",
+                "evidence": evidence,
+            }
+        )
+        if len(hints) >= _CANONICAL_MAX_ITEMS_PER_FIELD:
+            break
+    return hints
+
+
+def _build_weak_or_missing_sections(
+    *,
+    section_classification: dict[str, dict[str, Any]],
+    normalized_pages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    weak_sections: list[dict[str, Any]] = []
+    for section, payload in section_classification.items():
+        status = str(payload.get("status") or "")
+        if status not in {"weak", "missing"}:
+            continue
+        matches = payload.get("matches") if isinstance(payload.get("matches"), list) else []
+        evidence: list[dict[str, Any]] = []
+        for match in matches[:_CANONICAL_MAX_EVIDENCE_PER_ITEM]:
+            page_number = match.get("page_number")
+            excerpt = str(match.get("excerpt") or "").strip()
+            if not isinstance(page_number, int) or page_number <= 0:
+                continue
+            if not excerpt:
+                page = next((item for item in normalized_pages if item.get("page_number") == page_number), None)
+                if isinstance(page, dict):
+                    excerpt = str(page.get("snippet") or "")
+            evidence.append(
+                {
+                    "page_number": page_number,
+                    "excerpt": _clean_line(excerpt, max_len=220),
+                    "start_char": 0,
+                    "end_char": min(len(excerpt), 220),
+                }
+            )
+        if not evidence and normalized_pages:
+            page = normalized_pages[0]
+            fallback_excerpt = str(page.get("snippet") or "섹션 근거가 부족합니다.")
+            evidence = [
+                {
+                    "page_number": int(page["page_number"]),
+                    "excerpt": _clean_line(fallback_excerpt, max_len=220),
+                    "start_char": 0,
+                    "end_char": min(len(fallback_excerpt), 220),
+                }
+            ]
+        weak_sections.append(
+            {
+                "section": section,
+                "status": status,
+                "density": round(float(payload.get("density") or 0.0), 3),
+                "confidence": round(float(payload.get("confidence") or 0.0), 3),
+                "evidence": evidence,
+            }
+        )
+    return weak_sections[:_CANONICAL_MAX_ITEMS_PER_FIELD]
+
+
+def _build_canonical_uncertainties(
+    *,
+    parsed: ParsedDocumentPayload,
+    pdf_analysis: dict[str, Any] | None,
+    section_classification: dict[str, dict[str, Any]],
+    weak_or_missing_sections: list[dict[str, Any]],
+    normalized_pages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    uncertainties: list[dict[str, Any]] = []
+    if parsed.needs_review:
+        uncertainties.append(
+            {
+                "message": "파싱 결과에 수동 검토 필요 플래그가 있습니다.",
+                "related_field": "document_confidence",
+                "confidence_impact": 0.18,
+                "evidence": _scope_evidence(normalized_pages),
+            }
+        )
+    if parsed.parse_confidence < 0.6:
+        uncertainties.append(
+            {
+                "message": "문서 파싱 confidence가 낮아 일부 추론은 보수적으로 해석해야 합니다.",
+                "related_field": "document_confidence",
+                "confidence_impact": 0.16,
+                "evidence": _scope_evidence(normalized_pages),
+            }
+        )
+    if pdf_analysis and pdf_analysis.get("engine") == "fallback":
+        uncertainties.append(
+            {
+                "message": "PDF 분석이 LLM 실패 후 휴리스틱 fallback으로 생성되었습니다.",
+                "related_field": "pdf_analysis",
+                "confidence_impact": 0.12,
+                "evidence": _scope_evidence(normalized_pages),
+            }
+        )
+    for item in weak_or_missing_sections[:4]:
+        section = str(item.get("section") or "").strip()
+        status = str(item.get("status") or "").strip()
+        if not section:
+            continue
+        uncertainties.append(
+            {
+                "message": f"{section} 섹션이 {status} 상태로 분류되었습니다.",
+                "related_field": section,
+                "confidence_impact": 0.08 if status == "weak" else 0.12,
+                "evidence": item.get("evidence", [])[:_CANONICAL_MAX_EVIDENCE_PER_ITEM],
+            }
+        )
+    for section, payload in section_classification.items():
+        if payload.get("status") != "present":
+            continue
+        if float(payload.get("confidence") or 0.0) >= 0.55:
+            continue
+        uncertainties.append(
+            {
+                "message": f"{section} 분류 confidence가 낮아 추가 검증이 필요합니다.",
+                "related_field": section,
+                "confidence_impact": 0.06,
+                "evidence": _scope_evidence(normalized_pages),
+            }
+        )
+
+    deduped: list[dict[str, Any]] = []
+    seen_messages: set[str] = set()
+    for item in uncertainties:
+        message = str(item.get("message") or "").strip()
+        if not message or message in seen_messages:
+            continue
+        seen_messages.add(message)
+        deduped.append(item)
+        if len(deduped) >= _CANONICAL_MAX_ITEMS_PER_FIELD:
+            break
+    return deduped
+
+
+def _merge_analysis_artifact_into_canonical(
+    *,
+    analysis_artifact: dict[str, Any],
+    normalized_pages: list[dict[str, Any]],
+    grades_subjects: list[dict[str, Any]],
+    subject_special_notes: list[dict[str, Any]],
+    extracurricular: list[dict[str, Any]],
+    reading_activity: list[dict[str, Any]],
+    behavior_opinion: list[dict[str, Any]],
+    uncertainties: list[dict[str, Any]],
+) -> None:
+    canonical_data = analysis_artifact.get("canonical_data")
+    if not isinstance(canonical_data, dict):
+        return
+
+    def _append_if_evidenced(
+        *,
+        target: list[dict[str, Any]],
+        label_key: str,
+        label_value: str,
+        source_text: str,
+        confidence: float,
+    ) -> None:
+        evidence = _find_keyword_evidence(
+            normalized_pages=normalized_pages,
+            keyword=source_text,
+            limit=_CANONICAL_MAX_EVIDENCE_PER_ITEM,
+        )
+        if not evidence:
+            evidence = _find_keyword_evidence(
+                normalized_pages=normalized_pages,
+                keyword=label_value,
+                limit=_CANONICAL_MAX_EVIDENCE_PER_ITEM,
+            )
+        if not evidence:
+            uncertainties.append(
+                {
+                    "message": f"analysis_artifact의 '{label_value}' 항목은 페이지 근거 링크를 찾지 못했습니다.",
+                    "related_field": label_value,
+                    "confidence_impact": 0.05,
+                    "evidence": _scope_evidence(normalized_pages),
+                }
+            )
+            return
+        target.append(
+            {
+                label_key: label_value,
+                "confidence": confidence,
+                "source": "analysis_artifact_bridge",
+                "evidence": evidence,
+            }
+        )
+
+    for grade in canonical_data.get("grades", [])[:4]:
+        if not isinstance(grade, dict):
+            continue
+        subject = str(grade.get("subject") or "").strip()
+        if not subject:
+            continue
+        _append_if_evidenced(
+            target=grades_subjects,
+            label_key="subject",
+            label_value=subject,
+            source_text=subject,
+            confidence=0.74,
+        )
+
+    subject_notes = canonical_data.get("subject_special_notes")
+    if isinstance(subject_notes, dict):
+        for subject, note in list(subject_notes.items())[:4]:
+            subject_text = str(subject or "").strip()
+            note_text = str(note or "").strip()
+            if not subject_text and not note_text:
+                continue
+            _append_if_evidenced(
+                target=subject_special_notes,
+                label_key="label",
+                label_value=f"세특:{subject_text or '미상 과목'}",
+                source_text=note_text or subject_text,
+                confidence=0.71,
+            )
+
+    extracurricular_map = canonical_data.get("extracurricular_narratives")
+    if isinstance(extracurricular_map, dict):
+        for name, narrative in list(extracurricular_map.items())[:4]:
+            name_text = str(name or "").strip()
+            narrative_text = str(narrative or "").strip()
+            if not name_text and not narrative_text:
+                continue
+            _append_if_evidenced(
+                target=extracurricular,
+                label_key="label",
+                label_value=f"창체:{name_text or '미상 영역'}",
+                source_text=narrative_text or name_text,
+                confidence=0.69,
+            )
+
+    for reading_item in canonical_data.get("reading_activities", [])[:4]:
+        reading_text = str(reading_item or "").strip()
+        if not reading_text:
+            continue
+        _append_if_evidenced(
+            target=reading_activity,
+            label_key="label",
+            label_value="독서활동",
+            source_text=reading_text,
+            confidence=0.66,
+        )
+
+    behavior_text = str(canonical_data.get("behavior_opinion") or "").strip()
+    if behavior_text:
+        _append_if_evidenced(
+            target=behavior_opinion,
+            label_key="label",
+            label_value="행동특성/종합의견",
+            source_text=behavior_text,
+            confidence=0.68,
+        )
+
+
+def _count_linked_evidence(**fields: list[dict[str, Any]]) -> int:
+    linked = 0
+    for items in fields.values():
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            evidence = item.get("evidence")
+            if isinstance(evidence, list):
+                linked += len(evidence)
+    return linked
+
+
+def _compute_document_confidence(
+    *,
+    parsed: ParsedDocumentPayload,
+    pdf_analysis: dict[str, Any] | None,
+    entity_count: int,
+    weak_or_missing_sections: list[dict[str, Any]],
+    uncertainties: list[dict[str, Any]],
+    normalized_pages: list[dict[str, Any]],
+) -> float:
+    base = 0.28
+    base += min(0.32, max(0.0, float(parsed.parse_confidence)) * 0.32)
+    base += min(0.16, len(normalized_pages) * 0.03)
+    base += min(0.16, entity_count * 0.012)
+    if pdf_analysis and pdf_analysis.get("engine") == "llm":
+        base += 0.04
+    if pdf_analysis and pdf_analysis.get("engine") == "fallback":
+        base -= 0.06
+    base -= min(0.2, len(weak_or_missing_sections) * 0.03)
+    base -= min(0.22, len(uncertainties) * 0.035)
+    if parsed.needs_review:
+        base -= 0.08
+    return round(max(0.05, min(0.98, base)), 3)
+
+
+def _find_keyword_evidence(
+    *,
+    normalized_pages: list[dict[str, Any]],
+    keyword: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    normalized_keyword = str(keyword or "").strip()
+    if not normalized_keyword:
+        return []
+    evidence: list[dict[str, Any]] = []
+    seen: set[tuple[int, int]] = set()
+    for page in normalized_pages:
+        text = str(page.get("text") or "")
+        if not text:
+            continue
+        lowered = text.lower()
+        lowered_keyword = normalized_keyword.lower()
+        start = lowered.find(lowered_keyword)
+        while start != -1:
+            key = (int(page["page_number"]), start)
+            if key not in seen:
+                seen.add(key)
+                end = start + len(normalized_keyword)
+                evidence.append(
+                    _build_evidence(
+                        page_number=int(page["page_number"]),
+                        text=text,
+                        start=start,
+                        end=end,
+                    )
+                )
+                if len(evidence) >= limit:
+                    return evidence
+            start = lowered.find(lowered_keyword, start + len(lowered_keyword))
+    return evidence
+
+
+def _build_evidence(*, page_number: int, text: str, start: int, end: int) -> dict[str, Any]:
+    excerpt_start = max(0, start - 45)
+    excerpt_end = min(len(text), end + 95)
+    excerpt = _clean_line(text[excerpt_start:excerpt_end], max_len=220)
+    return {
+        "page_number": page_number,
+        "excerpt": excerpt,
+        "start_char": max(0, start),
+        "end_char": min(len(text), max(end, start + 1)),
+    }
+
+
+def _scope_evidence(normalized_pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+    for page in normalized_pages[:2]:
+        snippet = str(page.get("snippet") or "").strip()
+        if not snippet:
+            continue
+        evidence.append(
+            {
+                "page_number": int(page["page_number"]),
+                "excerpt": _clean_line(snippet, max_len=220),
+                "start_char": 0,
+                "end_char": min(len(snippet), 220),
+            }
+        )
+    return evidence
+
+
+def build_student_record_structure_metadata(
+    *,
+    parsed: ParsedDocumentPayload,
+    pdf_analysis: dict[str, Any] | None,
+    analysis_artifact: dict[str, Any] | None = None,
+    canonical_schema: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if parsed.source_extension.lower() != ".pdf":
+        return None
+
+    page_items = _extract_page_items(parsed)
     page_count = max(parsed.page_count, len(page_items), 1)
     full_text = (parsed.content_text or "").strip()
     compact_text = re.sub(r"\s+", " ", full_text)
+    resolved_canonical = (
+        canonical_schema
+        if isinstance(canonical_schema, dict)
+        else build_student_record_canonical_metadata(
+            parsed=parsed,
+            pdf_analysis=pdf_analysis,
+            analysis_artifact=analysis_artifact,
+        )
+    )
+    canonical_section_density = _legacy_section_density_from_canonical(resolved_canonical)
 
     section_keywords: dict[str, tuple[str, ...]] = {
         "세특": ("세부능력", "특기사항", "교과학습발달상황", "subject_special_notes"),
@@ -626,6 +1506,8 @@ def build_student_record_structure_metadata(
         key: round(min(1.0, (value / max_hits) if max_hits else 0.0), 3)
         for key, value in section_hits.items()
     }
+    for section, density in canonical_section_density.items():
+        section_density[section] = max(section_density.get(section, 0.0), density)
 
     weak_sections = [
         section
@@ -642,10 +1524,12 @@ def build_student_record_structure_metadata(
     for pattern in timeline_patterns:
         for match in re.findall(pattern, compact_text):
             timeline_signals.append(str(match))
+    timeline_signals.extend(_extract_canonical_string_values(resolved_canonical, "timeline_signals", "signal"))
     timeline_signals = _dedupe_list(timeline_signals, limit=10)
 
     activity_clusters = _extract_cluster_hints(compact_text)
     alignment_signals = _extract_alignment_hints(compact_text)
+    alignment_signals.extend(_extract_canonical_string_values(resolved_canonical, "major_alignment_hints", "hint"))
     continuity_signals = _extract_keyword_sentences(
         compact_text,
         keywords=("심화", "확장", "후속", "비교", "연계", "지속"),
@@ -666,6 +1550,10 @@ def build_student_record_structure_metadata(
         uncertain_items.append("추출 텍스트가 부족해 구조 추정이 제한되었습니다.")
     if pdf_analysis and pdf_analysis.get("engine") == "fallback":
         uncertain_items.append("PDF 요약이 heuristic fallback으로 생성되었습니다.")
+
+    if isinstance(resolved_canonical, dict):
+        weak_sections.extend(_extract_canonical_string_values(resolved_canonical, "weak_or_missing_sections", "section"))
+        uncertain_items.extend(_extract_canonical_string_values(resolved_canonical, "uncertainties", "message"))
 
     if isinstance(analysis_artifact, dict):
         canonical_data = analysis_artifact.get("canonical_data")
@@ -709,6 +1597,53 @@ def build_student_record_structure_metadata(
         "process_reflection_signals": process_reflection_signals,
         "uncertain_items": _dedupe_list(uncertain_items, limit=8),
     }
+
+
+def _legacy_section_density_from_canonical(canonical_schema: dict[str, Any] | None) -> dict[str, float]:
+    if not isinstance(canonical_schema, dict):
+        return {}
+    section_classification = canonical_schema.get("section_classification")
+    if not isinstance(section_classification, dict):
+        return {}
+
+    legacy_map = {
+        "subject_special_notes": "세특",
+        "extracurricular": "창체",
+        "career_signals": "진로",
+        "behavior_opinion": "행동특성",
+        "grades_subjects": "교과학습발달상황",
+        "reading_activity": "독서",
+    }
+    density: dict[str, float] = {}
+    for canonical_key, legacy_key in legacy_map.items():
+        payload = section_classification.get(canonical_key)
+        if not isinstance(payload, dict):
+            continue
+        try:
+            score = max(0.0, min(1.0, float(payload.get("density") or 0.0)))
+        except (TypeError, ValueError):
+            continue
+        density[legacy_key] = max(density.get(legacy_key, 0.0), round(score, 3))
+    return density
+
+
+def _extract_canonical_string_values(
+    canonical_schema: dict[str, Any] | None,
+    field: str,
+    key: str,
+) -> list[str]:
+    if not isinstance(canonical_schema, dict):
+        return []
+    raw_values = canonical_schema.get(field)
+    if not isinstance(raw_values, list):
+        return []
+    values: list[str] = []
+    for item in raw_values:
+        if isinstance(item, dict):
+            value = str(item.get(key) or "").strip()
+            if value:
+                values.append(value)
+    return values
 
 
 def _extract_cluster_hints(text: str) -> list[str]:

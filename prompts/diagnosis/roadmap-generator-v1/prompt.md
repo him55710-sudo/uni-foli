@@ -27,3 +27,4 @@ When writing roadmap-oriented narrative:
 - Tie each phase to evidence improvement, not exaggerated outcomes.
 - Mark items that need additional verification.
 - Keep claims admissions-safe and authenticity-first.
+- Keep pacing calm and readable: each phase should have a single focus sentence before action bullets.

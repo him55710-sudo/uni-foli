@@ -33,3 +33,4 @@ Constraints:
 - No fluff or chatty style
 - No admissions guarantee language
 - Mention uncertainty if evidence is limited
+- Keep section discipline: standing -> verified strength -> top gap -> immediate action.

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
@@ -27,11 +27,13 @@ from polio_api.schemas.workshop import (
     StarterChoice,
     StreamTokenResponse,
     WorkshopChoiceRequest,
+    WorkshopDraftPatchProposal,
     WorkshopMessageRequest,
     WorkshopQualityUpdateRequest,
     WorkshopSessionCreate,
     WorkshopSessionResponse,
     WorkshopSaveDraftRequest,
+    WorkshopSaveDraftResponse,
     WorkshopStateResponse,
     WorkshopUpdateVisualRequest,
 )
@@ -48,10 +50,19 @@ from polio_api.services.quality_control import (
 )
 from polio_api.services.project_service import get_project
 from polio_api.services.rag_service import RAGConfig
+from polio_api.services.search_provider_service import normalize_grounding_source_type
 from polio_api.services.chat_fallback_service import build_conversational_fallback
 from polio_api.services.chat_memory_service import build_workshop_memory_payload
+from polio_api.services.diagnosis_copilot_service import build_diagnosis_copilot_brief
 from polio_api.services.guided_chat_state_service import load_guided_chat_state
 from polio_api.services.prompt_registry import get_prompt_registry
+from polio_api.services.workshop_coauthoring_service import (
+    build_coauthoring_system_context,
+    build_default_structured_draft,
+    extract_draft_patch_from_response,
+    extract_structured_draft_from_evidence_map,
+    merge_structured_draft_into_evidence_map,
+)
 from polio_api.services.workshop_document_grounding_service import build_workshop_document_grounding_context
 from polio_api.services.workshop_render_service import SSEEvent, _parse_artifact, _sse_line, stream_render
 from polio_domain.enums import QualityLevel, TurnType, WorkshopStatus
@@ -171,7 +182,19 @@ def _build_state_response(
         turn_count=turn_count,
         reference_count=reference_count,
     )
-    artifact_payload = DraftArtifactResponse.model_validate(latest_artifact) if latest_artifact else None
+    artifact_payload: DraftArtifactResponse | None = None
+    if latest_artifact:
+        artifact_payload = DraftArtifactResponse.model_validate(latest_artifact)
+        structured_draft = extract_structured_draft_from_evidence_map(
+            latest_artifact.evidence_map if isinstance(latest_artifact.evidence_map, dict) else None
+        )
+        if structured_draft is not None:
+            artifact_payload = DraftArtifactResponse.model_validate(
+                {
+                    **artifact_payload.model_dump(mode="json"),
+                    "structured_draft": structured_draft.model_dump(mode="json"),
+                }
+            )
 
     default_message = (
         f"[{profile.label}] ?숈깮 ?섏?怨??덉쟾?깆쓣 ?곗꽑?쇰줈 留λ씫??紐⑥쑝怨??덉뒿?덈떎."
@@ -311,32 +334,77 @@ def update_quality_level_route(
         message=f"[{profile.label}] ?섏???蹂寃쏀뻽?듬땲?? starter/follow-up ?쒖븞怨??뚮뜑 議곌굔???④퍡 議곗젙?⑸땲??",
     )
 
-@router.put("/{workshop_id}/drafts/latest", response_model=dict)
+@router.put("/{workshop_id}/drafts/latest", response_model=WorkshopSaveDraftResponse)
 def update_latest_draft_content(
     workshop_id: str,
     payload: WorkshopSaveDraftRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> dict:
+) -> WorkshopSaveDraftResponse:
     session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     latest = _latest_artifact(session)
+    latest_structured_draft = (
+        extract_structured_draft_from_evidence_map(latest.evidence_map if latest else None)
+        if latest is not None
+        else None
+    )
+    structured_to_save = payload.structured_draft or latest_structured_draft or build_default_structured_draft(mode=payload.mode)
+
+    expected_updated_at = payload.expected_updated_at
+    if latest is not None and expected_updated_at is not None and latest.updated_at is not None:
+        expected = expected_updated_at.astimezone(timezone.utc)
+        actual = latest.updated_at.astimezone(timezone.utc) if latest.updated_at.tzinfo else latest.updated_at.replace(tzinfo=timezone.utc)
+        if actual > expected and (latest.report_markdown or "") != payload.document_content:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Draft has been updated elsewhere. Reload before saving.",
+                    "latest_document_content": latest.report_markdown or "",
+                    "latest_updated_at": latest.updated_at.isoformat(),
+                    "latest_structured_draft": (
+                        latest_structured_draft.model_dump(mode="json") if latest_structured_draft is not None else None
+                    ),
+                },
+            )
+
     if latest:
         latest.report_markdown = payload.document_content
         latest.visual_specs = []
         latest.math_expressions = []
+        latest.evidence_map = merge_structured_draft_into_evidence_map(
+            evidence_map=latest.evidence_map if isinstance(latest.evidence_map, dict) else None,
+            structured_draft=structured_to_save,
+        )
         db.commit()
+        db.refresh(latest)
+        return WorkshopSaveDraftResponse(
+            status="ok",
+            message="Draft auto-saved successfully.",
+            saved_updated_at=latest.updated_at,
+            structured_draft=structured_to_save,
+        )
     else:
         # Create an artifact manually so the session has a persistence layer for the user's manual drafts
         artifact = DraftArtifact(
             session_id=session.id,
             render_status="completed",
             report_markdown=payload.document_content,
+            evidence_map=merge_structured_draft_into_evidence_map(
+                evidence_map=None,
+                structured_draft=structured_to_save,
+            ),
             visual_specs=[],
             math_expressions=[],
         )
         db.add(artifact)
         db.commit()
-    return {"status": "ok", "message": "Draft auto-saved successfully."}
+        db.refresh(artifact)
+        return WorkshopSaveDraftResponse(
+            status="ok",
+            message="Draft auto-saved successfully.",
+            saved_updated_at=artifact.updated_at,
+            structured_draft=structured_to_save,
+        )
 
 
 @router.patch("/{workshop_id}/artifacts/{artifact_id}/visuals/{visual_id}", response_model=WorkshopStateResponse)
@@ -476,6 +544,7 @@ async def chat_stream_route(
 ) -> StreamingResponse:
     session = _get_session_loaded_for_user(workshop_id, db, current_user.id)
     project, quest = _get_project_and_quest(db, session)
+    latest_artifact = _latest_artifact(session)
 
     user_turn = WorkshopTurn(
         session_id=session.id,
@@ -503,20 +572,43 @@ async def chat_stream_route(
         user_message=payload.message.strip(),
         profile="standard",
     )
+    diagnosis_copilot_brief = build_diagnosis_copilot_brief(
+        db,
+        project_id=project.id if project else None,
+    )
     base_instruction = get_prompt_registry().compose_prompt("chat.coaching-orchestration")
+    draft_snapshot_context = ""
+    if payload.draft_snapshot_markdown and payload.draft_snapshot_markdown.strip():
+        snapshot = payload.draft_snapshot_markdown.strip()
+        if len(snapshot) > 5000:
+            snapshot = f"{snapshot[:5000].rstrip()}..."
+        draft_snapshot_context = f"[우측 최신 초안 스냅샷]\n{snapshot}"
+    structured_draft = (
+        payload.structured_draft
+        or extract_structured_draft_from_evidence_map(
+            latest_artifact.evidence_map if latest_artifact is not None and isinstance(latest_artifact.evidence_map, dict) else None
+        )
+        or build_default_structured_draft(mode=payload.mode)
+    )
+    coauthoring_context = build_coauthoring_system_context(mode=payload.mode, structured_draft=structured_draft)
     full_instruction = (
         f"{memory_context}\n\n"
         f"{document_grounding_context}\n\n"
+        f"{diagnosis_copilot_brief}\n\n"
+        f"{draft_snapshot_context}\n\n"
+        f"{coauthoring_context}\n\n"
         f"{base_instruction}"
     )
 
     async def event_stream() -> AsyncIterator[str]:
         full_response = ""
+        cleaned_response = ""
+        draft_patch: WorkshopDraftPatchProposal | None = None
         limited_mode = False
         limited_reason: str | None = None
         profile = "standard"
 
-        yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': False, 'limited_reason': None}}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': False, 'limited_reason': None, 'coauthoring_mode': payload.mode}}, ensure_ascii=False)}\n\n"
 
         try:
             llm = get_llm_client(profile="standard")
@@ -536,7 +628,7 @@ async def chat_stream_route(
             limited_reason = "llm_unavailable"
 
         if limited_mode:
-            yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': True, 'limited_reason': limited_reason}}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': True, 'limited_reason': limited_reason, 'coauthoring_mode': payload.mode}}, ensure_ascii=False)}\n\n"
             fallback = _build_workshop_fallback_text(
                 user_message=payload.message.strip(),
                 reason=limited_reason or "llm_unavailable",
@@ -545,17 +637,22 @@ async def chat_stream_route(
             for token in _chunk_text(fallback):
                 full_response += token
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+        cleaned_response, draft_patch = extract_draft_patch_from_response(full_response)
+        if draft_patch is not None:
+            yield f"data: {json.dumps({'draft_patch': draft_patch.model_dump(mode='json')}, ensure_ascii=False)}\n\n"
 
         assistant_turn = WorkshopTurn(
             session_id=session.id,
             turn_type=TurnType.MESSAGE.value,
             speaker_role="assistant",
-            query=full_response.strip(),
+            query=(cleaned_response or full_response).strip(),
             response=None,
             action_payload={
                 "limited_mode": limited_mode,
                 "limited_reason": limited_reason,
                 "memory_summary": memory_summary,
+                "coauthoring_mode": payload.mode,
+                "draft_patch": draft_patch.model_dump(mode="json") if draft_patch is not None else None,
             },
         )
         db.add(assistant_turn)
@@ -578,7 +675,7 @@ def pin_reference_route(
     reference = PinnedReference(
         session_id=workshop_id,
         text_content=payload.text_content,
-        source_type=payload.source_type,
+        source_type=normalize_grounding_source_type(payload.source_type),
         source_id=payload.source_id,
     )
     db.add(reference)
@@ -733,7 +830,7 @@ async def sse_events(
     # Build RAG config if advanced mode is detected
     rag_cfg = RAGConfig(
         enabled=requested_advanced_mode and len(full_session.pinned_references) > 0,
-        source=rag_source if rag_source in {"semantic", "kci", "both", "internal"} else "semantic",
+        source=rag_source if rag_source in {"semantic", "kci", "both", "live_web", "internal"} else "semantic",
         max_papers=3,
         pin_required=True,
     )
@@ -808,4 +905,4 @@ async def sse_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
+

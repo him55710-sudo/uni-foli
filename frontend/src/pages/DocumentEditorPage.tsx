@@ -6,7 +6,7 @@ import type { JSONContent } from '@tiptap/react';
 import { api } from '../lib/api';
 import { TiptapEditor, type TiptapEditorHandle } from '../components/editor/TiptapEditor';
 import { ExportModal } from '../components/editor/ExportModal';
-import { PrimaryButton, SecondaryButton } from '../components/primitives';
+import { PrimaryButton, SecondaryButton, StatusBadge } from '../components/primitives';
 
 interface Draft {
   id: string;
@@ -165,6 +165,13 @@ export function DocumentEditorPage() {
       return draft.content_markdown || seedMarkdown || null;
     }
   })();
+  const editorStatus = isSaving
+    ? { tone: 'active' as const, label: 'Saving...' }
+    : lastSaved
+      ? { tone: 'success' as const, label: `Saved ${lastSaved.toLocaleTimeString()}` }
+      : isLocalMode
+        ? { tone: 'warning' as const, label: 'Local mode' }
+        : { tone: 'neutral' as const, label: 'Autosave enabled' };
 
   if (isLoading) {
     return (
@@ -201,22 +208,13 @@ export function DocumentEditorPage() {
               <BookOpen size={16} className="shrink-0 text-blue-600" />
               <h1 className="truncate text-sm font-bold text-slate-900">{draft?.title || '문서 편집기'}</h1>
             </div>
-            <p className="text-[10px] font-medium text-slate-400">
-              {isSaving ? (
-                <span className="inline-flex items-center gap-1">
-                  <Loader2 size={9} className="animate-spin" /> 저장 중...
-                </span>
-              ) : lastSaved ? (
-                <span className="inline-flex items-center gap-1">
-                  <Check size={9} className="text-emerald-500" />
-                  {lastSaved.toLocaleTimeString()} 저장됨
-                </span>
-              ) : isLocalMode ? (
-                '오프라인 편집 모드'
-              ) : (
-                '편집 내용 자동 저장'
-              )}
-            </p>
+            <div className="mt-1">
+              <StatusBadge status={editorStatus.tone}>
+                {isSaving ? <Loader2 size={10} className="animate-spin" /> : null}
+                {!isSaving && lastSaved ? <Check size={10} /> : null}
+                {editorStatus.label}
+              </StatusBadge>
+            </div>
           </div>
         </div>
 

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 import re
 import smtplib
-import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
-from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from polio_api.core.config import Settings, get_settings
+from polio_api.core.security import sanitize_public_error
 from polio_api.db.models.inquiry import Inquiry
 from polio_api.schemas.inquiry import InquiryCreate
 from polio_api.services.prompt_registry import PromptRegistryError, get_prompt_registry
@@ -19,6 +19,8 @@ from polio_api.services.prompt_registry import PromptRegistryError, get_prompt_r
 TRIAGE_PROMPT_NAME = "inquiry-support.contact-triage"
 _INQUIRY_LOGGER = logging.getLogger("polio.api.inquiries")
 _SMTP_TIMEOUT_SECONDS = 20.0
+_SMTP_DISABLED_REASON = "SMTP_ENABLED=false"
+_GENERIC_INQUIRY_DELIVERY_FAILURE = "Inquiry email delivery failed. Retry after checking SMTP configuration."
 _FABRICATION_PATTERN = re.compile(r"\b(make up|fabricat(?:e|ed|ion)|조작|거짓|허위)\b", re.IGNORECASE)
 _GUARANTEE_PATTERN = re.compile(r"\b(guarantee|guaranteed|100%|합격 보장|확정 합격)\b", re.IGNORECASE)
 _SENSITIVE_PATTERN = re.compile(
@@ -27,7 +29,7 @@ _SENSITIVE_PATTERN = re.compile(
 )
 
 
-def create_inquiry(db: Session, payload: InquiryCreate, background_tasks: BackgroundTasks | None = None) -> Inquiry:
+def create_inquiry(db: Session, payload: InquiryCreate) -> Inquiry:
     inquiry = Inquiry(
         inquiry_type=payload.inquiry_type,
         status="received",
@@ -45,44 +47,182 @@ def create_inquiry(db: Session, payload: InquiryCreate, background_tasks: Backgr
     db.add(inquiry)
     db.commit()
     db.refresh(inquiry)
-    
-    # Notify via email asynchronously
-    if background_tasks:
-        background_tasks.add_task(_send_email_notification_safe, payload)
-    else:
-        # Fallback to threading if BackgroundTasks is not available (e.g. in some tests or legacy calls)
-        threading.Thread(target=_send_email_notification_safe, args=(payload,), daemon=True).start()
-    
+
+    from polio_api.services.async_job_service import create_async_job, dispatch_job_if_enabled
+    from polio_domain.enums import AsyncJobType
+
+    try:
+        job = create_async_job(
+            db,
+            job_type=AsyncJobType.INQUIRY_EMAIL.value,
+            resource_type="inquiry",
+            resource_id=inquiry.id,
+            project_id=None,
+            payload={"inquiry_id": inquiry.id},
+        )
+    except Exception as exc:  # noqa: BLE001
+        reason = sanitize_public_error(
+            str(exc),
+            fallback="Inquiry was saved, but email queueing failed. Check async job configuration.",
+        )
+        _INQUIRY_LOGGER.exception("Inquiry email queueing failed. inquiry_id=%s error=%s", inquiry.id, exc)
+        _set_delivery_status(
+            inquiry,
+            status="failed",
+            reason=reason,
+            retry_needed=True,
+        )
+        inquiry.status = "delivery_failed"
+        db.add(inquiry)
+        db.commit()
+        db.refresh(inquiry)
+        return inquiry
+
+    _set_delivery_status(
+        inquiry,
+        status="queued",
+        async_job_id=job.id,
+        retry_needed=False,
+    )
+    inquiry.status = "delivery_queued"
+    db.add(inquiry)
+    db.commit()
+    db.refresh(inquiry)
+
+    try:
+        dispatch_job_if_enabled(job.id)
+    except Exception as exc:  # noqa: BLE001
+        # Job is persisted and can be picked up by worker/inline processor later.
+        _INQUIRY_LOGGER.exception(
+            "Inquiry email dispatch trigger failed, but job remains queued. inquiry_id=%s job_id=%s error=%s",
+            inquiry.id,
+            job.id,
+            exc,
+        )
+        _set_delivery_status(
+            inquiry,
+            status="queued",
+            reason="Delivery job queued; dispatcher trigger failed. Worker retry is required.",
+            async_job_id=job.id,
+            retry_needed=True,
+        )
+        db.add(inquiry)
+        db.commit()
+        db.refresh(inquiry)
+
     return inquiry
 
 
-def _send_email_notification_safe(payload: InquiryCreate) -> None:
-    settings = get_settings()
-    smtp_skip_reason = _get_smtp_skip_reason(settings)
-    if smtp_skip_reason is not None:
-        _INQUIRY_LOGGER.warning("Skipping inquiry email notification: %s", smtp_skip_reason)
+def send_inquiry_email_notification(db: Session, inquiry_id: str) -> None:
+    inquiry = db.get(Inquiry, inquiry_id)
+    if inquiry is None:
+        raise ValueError(f"Inquiry not found: {inquiry_id}")
+
+    delivery = _delivery_state(inquiry)
+    if delivery.get("status") == "sent":
+        _INQUIRY_LOGGER.info("Skipping inquiry email send; already sent. inquiry_id=%s", inquiry.id)
         return
+
+    payload = _build_payload_from_inquiry(inquiry)
+    settings = get_settings()
+    skip_reason = _get_smtp_skip_reason(settings)
+    if skip_reason is not None:
+        if skip_reason == _SMTP_DISABLED_REASON:
+            _INQUIRY_LOGGER.warning(
+                "Skipping inquiry email notification because SMTP is disabled. inquiry_id=%s",
+                inquiry.id,
+            )
+            _set_delivery_status(
+                inquiry,
+                status="skipped",
+                reason=skip_reason,
+                retry_needed=False,
+            )
+            inquiry.status = "delivery_skipped"
+            db.add(inquiry)
+            db.commit()
+            return
+        _set_delivery_status(
+            inquiry,
+            status="failed",
+            reason=skip_reason,
+            retry_needed=True,
+        )
+        inquiry.status = "delivery_failed"
+        db.add(inquiry)
+        db.commit()
+        raise ValueError(skip_reason)
 
     receiver_email = _resolve_receiver_email(settings)
     if receiver_email is None:
-        _INQUIRY_LOGGER.warning("Skipping inquiry email notification: SMTP receiver email is not configured.")
-        return
+        reason = "SMTP receiver email is not configured."
+        _INQUIRY_LOGGER.warning("Inquiry delivery failed: %s inquiry_id=%s", reason, inquiry.id)
+        _set_delivery_status(
+            inquiry,
+            status="failed",
+            reason=reason,
+            retry_needed=True,
+        )
+        inquiry.status = "delivery_failed"
+        db.add(inquiry)
+        db.commit()
+        raise ValueError(reason)
 
     message = _build_inquiry_email_message(
         payload=payload,
         from_email=settings.smtp_username or "",
         to_email=receiver_email,
     )
+    attempt_count = int(delivery.get("attempt_count") or 0) + 1
+    _set_delivery_status(
+        inquiry,
+        status="sending",
+        receiver_email=receiver_email,
+        attempt_count=attempt_count,
+        retry_needed=False,
+    )
+    db.add(inquiry)
+    db.commit()
 
     try:
         _send_via_smtp(settings=settings, message=message)
-        _INQUIRY_LOGGER.info(
-            "Inquiry email notification sent to %s for inquiry_type=%s",
-            receiver_email,
-            payload.inquiry_type,
+    except Exception as exc:  # noqa: BLE001
+        reason = sanitize_public_error(str(exc), fallback="Inquiry SMTP delivery failed.")
+        _INQUIRY_LOGGER.exception(
+            "Failed to send inquiry email notification: inquiry_id=%s attempt=%s error=%s",
+            inquiry.id,
+            attempt_count,
+            exc,
         )
-    except Exception as e:
-        _INQUIRY_LOGGER.exception("Failed to send inquiry email notification: %s", e)
+        _set_delivery_status(
+            inquiry,
+            status="failed",
+            reason=reason,
+            receiver_email=receiver_email,
+            attempt_count=attempt_count,
+            retry_needed=True,
+        )
+        inquiry.status = "delivery_failed"
+        db.add(inquiry)
+        db.commit()
+        raise RuntimeError(reason) from exc
+
+    _INQUIRY_LOGGER.info(
+        "Inquiry email notification sent. inquiry_id=%s receiver=%s attempt=%s",
+        inquiry.id,
+        receiver_email,
+        attempt_count,
+    )
+    _set_delivery_status(
+        inquiry,
+        status="sent",
+        receiver_email=receiver_email,
+        attempt_count=attempt_count,
+        retry_needed=False,
+    )
+    inquiry.status = "delivery_sent"
+    db.add(inquiry)
+    db.commit()
 
 
 def _build_inquiry_email_message(*, payload: InquiryCreate, from_email: str, to_email: str) -> MIMEMultipart:
@@ -113,7 +253,7 @@ def _build_inquiry_email_message(*, payload: InquiryCreate, from_email: str, to_
 
 def _get_smtp_skip_reason(settings: Settings) -> str | None:
     if not settings.smtp_enabled:
-        return "SMTP_ENABLED=false"
+        return _SMTP_DISABLED_REASON
     if not settings.smtp_server:
         return "SMTP_SERVER is empty"
     if settings.smtp_port <= 0:
@@ -152,12 +292,151 @@ def _send_via_smtp(*, settings: Settings, message: MIMEMultipart) -> None:
         server.send_message(message)
 
 
+def _build_payload_from_inquiry(inquiry: Inquiry) -> InquiryCreate:
+    extra = inquiry.extra_fields or {}
+    return InquiryCreate.model_validate(
+        {
+            "inquiry_type": inquiry.inquiry_type,
+            "name": inquiry.name,
+            "email": inquiry.email,
+            "phone": inquiry.phone,
+            "subject": inquiry.subject,
+            "message": inquiry.message,
+            "inquiry_category": inquiry.inquiry_category,
+            "institution_name": inquiry.institution_name,
+            "institution_type": inquiry.institution_type,
+            "source_path": inquiry.source_path,
+            "context_location": extra.get("context_location"),
+            "metadata": extra.get("metadata"),
+        }
+    )
+
+
+def _delivery_state(inquiry: Inquiry) -> dict[str, Any]:
+    extra_fields = dict(inquiry.extra_fields or {})
+    delivery = extra_fields.get("delivery")
+    if isinstance(delivery, dict):
+        return dict(delivery)
+    return {}
+
+
+def _set_delivery_status(
+    inquiry: Inquiry,
+    *,
+    status: str,
+    reason: str | None = None,
+    receiver_email: str | None = None,
+    attempt_count: int | None = None,
+    async_job_id: str | None = None,
+    async_job_status: str | None = None,
+    retry_needed: bool | None = None,
+) -> None:
+    extra_fields = dict(inquiry.extra_fields or {})
+    current = _delivery_state(inquiry)
+    next_state: dict[str, Any] = {
+        **current,
+        "status": status,
+        "updated_at": _utc_iso(),
+    }
+    if reason:
+        next_state["reason"] = reason[:500]
+    if receiver_email:
+        next_state["receiver_email"] = receiver_email
+    if attempt_count is not None:
+        next_state["attempt_count"] = max(0, int(attempt_count))
+    if async_job_id:
+        next_state["async_job_id"] = async_job_id
+    if async_job_status:
+        next_state["async_job_status"] = async_job_status
+    if retry_needed is not None:
+        next_state["retry_needed"] = bool(retry_needed)
+    if reason is None and status in {"queued", "sending", "sent", "retrying"}:
+        next_state.pop("reason", None)
+    if status == "sent":
+        next_state["sent_at"] = _utc_iso()
+        next_state.pop("reason", None)
+        next_state["retry_needed"] = False
+    if status in {"failed", "retrying"} and "failed_at" not in next_state:
+        next_state["failed_at"] = _utc_iso()
+
+    history = current.get("history")
+    history_items = list(history) if isinstance(history, list) else []
+    history_event = {
+        "status": status,
+        "at": _utc_iso(),
+    }
+    if reason:
+        history_event["reason"] = reason[:300]
+    if attempt_count is not None:
+        history_event["attempt"] = max(0, int(attempt_count))
+    history_items.append(history_event)
+    next_state["history"] = history_items[-20:]
+
+    extra_fields["delivery"] = next_state
+    inquiry.extra_fields = extra_fields
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def sync_inquiry_delivery_state_from_job(
+    db: Session,
+    *,
+    inquiry_id: str,
+    delivery_status: str,
+    inquiry_status: str,
+    async_job_id: str,
+    async_job_status: str,
+    reason: str | None = None,
+    retry_needed: bool | None = None,
+) -> None:
+    inquiry = db.get(Inquiry, inquiry_id)
+    if inquiry is None:
+        return
+
+    delivery = _delivery_state(inquiry)
+    effective_reason = reason
+    current_reason = str(delivery.get("reason") or "").strip()
+    if (
+        current_reason
+        and reason
+        and reason.strip() == _GENERIC_INQUIRY_DELIVERY_FAILURE
+        and delivery_status in {"retrying", "failed"}
+    ):
+        # Keep the specific SMTP/config failure reason captured at send time.
+        effective_reason = current_reason
+    _set_delivery_status(
+        inquiry,
+        status=delivery_status,
+        reason=effective_reason,
+        async_job_id=async_job_id,
+        async_job_status=async_job_status,
+        attempt_count=int(delivery.get("attempt_count") or 0),
+        retry_needed=retry_needed,
+    )
+    inquiry.status = inquiry_status
+    db.add(inquiry)
+
+
 def _build_extra_fields(payload: InquiryCreate) -> dict[str, Any]:
     extra_fields: dict[str, Any] = {}
     if payload.metadata:
         extra_fields["metadata"] = payload.metadata
     if payload.context_location:
         extra_fields["context_location"] = payload.context_location
+    extra_fields["delivery"] = {
+        "status": "received",
+        "updated_at": _utc_iso(),
+        "attempt_count": 0,
+        "retry_needed": False,
+        "history": [
+            {
+                "status": "received",
+                "at": _utc_iso(),
+            }
+        ],
+    }
     extra_fields["triage"] = _build_inquiry_triage(payload)
     return extra_fields
 

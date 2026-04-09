@@ -15,8 +15,14 @@ from polio_api.core.security import sanitize_public_error
 from polio_api.db.models.async_job import AsyncJob
 from polio_api.db.models.diagnosis_run import DiagnosisRun
 from polio_api.db.models.parsed_document import ParsedDocument
+from polio_api.db.models.project import Project
 from polio_api.db.models.render_job import RenderJob
 from polio_api.db.models.research_document import ResearchDocument
+from polio_api.services.diagnosis_report_service import (
+    generate_consultant_report_artifact,
+    get_latest_report_artifact_for_run,
+    report_artifact_storage_key,
+)
 from polio_api.services.diagnosis_runtime_service import run_diagnosis_run
 from polio_api.services.document_service import parse_document_by_id
 from polio_api.services.render_job_service import process_render_job
@@ -293,7 +299,7 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
         )
         return
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
-        _run_async_callable(
+        completed_run = _run_async_callable(
             run_diagnosis_run,
             db,
             run_id=str(payload.get("run_id") or job.resource_id),
@@ -302,8 +308,201 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
             fallback_target_university=_opt_str(payload.get("fallback_target_university")),
             fallback_target_major=_opt_str(payload.get("fallback_target_major")),
         )
+        if isinstance(completed_run, DiagnosisRun):
+            logger.info("Diagnosis completed. run_id=%s project_id=%s", completed_run.id, completed_run.project_id)
+            try:
+                decision = ensure_default_diagnosis_report_job(
+                    db,
+                    run=completed_run,
+                    owner_user_id=_opt_str(payload.get("owner_user_id")),
+                    fallback_target_university=_opt_str(payload.get("fallback_target_university")),
+                    fallback_target_major=_opt_str(payload.get("fallback_target_major")),
+                    report_mode=_opt_str(payload.get("auto_report_mode")) or "premium_10p",
+                    include_appendix=bool(payload.get("auto_report_include_appendix", True)),
+                    include_citations=bool(payload.get("auto_report_include_citations", True)),
+                )
+                logger.info(
+                    "Diagnosis report auto-bootstrap evaluated. run_id=%s decision=%s",
+                    completed_run.id,
+                    decision,
+                )
+            except Exception:  # noqa: BLE001
+                # Report bootstrap must not retroactively fail a successful diagnosis run.
+                logger.exception(
+                    "Diagnosis report auto-bootstrap failed after diagnosis completion. run_id=%s",
+                    completed_run.id,
+                )
+        return
+    if job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        run_id = str(payload.get("run_id") or job.resource_id)
+        run = db.get(DiagnosisRun, run_id)
+        if run is None:
+            raise ValueError(f"Diagnosis run not found: {run_id}")
+        project_id = str(payload.get("project_id") or run.project_id or "")
+        project = db.get(Project, project_id)
+        if project is None:
+            raise ValueError(f"Project not found for report generation: {project_id}")
+        report_mode = str(payload.get("report_mode") or "premium_10p")
+        if report_mode not in {"compact", "premium_10p"}:
+            report_mode = "premium_10p"
+        artifact = _run_async_callable(
+            generate_consultant_report_artifact,
+            db,
+            run=run,
+            project=project,
+            report_mode=report_mode,  # type: ignore[arg-type]
+            template_id=None,
+            include_appendix=bool(payload.get("include_appendix", True)),
+            include_citations=bool(payload.get("include_citations", True)),
+            force_regenerate=bool(payload.get("force_regenerate", False)),
+        )
+        if getattr(artifact, "status", None) == "FAILED":
+            logger.warning(
+                "Diagnosis report generation completed with failed artifact. run_id=%s project_id=%s mode=%s artifact_id=%s",
+                run.id,
+                run.project_id,
+                report_mode,
+                getattr(artifact, "id", None),
+            )
+        else:
+            logger.info(
+                "Diagnosis report generation succeeded. run_id=%s project_id=%s mode=%s artifact_id=%s",
+                run.id,
+                run.project_id,
+                report_mode,
+                getattr(artifact, "id", None),
+            )
+        return
+    if job.job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        from polio_api.services.inquiry_service import send_inquiry_email_notification
+
+        inquiry_id = str(payload.get("inquiry_id") or job.resource_id)
+        send_inquiry_email_notification(db, inquiry_id)
         return
     raise ValueError(f"Unsupported async job type: {job.job_type}")
+
+
+def ensure_default_diagnosis_report_job(
+    db: Session,
+    *,
+    run: DiagnosisRun,
+    owner_user_id: str | None,
+    fallback_target_university: str | None,
+    fallback_target_major: str | None,
+    report_mode: str = "premium_10p",
+    include_appendix: bool = True,
+    include_citations: bool = True,
+) -> str:
+    return _queue_auto_diagnosis_report_job(
+        db,
+        run=run,
+        owner_user_id=owner_user_id,
+        fallback_target_university=fallback_target_university,
+        fallback_target_major=fallback_target_major,
+        report_mode=report_mode,
+        include_appendix=include_appendix,
+        include_citations=include_citations,
+    )
+
+
+def _queue_auto_diagnosis_report_job(
+    db: Session,
+    *,
+    run: DiagnosisRun,
+    owner_user_id: str | None,
+    fallback_target_university: str | None,
+    fallback_target_major: str | None,
+    report_mode: str,
+    include_appendix: bool,
+    include_citations: bool,
+) -> str:
+    if run.status != "COMPLETED" or not run.result_payload:
+        return "diagnosis_not_ready"
+
+    if report_mode not in {"compact", "premium_10p"}:
+        report_mode = "premium_10p"
+
+    latest_artifact = get_latest_report_artifact_for_run(
+        db,
+        diagnosis_run_id=run.id,
+        report_mode=report_mode,  # type: ignore[arg-type]
+    )
+    if (
+        latest_artifact is not None
+        and latest_artifact.status == "READY"
+        and report_artifact_storage_key(latest_artifact)
+    ):
+        logger.info(
+            "Diagnosis report bootstrap reused existing ready artifact. run_id=%s artifact_id=%s mode=%s",
+            run.id,
+            latest_artifact.id,
+            report_mode,
+        )
+        return "reused_ready_artifact"
+    if latest_artifact is not None and latest_artifact.status == "FAILED":
+        logger.info(
+            "Diagnosis report bootstrap skipped because latest artifact is failed. run_id=%s artifact_id=%s mode=%s",
+            run.id,
+            latest_artifact.id,
+            report_mode,
+        )
+        return "already_failed_artifact"
+
+    latest_job = get_latest_job_for_resource(
+        db,
+        resource_type="diagnosis_report",
+        resource_id=run.id,
+    )
+    if latest_job is not None:
+        if latest_job.status in {
+            AsyncJobStatus.QUEUED.value,
+            AsyncJobStatus.RUNNING.value,
+            AsyncJobStatus.RETRYING.value,
+        }:
+            logger.info(
+                "Diagnosis report bootstrap found active report job. run_id=%s job_id=%s status=%s",
+                run.id,
+                latest_job.id,
+                latest_job.status,
+            )
+            return "job_in_progress"
+        if latest_job.status in {AsyncJobStatus.SUCCEEDED.value, AsyncJobStatus.FAILED.value}:
+            logger.info(
+                "Diagnosis report bootstrap skipped because report job already attempted. run_id=%s job_id=%s status=%s",
+                run.id,
+                latest_job.id,
+                latest_job.status,
+            )
+            return "already_attempted"
+
+    report_job = create_async_job(
+        db,
+        job_type=AsyncJobType.DIAGNOSIS_REPORT.value,
+        resource_type="diagnosis_report",
+        resource_id=run.id,
+        project_id=run.project_id,
+        payload={
+            "run_id": run.id,
+            "project_id": run.project_id,
+            "owner_user_id": owner_user_id,
+            "fallback_target_university": fallback_target_university,
+            "fallback_target_major": fallback_target_major,
+            "report_mode": report_mode,
+            "include_appendix": include_appendix,
+            "include_citations": include_citations,
+            "force_regenerate": False,
+            "trigger": "diagnosis_auto",
+        },
+    )
+    dispatch_job_if_enabled(report_job.id)
+    logger.info(
+        "Diagnosis report auto-generation queued. run_id=%s project_id=%s job_id=%s mode=%s",
+        run.id,
+        run.project_id,
+        report_job.id,
+        report_mode,
+    )
+    return "queued"
 
 
 def _mark_resource_running(db: Session, job: AsyncJob) -> None:
@@ -312,6 +511,11 @@ def _mark_resource_running(db: Session, job: AsyncJob) -> None:
         if run is not None:
             run.status = "RUNNING"
             run.error_message = None
+            db.add(run)
+    elif job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        run = db.get(DiagnosisRun, job.resource_id)
+        if run is not None:
+            run.status_message = "Generating consultant diagnosis report..."
             db.add(run)
     elif job.job_type == AsyncJobType.RENDER.value:
         render_job = db.get(RenderJob, job.resource_id)
@@ -333,6 +537,18 @@ def _mark_resource_running(db: Session, job: AsyncJob) -> None:
             metadata["latest_async_job_status"] = job.status
             document.parse_metadata = metadata
             db.add(document)
+    elif job.job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        from polio_api.services.inquiry_service import sync_inquiry_delivery_state_from_job
+
+        sync_inquiry_delivery_state_from_job(
+            db,
+            inquiry_id=job.resource_id,
+            delivery_status="sending",
+            inquiry_status="delivery_sending",
+            async_job_id=job.id,
+            async_job_status=job.status,
+            retry_needed=False,
+        )
 
 
 def _mark_resource_retrying(db: Session, job: AsyncJob, reason: str) -> None:
@@ -341,6 +557,11 @@ def _mark_resource_retrying(db: Session, job: AsyncJob, reason: str) -> None:
         if run is not None:
             run.status = "RETRYING"
             run.error_message = reason
+            db.add(run)
+    elif job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        run = db.get(DiagnosisRun, job.resource_id)
+        if run is not None:
+            run.status_message = "Retrying diagnosis report generation..."
             db.add(run)
     elif job.job_type == AsyncJobType.RENDER.value:
         render_job = db.get(RenderJob, job.resource_id)
@@ -363,6 +584,19 @@ def _mark_resource_retrying(db: Session, job: AsyncJob, reason: str) -> None:
             metadata["latest_async_job_error"] = reason
             document.parse_metadata = metadata
             db.add(document)
+    elif job.job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        from polio_api.services.inquiry_service import sync_inquiry_delivery_state_from_job
+
+        sync_inquiry_delivery_state_from_job(
+            db,
+            inquiry_id=job.resource_id,
+            delivery_status="retrying",
+            inquiry_status="delivery_retrying",
+            async_job_id=job.id,
+            async_job_status=job.status,
+            reason=reason,
+            retry_needed=True,
+        )
 
 
 def _mark_resource_failed(db: Session, job: AsyncJob, reason: str) -> None:
@@ -371,6 +605,11 @@ def _mark_resource_failed(db: Session, job: AsyncJob, reason: str) -> None:
         if run is not None:
             run.status = "FAILED"
             run.error_message = reason
+            db.add(run)
+    elif job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        run = db.get(DiagnosisRun, job.resource_id)
+        if run is not None:
+            run.status_message = "Diagnosis report generation failed."
             db.add(run)
     elif job.job_type == AsyncJobType.RENDER.value:
         render_job = db.get(RenderJob, job.resource_id)
@@ -393,6 +632,19 @@ def _mark_resource_failed(db: Session, job: AsyncJob, reason: str) -> None:
             metadata["latest_async_job_error"] = reason
             document.parse_metadata = metadata
             db.add(document)
+    elif job.job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        from polio_api.services.inquiry_service import sync_inquiry_delivery_state_from_job
+
+        sync_inquiry_delivery_state_from_job(
+            db,
+            inquiry_id=job.resource_id,
+            delivery_status="failed",
+            inquiry_status="delivery_failed",
+            async_job_id=job.id,
+            async_job_status=job.status,
+            reason=reason,
+            retry_needed=True,
+        )
 
 
 def _reset_resource_for_retry(db: Session, job: AsyncJob) -> None:
@@ -401,6 +653,11 @@ def _reset_resource_for_retry(db: Session, job: AsyncJob) -> None:
         if run is not None:
             run.status = "PENDING"
             run.error_message = None
+            db.add(run)
+    elif job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        run = db.get(DiagnosisRun, job.resource_id)
+        if run is not None:
+            run.status_message = "Diagnosis report queued for retry."
             db.add(run)
     elif job.job_type == AsyncJobType.RENDER.value:
         render_job = db.get(RenderJob, job.resource_id)
@@ -423,6 +680,18 @@ def _reset_resource_for_retry(db: Session, job: AsyncJob) -> None:
             metadata.pop("latest_async_job_error", None)
             document.parse_metadata = metadata
             db.add(document)
+    elif job.job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        from polio_api.services.inquiry_service import sync_inquiry_delivery_state_from_job
+
+        sync_inquiry_delivery_state_from_job(
+            db,
+            inquiry_id=job.resource_id,
+            delivery_status="queued",
+            inquiry_status="delivery_queued",
+            async_job_id=job.id,
+            async_job_status=AsyncJobStatus.QUEUED.value,
+            retry_needed=False,
+        )
 
 
 def _opt_str(value: Any) -> str | None:
@@ -453,4 +722,8 @@ def _public_failure_reason(job: AsyncJob, reason: str) -> str:
         return "Render job failed. Review the draft content and retry."
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
         return _diagnosis_failure_reason(reason)
+    if job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        return "Diagnosis report generation failed. Retry report generation after checking diagnosis evidence."
+    if job.job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        return "Inquiry email delivery failed. Retry after checking SMTP configuration."
     return sanitize_public_error(reason, fallback="Async job failed.")

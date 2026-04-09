@@ -205,6 +205,67 @@ def test_guided_plan_rejects_choices_outside_structured_options(tmp_path: Path) 
         assert invalid_template.status_code == 422, invalid_template.text
 
 
+def test_diagnosis_report_delivery_pipeline_auto_and_manual_paths(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        project_id = _create_project_with_record(client)
+        diagnosis = _run_diagnosis(client, project_id)
+        diagnosis_id = diagnosis["id"]
+
+        status_response = client.get(f"/api/v1/diagnosis/{diagnosis_id}")
+        assert status_response.status_code == 200, status_response.text
+        status_payload = status_response.json()
+        assert status_payload["report_status"] in {
+            "AUTO_STARTING",
+            "QUEUED",
+            "RUNNING",
+            "RETRYING",
+            "READY",
+            "FAILED",
+        }
+
+        first_report = client.post(
+            f"/api/v1/diagnosis/{diagnosis_id}/report",
+            json={
+                "report_mode": "premium_10p",
+                "include_appendix": True,
+                "include_citations": True,
+                "force_regenerate": False,
+            },
+        )
+        assert first_report.status_code == 200, first_report.text
+        first_payload = first_report.json()
+        assert first_payload["status"] in {"READY", "FAILED"}
+
+        second_report = client.post(
+            f"/api/v1/diagnosis/{diagnosis_id}/report",
+            json={
+                "report_mode": "premium_10p",
+                "include_appendix": True,
+                "include_citations": True,
+                "force_regenerate": False,
+            },
+        )
+        assert second_report.status_code == 200, second_report.text
+        second_payload = second_report.json()
+
+        if first_payload["status"] == "READY":
+            assert second_payload["id"] == first_payload["id"]
+            assert second_payload["version"] == first_payload["version"]
+
+        regenerated = client.post(
+            f"/api/v1/diagnosis/{diagnosis_id}/report",
+            json={
+                "report_mode": "premium_10p",
+                "include_appendix": True,
+                "include_citations": True,
+                "force_regenerate": True,
+            },
+        )
+        assert regenerated.status_code == 200, regenerated.text
+        regenerated_payload = regenerated.json()
+        assert regenerated_payload["version"] >= first_payload["version"]
+
+
 def test_guided_diagnosis_prompt_assets_are_registered() -> None:
     get_prompt_registry.cache_clear()
     registry = get_prompt_registry()

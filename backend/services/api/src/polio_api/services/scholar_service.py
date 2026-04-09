@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -16,12 +17,37 @@ class ScholarPaper(BaseModel):
     year: int | None = None
     citationCount: int = 0
     url: str | None = None
+    source_type: str = "academic_source"
+    source_label: str | None = None
+    source_provider: str | None = None
+    source_domain: str | None = None
+    freshness_label: str = "unknown"
+    retrieved_at: str | None = None
+    requested_source: str | None = None
 
 
 class ScholarSearchResult(BaseModel):
     query: str
     total: int
     papers: list[ScholarPaper]
+    source: str = "semantic"
+    requested_source: str | None = None
+    fallback_applied: bool = False
+    limitation_note: str | None = None
+    providers_used: list[str] = Field(default_factory=list)
+    retrieved_at: str | None = None
+    source_type_counts: dict[str, int] = Field(default_factory=dict)
+
+
+def _freshness_label_from_year(year: int | None) -> str:
+    if year is None:
+        return "unknown"
+    current_year = datetime.now(timezone.utc).year
+    if year >= current_year - 1:
+        return "realtime"
+    if year >= current_year - 3:
+        return "recent"
+    return "archive"
 
 
 @dataclass(slots=True)
@@ -151,6 +177,10 @@ async def search_semantic_scholar_papers(query: str, limit: int = 5) -> ScholarS
                 year=year,
                 citationCount=citation_count,
                 url=url,
+                source_type="academic_source",
+                source_label="Academic Source",
+                source_provider="semantic_scholar",
+                freshness_label=_freshness_label_from_year(year),
             )
         )
 
@@ -161,6 +191,12 @@ async def search_semantic_scholar_papers(query: str, limit: int = 5) -> ScholarS
         query=normalized_query,
         total=total,
         papers=papers,
+        source="semantic",
+        requested_source="semantic",
+        fallback_applied=False,
+        limitation_note=None,
+        providers_used=["semantic_scholar"],
+        source_type_counts={"academic_source": len(papers)},
     )
 
 
@@ -276,6 +312,10 @@ async def search_kci_papers(query: str, limit: int = 5) -> ScholarSearchResult:
                 year=year,
                 citationCount=citation_count,
                 url=url,
+                source_type="academic_source",
+                source_label="Academic Source",
+                source_provider="kci",
+                freshness_label=_freshness_label_from_year(year),
             )
         )
 
@@ -283,4 +323,10 @@ async def search_kci_papers(query: str, limit: int = 5) -> ScholarSearchResult:
         query=normalized_query,
         total=len(papers),
         papers=papers,
+        source="kci",
+        requested_source="kci",
+        fallback_applied=False,
+        limitation_note=None,
+        providers_used=["kci"],
+        source_type_counts={"academic_source": len(papers)},
     )

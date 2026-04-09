@@ -143,3 +143,69 @@ def test_structured_memory_summary_stays_grounded() -> None:
     assert isinstance(summary["confirmed_evidence_points"], list)
     assert isinstance(summary["unresolved_evidence_gaps"], list)
     assert "합격" not in json.dumps(summary, ensure_ascii=False)
+
+
+def test_workshop_draft_save_conflict_returns_latest_snapshot() -> None:
+    with TestClient(app) as client:
+        headers = auth_headers("workshop-draft-sync-user")
+        project_id = _create_project(client, headers)
+
+        workshop_response = client.post(
+            "/api/v1/workshops",
+            json={"project_id": project_id, "quality_level": "mid"},
+            headers=headers,
+        )
+        assert workshop_response.status_code == 201
+        workshop_id = workshop_response.json()["session"]["id"]
+        structured_draft = {
+            "mode": "outline",
+            "blocks": [
+                {"block_id": "title", "heading": "Title", "content_markdown": "Sample Title", "attribution": "student-authored"},
+                {"block_id": "introduction_background", "heading": "Introduction / Background", "content_markdown": "", "attribution": "student-authored"},
+                {"block_id": "body_section_1", "heading": "Body Section 1", "content_markdown": "", "attribution": "student-authored"},
+                {"block_id": "body_section_2", "heading": "Body Section 2", "content_markdown": "", "attribution": "student-authored"},
+                {"block_id": "body_section_3", "heading": "Body Section 3", "content_markdown": "", "attribution": "student-authored"},
+                {"block_id": "conclusion_reflection_next_step", "heading": "Conclusion / Reflection / Next Step", "content_markdown": "", "attribution": "student-authored"},
+            ],
+            "source": "structured",
+        }
+
+        first_save = client.put(
+            f"/api/v1/workshops/{workshop_id}/drafts/latest",
+            json={
+                "document_content": "Initial draft from tab A",
+                "mode": "outline",
+                "structured_draft": structured_draft,
+            },
+            headers=headers,
+        )
+        assert first_save.status_code == 200
+        first_updated_at = first_save.json()["saved_updated_at"]
+        assert first_save.json()["structured_draft"]["mode"] == "outline"
+
+        remote_save = client.put(
+            f"/api/v1/workshops/{workshop_id}/drafts/latest",
+            json={
+                "document_content": "Remote draft from tab B",
+                "mode": "revision",
+                "structured_draft": {**structured_draft, "mode": "revision"},
+            },
+            headers=headers,
+        )
+        assert remote_save.status_code == 200
+        remote_updated_at = remote_save.json()["saved_updated_at"]
+        assert remote_save.json()["structured_draft"]["mode"] == "revision"
+
+        stale_save = client.put(
+            f"/api/v1/workshops/{workshop_id}/drafts/latest",
+            json={
+                "document_content": "Local stale draft from tab A",
+                "expected_updated_at": first_updated_at,
+            },
+            headers=headers,
+        )
+        assert stale_save.status_code == 409
+        detail = stale_save.json()["detail"]
+        assert detail["latest_document_content"] == "Remote draft from tab B"
+        assert detail["latest_updated_at"] == remote_updated_at
+        assert detail["latest_structured_draft"]["mode"] == "revision"

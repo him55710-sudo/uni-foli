@@ -41,6 +41,10 @@ export interface InquiryResponse {
   id: string;
   inquiry_type: InquiryType;
   status: string;
+  delivery_status?: string | null;
+  delivery_reason?: string | null;
+  delivery_async_job_id?: string | null;
+  delivery_retry_needed?: boolean | null;
   created_at: string;
   message: string;
 }

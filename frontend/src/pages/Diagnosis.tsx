@@ -25,6 +25,7 @@ import {
   isDiagnosisComplete,
   isDiagnosisFailed,
   mergeDiagnosisPayload,
+  resolveDiagnosisDeliveryState,
 } from '../lib/diagnosis';
 import { searchUniversities, searchMajors } from '../lib/educationCatalog';
 import { CatalogAutocompleteInput } from '../components/CatalogAutocompleteInput';
@@ -149,7 +150,6 @@ export function Diagnosis() {
   const [diagnosisError, setDiagnosisError] = useState<string | null>(null);
   const [isRetryingDiagnosis, setIsRetryingDiagnosis] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
-  const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
   const [timingPhases, setTimingPhases] = useState<TimingPhaseMap>(() => createInitialTimingPhases());
   const useSynchronousApiJobs = shouldUseSynchronousApiJobs();
 
@@ -309,7 +309,6 @@ export function Diagnosis() {
       setDiagnosisResult(payload);
       setDiagnosisError(null);
       setFlowError(null);
-      setShowAdvancedDetails(false);
       setStep('RESULT');
       setDiagnosisRunId(null);
       setIsUploading(false);
@@ -509,7 +508,6 @@ export function Diagnosis() {
       const now = Date.now();
 
       setProjectId(preselectedProjectId);
-      setShowAdvancedDetails(false);
       setDiagnosisResult(null);
       setDiagnosisRun(null);
       setDiagnosisJob(null);
@@ -585,7 +583,6 @@ export function Diagnosis() {
         return;
       }
 
-      setShowAdvancedDetails(false);
       setDiagnosisResult(null);
       setDiagnosisRun(null);
       setDiagnosisJob(null);
@@ -703,6 +700,23 @@ export function Diagnosis() {
   const reviewRequired = diagnosisResult?.review_required ?? diagnosisRun?.review_required ?? false;
   const responseTraceId = diagnosisResult?.response_trace_id ?? diagnosisRun?.response_trace_id ?? null;
   const univPreviewName = (currentUniv || univInput).trim();
+  const deliveryResolution = resolveDiagnosisDeliveryState(diagnosisRun, diagnosisJob);
+  const hasSecondaryInsights = Boolean(
+    diagnosisResult?.risks?.length ||
+      diagnosisResult?.recommended_topics?.length ||
+      diagnosisResult?.action_plan?.length,
+  );
+  const hasAdvancedDiagnostics = Boolean(
+    diagnosisResult?.document_quality ||
+      diagnosisResult?.section_analysis?.length ||
+      diagnosisResult?.admission_axes?.length ||
+      diagnosisResult?.claims?.length ||
+      evidenceCitations.length ||
+      reviewRequired ||
+      responseTraceId ||
+      diagnosisRun?.policy_flags?.length,
+  );
+  const shouldShowProgressRail = step !== 'RESULT';
 
   const stepItems: Array<{ id: string; label: string; description: string; state: 'done' | 'active' | 'pending' | 'error' }> = [
     {
@@ -755,8 +769,8 @@ export function Diagnosis() {
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <PageHeader eyebrow="진단" title={headerTitle} description={headerDescription} />
-      <StepIndicator items={stepItems} />
-      {shouldShowTimingDashboard ? (
+      {shouldShowProgressRail ? <StepIndicator items={stepItems} /> : null}
+      {shouldShowProgressRail && shouldShowTimingDashboard ? (
         <ProcessTimingDashboard
           phases={timingPhaseItems}
           title="진단 진행 타임테이블"
@@ -1035,9 +1049,6 @@ export function Diagnosis() {
                   <StatusBadge status={diagnosisResult.risk_level === 'safe' ? 'success' : diagnosisResult.risk_level === 'warning' ? 'warning' : 'danger'}>
                     {formatRiskLevel(diagnosisResult.risk_level)}
                   </StatusBadge>
-                  <SecondaryButton onClick={() => setShowAdvancedDetails((prev) => !prev)}>
-                    {showAdvancedDetails ? '상세 데이터 접기' : '상세 데이터 보기'}
-                  </SecondaryButton>
                 </div>
               }
             >
@@ -1074,31 +1085,169 @@ export function Diagnosis() {
                 </SurfaceCard>
               </div>
 
-              {showAdvancedDetails ? (
-                <>
-                  {diagnosisResult.document_quality ? (
-                    <SurfaceCard tone="muted" padding="sm" className="space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">문서 품질</p>
-                        <StatusBadge status={diagnosisResult.document_quality.needs_review ? 'warning' : 'success'}>
-                          {diagnosisResult.document_quality.parse_reliability_band} ({diagnosisResult.document_quality.parse_reliability_score}점)
-                        </StatusBadge>
-                      </div>
-                      <p className="text-base font-medium leading-7 text-slate-700">{diagnosisResult.document_quality.summary}</p>
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-                          source: {diagnosisResult.document_quality.source_mode}
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-                          records: {diagnosisResult.document_quality.total_records}
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-                          words: {diagnosisResult.document_quality.total_word_count}
-                        </div>
-                      </div>
-                    </SurfaceCard>
-                  ) : null}
+              <WorkflowNotice
+                tone="info"
+                title="세부 인사이트는 아래 접힘 섹션에서 확인할 수 있어요"
+                description="핵심 요약은 이 영역에 유지하고, 보조 분석과 고급 메타 데이터는 분리해 표시합니다."
+              />
 
+              {diagnosisResult.next_actions?.length ? (
+                <SurfaceCard tone="muted" padding="sm">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">다음 액션</p>
+                  <ul className="space-y-1.5">
+                    {diagnosisResult.next_actions.map((action) => (
+                      <li key={action} className="text-base font-medium leading-7 text-slate-700">
+                        · {action}
+                      </li>
+                    ))}
+                  </ul>
+                </SurfaceCard>
+              ) : null}
+
+              <WorkflowNotice tone="info" title="추천 집중 영역" description={diagnosisResult.recommended_focus} />
+            </SectionCard>
+
+            {hasSecondaryInsights ? (
+              <SectionCard
+                title="추가 인사이트"
+                description="보조 분석 항목은 기본 화면에서 분리해 필요할 때만 펼쳐볼 수 있어요."
+                eyebrow="Secondary"
+                collapsible
+                defaultCollapsed
+              >
+                {diagnosisResult.risks?.length ? (
+                  <SurfaceCard tone="muted" padding="sm" className="border border-amber-200 bg-amber-50/70">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-amber-700">리스크</p>
+                    <ul className="space-y-1.5">
+                      {diagnosisResult.risks.map((risk) => (
+                        <li key={risk} className="text-sm font-medium leading-6 text-amber-900">
+                          · {risk}
+                        </li>
+                      ))}
+                    </ul>
+                  </SurfaceCard>
+                ) : null}
+
+                {diagnosisResult.recommended_topics?.length ? (
+                  <SurfaceCard tone="muted" padding="sm">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">추천 주제</p>
+                    <div className="flex flex-wrap gap-2">
+                      {diagnosisResult.recommended_topics.map((topic) => (
+                        <StatusBadge key={topic} status="neutral">
+                          {topic}
+                        </StatusBadge>
+                      ))}
+                    </div>
+                  </SurfaceCard>
+                ) : null}
+
+                {diagnosisResult.action_plan?.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">권장 액션 플랜</p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {diagnosisResult.action_plan.map((quest, index) => (
+                        <SurfaceCard key={`${quest.title}-${index}`} padding="sm">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-sm font-bold text-slate-800">{quest.title}</p>
+                            <StatusBadge status={quest.priority === 'high' ? 'danger' : quest.priority === 'medium' ? 'warning' : 'neutral'}>
+                              {quest.priority}
+                            </StatusBadge>
+                          </div>
+                          <p className="text-base font-medium leading-7 text-slate-600">{quest.description}</p>
+                        </SurfaceCard>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </SectionCard>
+            ) : null}
+
+            {diagnosisRun?.id && projectId ? (
+              <DiagnosisGuidedChoicePanel
+                diagnosisRunId={diagnosisRun.id}
+                projectId={projectId}
+                diagnosis={diagnosisResult}
+                useSynchronousApiJobs={useSynchronousApiJobs}
+              />
+            ) : null}
+
+            {diagnosisRun?.id ? (
+              <WorkflowNotice
+                tone={
+                  deliveryResolution.state === 'report_ready'
+                    ? 'success'
+                    : deliveryResolution.state === 'failed'
+                      ? 'danger'
+                      : deliveryResolution.state === 'report_generating'
+                        ? 'loading'
+                        : 'info'
+                }
+                title={
+                  deliveryResolution.state === 'report_ready'
+                    ? '전문 진단서가 준비되었습니다'
+                    : deliveryResolution.state === 'failed'
+                      ? deliveryResolution.diagnosisFailed
+                        ? '진단 단계에서 문제가 발생했습니다'
+                        : '진단서 생성 단계에서 문제가 발생했습니다'
+                      : deliveryResolution.state === 'report_generating'
+                        ? '전문 진단서를 생성하고 있습니다'
+                        : '진단은 완료되었고 진단서 생성을 시작합니다'
+                }
+                description={
+                  deliveryResolution.state === 'report_ready'
+                    ? '아래에서 미리보기와 PDF 다운로드를 바로 진행할 수 있습니다.'
+                    : deliveryResolution.state === 'failed'
+                      ? deliveryResolution.message || '상태를 확인한 뒤 다시 시도해 주세요.'
+                      : deliveryResolution.state === 'report_generating'
+                        ? '진단 결과를 기반으로 premium_10p 진단서를 자동 생성 중입니다.'
+                        : '잠시 후 자동으로 진단서 생성 상태가 갱신됩니다.'
+                }
+              />
+            ) : null}
+
+            {diagnosisRun?.id ? (
+              <DiagnosisReportPanel
+                diagnosisRunId={diagnosisRun.id}
+                reportStatus={diagnosisRun.report_status ?? null}
+                reportAsyncJobStatus={diagnosisRun.report_async_job_status ?? null}
+                reportErrorMessage={diagnosisRun.report_error_message ?? null}
+              />
+            ) : null}
+
+            {hasAdvancedDiagnostics ? (
+              <SectionCard
+                title="고급 분석 데이터"
+                description="실행 메타데이터와 근거 검증 정보는 필요할 때만 펼쳐볼 수 있어요."
+                eyebrow="Advanced"
+                collapsible
+                defaultCollapsed
+              >
+                {diagnosisResult.document_quality ? (
+                  <SurfaceCard tone="muted" padding="sm" className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">문서 품질</p>
+                      <StatusBadge status={diagnosisResult.document_quality.needs_review ? 'warning' : 'success'}>
+                        {diagnosisResult.document_quality.parse_reliability_band} ({diagnosisResult.document_quality.parse_reliability_score}점)
+                      </StatusBadge>
+                    </div>
+                    <p className="text-base font-medium leading-7 text-slate-700">{diagnosisResult.document_quality.summary}</p>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                        source: {diagnosisResult.document_quality.source_mode}
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                        records: {diagnosisResult.document_quality.total_records}
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                        words: {diagnosisResult.document_quality.total_word_count}
+                      </div>
+                    </div>
+                  </SurfaceCard>
+                ) : null}
+
+                {diagnosisResult.requested_llm_provider ||
+                diagnosisResult.actual_llm_provider ||
+                diagnosisResult.processing_duration_ms !== undefined ? (
                   <SurfaceCard tone="muted" padding="sm" className="space-y-2">
                     <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">LLM execution</p>
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -1120,149 +1269,68 @@ export function Diagnosis() {
                       duration: {diagnosisResult.processing_duration_ms ?? 'n/a'}ms
                     </p>
                   </SurfaceCard>
+                ) : null}
 
-                  {diagnosisResult.section_analysis?.length ? (
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">섹션 분석</p>
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {diagnosisResult.section_analysis.map((item) => (
-                          <SurfaceCard key={item.key} tone="muted" padding="sm" className="space-y-1.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-bold text-slate-800">{item.label}</p>
-                              <StatusBadge status={item.present ? 'success' : 'warning'}>
-                                {item.present ? `records ${item.record_count}` : 'missing'}
+                {diagnosisResult.section_analysis?.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">섹션 분석</p>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {diagnosisResult.section_analysis.map((item) => (
+                        <SurfaceCard key={item.key} tone="muted" padding="sm" className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-bold text-slate-800">{item.label}</p>
+                            <StatusBadge status={item.present ? 'success' : 'warning'}>
+                              {item.present ? `records ${item.record_count}` : 'missing'}
+                            </StatusBadge>
+                          </div>
+                          <p className="text-base font-medium leading-7 text-slate-600">{item.note}</p>
+                        </SurfaceCard>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {diagnosisResult.admission_axes?.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">핵심 평가축</p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {diagnosisResult.admission_axes.map((axis) => (
+                        <SurfaceCard key={axis.key} padding="sm">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-sm font-bold text-slate-800">{axis.label}</p>
+                            <div className="flex items-center gap-1.5">
+                              <StatusBadge status={axis.severity === 'low' ? 'success' : axis.severity === 'medium' ? 'warning' : 'danger'}>
+                                {axis.band}
                               </StatusBadge>
+                              <StatusBadge status="neutral">{axis.score}점</StatusBadge>
                             </div>
-                            <p className="text-base font-medium leading-7 text-slate-600">{item.note}</p>
-                          </SurfaceCard>
-                        ))}
-                      </div>
+                          </div>
+                          <p className="text-base font-medium leading-7 text-slate-600">{axis.rationale}</p>
+                          {axis.evidence_hints?.length ? (
+                            <ul className="mt-2 space-y-1">
+                              {axis.evidence_hints.slice(0, 2).map((hint) => (
+                                <li key={hint} className="text-sm font-semibold text-slate-500">
+                                  · {hint}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </SurfaceCard>
+                      ))}
                     </div>
-                  ) : null}
-
-                  {diagnosisResult.admission_axes?.length ? (
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">핵심 평가축</p>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {diagnosisResult.admission_axes.map((axis) => (
-                          <SurfaceCard key={axis.key} padding="sm">
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                              <p className="text-sm font-bold text-slate-800">{axis.label}</p>
-                              <div className="flex items-center gap-1.5">
-                                <StatusBadge status={axis.severity === 'low' ? 'success' : axis.severity === 'medium' ? 'warning' : 'danger'}>
-                                  {axis.band}
-                                </StatusBadge>
-                                <StatusBadge status="neutral">{axis.score}점</StatusBadge>
-                              </div>
-                            </div>
-                            <p className="text-base font-medium leading-7 text-slate-600">{axis.rationale}</p>
-                            {axis.evidence_hints?.length ? (
-                              <ul className="mt-2 space-y-1">
-                                {axis.evidence_hints.slice(0, 2).map((hint) => (
-                                  <li key={hint} className="text-sm font-semibold text-slate-500">
-                                    · {hint}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                          </SurfaceCard>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <WorkflowNotice
-                  tone="info"
-                  title="상세 데이터는 숨겨져 있어요"
-                  description="문서 품질, 섹션 분석, 평가축은 상단의 상세 데이터 보기 버튼을 누르면 확인할 수 있습니다."
-                />
-              )}
-
-              {diagnosisResult.risks?.length ? (
-                <SurfaceCard tone="muted" padding="sm" className="border border-amber-200 bg-amber-50/70">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-amber-700">리스크</p>
-                  <ul className="space-y-1.5">
-                    {diagnosisResult.risks.map((risk) => (
-                      <li key={risk} className="text-sm font-medium leading-6 text-amber-900">
-                        · {risk}
-                      </li>
-                    ))}
-                  </ul>
-                </SurfaceCard>
-              ) : null}
-
-              {diagnosisResult.next_actions?.length ? (
-                <SurfaceCard tone="muted" padding="sm">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">다음 액션</p>
-                  <ul className="space-y-1.5">
-                    {diagnosisResult.next_actions.map((action) => (
-                      <li key={action} className="text-base font-medium leading-7 text-slate-700">
-                        · {action}
-                      </li>
-                    ))}
-                  </ul>
-                </SurfaceCard>
-              ) : null}
-
-              {diagnosisResult.recommended_topics?.length ? (
-                <SurfaceCard tone="muted" padding="sm">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">추천 주제</p>
-                  <div className="flex flex-wrap gap-2">
-                    {diagnosisResult.recommended_topics.map((topic) => (
-                      <StatusBadge key={topic} status="neutral">
-                        {topic}
-                      </StatusBadge>
-                    ))}
                   </div>
-                </SurfaceCard>
-              ) : null}
+                ) : null}
 
-              {diagnosisResult.action_plan?.length ? (
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">권장 액션 플랜</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {diagnosisResult.action_plan.map((quest, index) => (
-                      <SurfaceCard key={`${quest.title}-${index}`} padding="sm">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-sm font-bold text-slate-800">{quest.title}</p>
-                          <StatusBadge status={quest.priority === 'high' ? 'danger' : quest.priority === 'medium' ? 'warning' : 'neutral'}>
-                            {quest.priority}
-                          </StatusBadge>
-                        </div>
-                        <p className="text-base font-medium leading-7 text-slate-600">{quest.description}</p>
-                      </SurfaceCard>
-                    ))}
-                  </div>
+                <div className="grid gap-6 xl:grid-cols-2">
+                  {diagnosisResult.claims?.length ? <ClaimGroundingPanel claims={diagnosisResult.claims} /> : null}
+                  <DiagnosisEvidencePanel
+                    citations={evidenceCitations}
+                    reviewRequired={reviewRequired}
+                    policyFlags={diagnosisRun?.policy_flags ?? []}
+                    responseTraceId={responseTraceId}
+                  />
                 </div>
-              ) : null}
-
-              <WorkflowNotice tone="info" title="추천 집중 영역" description={diagnosisResult.recommended_focus} />
-            </SectionCard>
-
-            {diagnosisRun?.id && projectId ? (
-              <DiagnosisGuidedChoicePanel
-                diagnosisRunId={diagnosisRun.id}
-                projectId={projectId}
-                diagnosis={diagnosisResult}
-                useSynchronousApiJobs={useSynchronousApiJobs}
-              />
-            ) : null}
-
-            {diagnosisRun?.id ? (
-              <DiagnosisReportPanel diagnosisRunId={diagnosisRun.id} />
-            ) : null}
-
-            {showAdvancedDetails ? (
-              <div className="grid gap-6 xl:grid-cols-2">
-                {diagnosisResult.claims?.length ? <ClaimGroundingPanel claims={diagnosisResult.claims} /> : null}
-                <DiagnosisEvidencePanel
-                  citations={evidenceCitations}
-                  reviewRequired={reviewRequired}
-                  policyFlags={diagnosisRun?.policy_flags ?? []}
-                  responseTraceId={responseTraceId}
-                />
-              </div>
+              </SectionCard>
             ) : null}
 
             <div className="flex flex-wrap items-center justify-center gap-2">

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from polio_api.core.config import Settings
 from polio_api.core.llm import OllamaClient, get_pdf_analysis_llm_client
-from polio_api.services.pdf_analysis_service import build_pdf_analysis_metadata
+from polio_api.services.pdf_analysis_service import (
+    build_pdf_analysis_metadata,
+    build_student_record_canonical_metadata,
+    build_student_record_structure_metadata,
+)
 from polio_ingest.models import ParsedChunkPayload, ParsedDocumentPayload
 
 
@@ -68,6 +72,67 @@ def _build_sample_payload() -> ParsedDocumentPayload:
                 {"page_number": 2, "masked_text": "수행 과정과 결과, 다음 계획이 포함되어 있습니다."},
             ]
         },
+    )
+
+
+def _build_student_record_payload(*, parse_confidence: float = 0.82, needs_review: bool = False) -> ParsedDocumentPayload:
+    return ParsedDocumentPayload(
+        parser_name="neis",
+        source_extension=".pdf",
+        page_count=3,
+        word_count=540,
+        content_text=(
+            "2학년 1학기 교과학습발달상황 수학 과목에서 탐구 프로젝트를 수행함. "
+            "세부능력 및 특기사항에 문제 해결 과정과 피드백이 기록됨. "
+            "창의적 체험활동 동아리와 봉사활동, 진로활동이 이어졌고 진로 희망 학과와 연계함. "
+            "독서 활동과 행동특성 및 종합의견이 포함됨."
+        ),
+        content_markdown="",
+        metadata={},
+        chunks=[
+            ParsedChunkPayload(
+                chunk_index=0,
+                page_number=1,
+                char_start=0,
+                char_end=220,
+                token_estimate=80,
+                content_text="교과학습발달상황 수학 과목 탐구 프로젝트",
+            )
+        ],
+        raw_artifact={
+            "pages": [
+                {
+                    "page_number": 1,
+                    "text": "2학년 1학기 교과학습발달상황 수학 과목 탐구 프로젝트 세부능력 및 특기사항",
+                },
+                {
+                    "page_number": 2,
+                    "text": "창의적 체험활동 동아리 봉사활동 진로활동 희망 학과 연계",
+                },
+                {
+                    "page_number": 3,
+                    "text": "독서 활동 행동특성 및 종합의견",
+                },
+            ]
+        },
+        masked_artifact={
+            "pages": [
+                {
+                    "page_number": 1,
+                    "masked_text": "2학년 1학기 교과학습발달상황 수학 과목 탐구 프로젝트 세부능력 및 특기사항",
+                },
+                {
+                    "page_number": 2,
+                    "masked_text": "창의적 체험활동 동아리 봉사활동 진로활동 희망 학과 연계",
+                },
+                {
+                    "page_number": 3,
+                    "masked_text": "독서 활동 행동특성 및 종합의견",
+                },
+            ]
+        },
+        parse_confidence=parse_confidence,
+        needs_review=needs_review,
     )
 
 
@@ -160,3 +225,73 @@ def test_get_pdf_analysis_llm_client_uses_split_config(monkeypatch) -> None:
     assert client.options["num_ctx"] == 1111
     assert client.options["num_predict"] == 222
     assert client.options["num_thread"] == 3
+
+
+def test_student_record_canonical_metadata_contains_required_fields_and_evidence() -> None:
+    parsed = _build_student_record_payload()
+    canonical = build_student_record_canonical_metadata(
+        parsed=parsed,
+        pdf_analysis={"engine": "llm", "summary": "요약"},
+        analysis_artifact=None,
+    )
+
+    assert canonical is not None
+    for key in (
+        "record_type",
+        "document_confidence",
+        "timeline_signals",
+        "grades_subjects",
+        "subject_special_notes",
+        "extracurricular",
+        "career_signals",
+        "reading_activity",
+        "behavior_opinion",
+        "major_alignment_hints",
+        "weak_or_missing_sections",
+        "uncertainties",
+    ):
+        assert key in canonical
+
+    assert canonical["record_type"] == "korean_student_record_pdf"
+    assert canonical["pipeline_stages"]
+    assert canonical["document_confidence"] > 0.1
+    assert canonical["timeline_signals"]
+    assert canonical["grades_subjects"]
+    first_subject = canonical["grades_subjects"][0]
+    assert isinstance(first_subject.get("evidence"), list)
+    assert first_subject["evidence"]
+    assert first_subject["evidence"][0]["page_number"] >= 1
+
+
+def test_student_record_canonical_metadata_marks_uncertainty_without_guessing() -> None:
+    parsed = _build_student_record_payload(parse_confidence=0.32, needs_review=True)
+    canonical = build_student_record_canonical_metadata(
+        parsed=parsed,
+        pdf_analysis={"engine": "fallback", "summary": "휴리스틱"},
+        analysis_artifact=None,
+    )
+
+    assert canonical is not None
+    assert canonical["document_confidence"] < 0.8
+    assert canonical["uncertainties"]
+    uncertainty_messages = [str(item.get("message") or "") for item in canonical["uncertainties"]]
+    assert any("confidence" in message or "검토" in message for message in uncertainty_messages)
+
+
+def test_student_record_structure_bridge_uses_canonical_schema() -> None:
+    parsed = _build_student_record_payload()
+    canonical = build_student_record_canonical_metadata(
+        parsed=parsed,
+        pdf_analysis={"engine": "llm", "summary": "요약"},
+        analysis_artifact=None,
+    )
+    structure = build_student_record_structure_metadata(
+        parsed=parsed,
+        pdf_analysis={"engine": "llm", "summary": "요약"},
+        canonical_schema=canonical,
+    )
+
+    assert structure is not None
+    assert structure["section_density"]["교과학습발달상황"] > 0
+    assert structure["timeline_signals"]
+    assert "subject_major_alignment_signals" in structure

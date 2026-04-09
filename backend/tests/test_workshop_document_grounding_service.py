@@ -36,6 +36,34 @@ def test_format_document_analysis_block_prefers_pdf_analysis_summary() -> None:
     assert "근거 한계" in block
 
 
+def test_format_document_analysis_block_includes_canonical_signals() -> None:
+    document = SimpleNamespace(
+        original_filename="학생부.pdf",
+        page_count=4,
+        word_count=980,
+        status="parsed",
+        parse_metadata={
+            "student_record_canonical": {
+                "document_confidence": 0.73,
+                "timeline_signals": [{"signal": "2학년 1학기"}],
+                "major_alignment_hints": [{"hint": "전공 연계 활동 문장"}],
+                "weak_or_missing_sections": [{"section": "독서", "status": "missing"}],
+                "uncertainties": [{"message": "독서 관련 근거가 제한적입니다."}],
+            }
+        },
+        content_markdown="",
+        content_text="",
+    )
+
+    block = _format_document_analysis_block([document])
+
+    assert "구조 신뢰도" in block
+    assert "학기/연도 신호" in block
+    assert "전공 연계 힌트" in block
+    assert "보강 필요 섹션" in block
+    assert "불확실성" in block
+
+
 def test_select_lexical_chunks_prefers_query_overlap() -> None:
     matching = SimpleNamespace(
         id="chunk-1",

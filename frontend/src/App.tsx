@@ -25,6 +25,7 @@ const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.S
 const Trends = lazy(() => import('./pages/Trends').then(m => ({ default: m.Trends })));
 const Diagnosis = lazy(() => import('./pages/Diagnosis').then(m => ({ default: m.Diagnosis })));
 const Onboarding = lazy(() => import('./pages/Onboarding').then(m => ({ default: m.Onboarding })));
+const RecordPdfHelp = lazy(() => import('./pages/RecordPdfHelp').then(m => ({ default: m.RecordPdfHelp })));
 const TermsOfService = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.TermsOfService })));
 const PrivacyPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.PrivacyPolicy })));
 const RefundPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.RefundPolicy })));
@@ -135,6 +136,7 @@ export default function App() {
                 <Route path="/" element={<Landing />} />
                 <Route path="/faq" element={<Faq />} />
                 <Route path="/contact" element={<Contact />} />
+                <Route path="/help/student-record-pdf" element={<RecordPdfHelp />} />
                 <Route path="legal/terms" element={<TermsOfService />} />
                 <Route path="legal/privacy" element={<PrivacyPolicy />} />
                 <Route path="legal/refund" element={<RefundPolicy />} />
@@ -161,6 +163,7 @@ export default function App() {
               >
                 <Route index element={<Dashboard />} />
                 <Route path="record" element={<Record />} />
+                <Route path="help/student-record-pdf" element={<RecordPdfHelp />} />
                 <Route path="diagnosis" element={<Diagnosis />} />
                 <Route path="workshop" element={<Workshop />} />
                 <Route path="workshop/:projectId" element={<Workshop />} />
@@ -180,6 +183,7 @@ export default function App() {
               />
 
               <Route path="/record" element={<LegacyRouteRedirect to="/app/record" />} />
+              <Route path="/record/help" element={<LegacyRouteRedirect to="/app/help/student-record-pdf" />} />
               <Route path="/diagnosis" element={<LegacyRouteRedirect to="/app/diagnosis" />} />
               <Route path="/workshop" element={<LegacyWorkshopRedirect />} />
               <Route path="/workshop/:projectId" element={<LegacyWorkshopRedirect />} />

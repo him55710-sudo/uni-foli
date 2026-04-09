@@ -60,6 +60,48 @@ def _extract_document_text(document: Any) -> str:
     if not isinstance(metadata, dict):
         return ""
 
+    canonical = metadata.get("student_record_canonical")
+    if isinstance(canonical, dict):
+        canonical_parts: list[str] = []
+        confidence = canonical.get("document_confidence")
+        if isinstance(confidence, (int, float)):
+            canonical_parts.append(f"[student_record_confidence] {round(float(confidence), 3)}")
+
+        for field, key in (
+            ("timeline_signals", "signal"),
+            ("major_alignment_hints", "hint"),
+            ("uncertainties", "message"),
+        ):
+            items = canonical.get(field)
+            if isinstance(items, list):
+                for item in items[:6]:
+                    if not isinstance(item, dict):
+                        continue
+                    value = str(item.get(key) or "").strip()
+                    if value:
+                        canonical_parts.append(f"- {value[:220]}")
+
+        for field, key in (
+            ("grades_subjects", "subject"),
+            ("subject_special_notes", "label"),
+            ("extracurricular", "label"),
+            ("career_signals", "label"),
+            ("reading_activity", "label"),
+            ("behavior_opinion", "label"),
+        ):
+            items = canonical.get(field)
+            if isinstance(items, list):
+                for item in items[:4]:
+                    if not isinstance(item, dict):
+                        continue
+                    value = str(item.get(key) or "").strip()
+                    if value:
+                        canonical_parts.append(f"- {value[:220]}")
+
+        canonical_text = "\n".join(canonical_parts).strip()
+        if canonical_text:
+            return canonical_text[:MAX_DOC_TEXT_CHARS]
+
     pdf_analysis = metadata.get("pdf_analysis")
     if not isinstance(pdf_analysis, dict):
         return ""

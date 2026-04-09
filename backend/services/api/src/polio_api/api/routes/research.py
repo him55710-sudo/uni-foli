@@ -26,9 +26,8 @@ from polio_api.services.research_service import (
 from polio_api.services.scholar_service import (
     ScholarSearchResult,
     ScholarServiceError,
-    search_kci_papers,
-    search_semantic_scholar_papers,
 )
+from polio_api.services.search_provider_service import search_research_sources
 from polio_domain.enums import AsyncJobType
 
 router = APIRouter()
@@ -38,15 +37,14 @@ router = APIRouter()
 async def search_research_papers(
     query: Annotated[str, Query(min_length=2, max_length=200, description="Paper search keyword")],
     limit: Annotated[int, Query(ge=1, le=20, description="Number of results to return")] = 5,
-    source: Annotated[str, Query(description="Search source: semantic or kci")] = "semantic",
+    source: Annotated[str, Query(description="Search source: semantic, kci, live_web, or both")] = "semantic",
     current_user: User = Depends(get_current_user),
     _: None = Depends(rate_limit(bucket="research_papers", limit=30, window_seconds=300)),
 ) -> ScholarSearchResult:
     del current_user
+
     try:
-        if source == "kci":
-            return await search_kci_papers(query=query, limit=limit)
-        return await search_semantic_scholar_papers(query=query, limit=limit)
+        return await search_research_sources(query=query, limit=limit, source=source)
     except ScholarServiceError as exc:
         headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
         raise HTTPException(status_code=exc.status_code, detail=exc.detail, headers=headers) from exc

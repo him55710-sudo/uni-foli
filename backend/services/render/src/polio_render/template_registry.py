@@ -27,6 +27,8 @@ class RenderTemplate:
     supports_provenance_appendix: bool
     recommended_for: tuple[str, ...]
     preview: TemplatePreviewMetadata
+    design_contract_id: str = "baseline_v1"
+    section_pacing_profile: str = "default"
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +216,8 @@ _TEMPLATES: tuple[RenderTemplate, ...] = (
             preview_sections=("Summary", "Strengths", "Risks", "Roadmap"),
             thumbnail_hint="A4 brief with score strip and concise evidence callouts.",
         ),
+        design_contract_id="diagnosis_report_compact_v2",
+        section_pacing_profile="diagnosis_compact_paced",
     ),
     RenderTemplate(
         id="consultant_diagnosis_premium_10p",
@@ -246,6 +250,8 @@ _TEMPLATES: tuple[RenderTemplate, ...] = (
             preview_sections=("Executive", "Axis Analysis", "Roadmap", "Appendix"),
             thumbnail_hint="Structured premium report with score panels, evidence boxes, and appendix tabs.",
         ),
+        design_contract_id="diagnosis_report_premium_v2",
+        section_pacing_profile="diagnosis_premium_disciplined",
     ),
 )
 

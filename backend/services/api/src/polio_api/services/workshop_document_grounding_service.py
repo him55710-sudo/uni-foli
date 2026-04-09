@@ -142,6 +142,24 @@ def _format_document_analysis_block(documents: list[ParsedDocument]) -> str:
             f"{index}. 파일: {filename} / 페이지: {document.page_count} / 단어: {document.word_count} / 상태: {document.status}"
         )
 
+        canonical = _extract_student_record_canonical(document.parse_metadata)
+        if canonical:
+            confidence = canonical.get("document_confidence")
+            if isinstance(confidence, (int, float)):
+                lines.append(f"   - 구조 신뢰도: {round(float(confidence), 3)}")
+            timeline = _normalize_canonical_list(canonical.get("timeline_signals"), key="signal", limit=2, item_limit=140)
+            for signal in timeline:
+                lines.append(f"   - 학기/연도 신호: {signal}")
+            alignment = _normalize_canonical_list(canonical.get("major_alignment_hints"), key="hint", limit=2, item_limit=160)
+            for hint in alignment:
+                lines.append(f"   - 전공 연계 힌트: {hint}")
+            weak_sections = _normalize_canonical_list(canonical.get("weak_or_missing_sections"), key="section", limit=2, item_limit=120)
+            for section in weak_sections:
+                lines.append(f"   - 보강 필요 섹션: {section}")
+            uncertainties = _normalize_canonical_list(canonical.get("uncertainties"), key="message", limit=1, item_limit=180)
+            for uncertainty in uncertainties:
+                lines.append(f"   - 불확실성: {uncertainty}")
+
         pdf_analysis = _extract_pdf_analysis(document.parse_metadata)
         if pdf_analysis:
             summary = _clip(pdf_analysis.get("summary"), limit=260)
@@ -153,7 +171,6 @@ def _format_document_analysis_block(documents: list[ParsedDocument]) -> str:
             evidence_gaps = _normalize_list(pdf_analysis.get("evidence_gaps"), limit=1, item_limit=160)
             for gap in evidence_gaps:
                 lines.append(f"   - 근거 한계: {gap}")
-            continue
 
         fallback_excerpt = _clip(document.content_markdown or document.content_text, limit=220)
         if fallback_excerpt:
@@ -222,11 +239,35 @@ def _extract_pdf_analysis(metadata: Any) -> dict[str, Any] | None:
     return None
 
 
+def _extract_student_record_canonical(metadata: Any) -> dict[str, Any] | None:
+    if not isinstance(metadata, dict):
+        return None
+    candidate = metadata.get("student_record_canonical")
+    if isinstance(candidate, dict):
+        return candidate
+    return None
+
+
 def _normalize_list(value: Any, *, limit: int, item_limit: int) -> list[str]:
     if not isinstance(value, list):
         return []
     normalized = [_clip(str(item), limit=item_limit) for item in value if str(item).strip()]
     return normalized[:limit]
+
+
+def _normalize_canonical_list(value: Any, *, key: str, limit: int, item_limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        text = _clip(str(item.get(key) or ""), limit=item_limit)
+        if text:
+            normalized.append(text)
+        if len(normalized) >= limit:
+            break
+    return normalized
 
 
 def _meaningful_terms(text: str) -> set[str]:

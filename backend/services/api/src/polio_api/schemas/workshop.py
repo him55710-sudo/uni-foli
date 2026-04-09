@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -92,11 +92,65 @@ class WorkshopChoiceRequest(BaseModel):
     payload: dict[str, Any] | None = None
 
 
+WorkshopMode = Literal["planning", "outline", "section_drafting", "revision"]
+WorkshopDraftBlockId = Literal[
+    "title",
+    "introduction_background",
+    "body_section_1",
+    "body_section_2",
+    "body_section_3",
+    "conclusion_reflection_next_step",
+]
+WorkshopDraftAttribution = Literal[
+    "student-authored",
+    "ai-suggested",
+    "ai-inserted-after-approval",
+]
+
+
+class WorkshopDraftBlock(BaseModel):
+    block_id: WorkshopDraftBlockId
+    heading: str = Field(min_length=1, max_length=120)
+    content_markdown: str = Field(default="", max_length=20000)
+    attribution: WorkshopDraftAttribution = "student-authored"
+    updated_at: datetime | None = None
+
+
+class WorkshopStructuredDraftState(BaseModel):
+    mode: WorkshopMode = "planning"
+    blocks: list[WorkshopDraftBlock] = Field(default_factory=list)
+    last_synced_turn_id: str | None = Field(default=None, max_length=64)
+    source: Literal["structured", "derived"] = "structured"
+
+
+class WorkshopDraftPatchProposal(BaseModel):
+    mode: WorkshopMode = "section_drafting"
+    block_id: WorkshopDraftBlockId
+    heading: str | None = Field(default=None, max_length=120)
+    content_markdown: str = Field(min_length=1, max_length=6000)
+    rationale: str | None = Field(default=None, max_length=800)
+    evidence_boundary_note: str | None = Field(default=None, max_length=600)
+    requires_approval: bool = True
+
+
 class WorkshopMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=5000)
+    draft_snapshot_markdown: str | None = Field(default=None, max_length=100000)
+    mode: WorkshopMode = "planning"
+    structured_draft: WorkshopStructuredDraftState | None = None
 
 class WorkshopSaveDraftRequest(BaseModel):
     document_content: str = Field(min_length=1, max_length=100000)
+    expected_updated_at: datetime | None = None
+    mode: WorkshopMode = "planning"
+    structured_draft: WorkshopStructuredDraftState | None = None
+
+
+class WorkshopSaveDraftResponse(BaseModel):
+    status: str
+    message: str
+    saved_updated_at: datetime
+    structured_draft: WorkshopStructuredDraftState | None = None
 
 
 class WorkshopUpdateVisualRequest(BaseModel):
@@ -198,6 +252,7 @@ class DraftArtifactResponse(BaseModel):
     safety_flags: dict[str, str] | None = None
     quality_downgraded: bool = False
     quality_control_meta: QualityControlMetadataResponse | None = None
+    structured_draft: WorkshopStructuredDraftState | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -205,7 +260,7 @@ class DraftArtifactResponse(BaseModel):
 class RenderRequest(BaseModel):
     force: bool = False
     advanced_mode: bool = False
-    rag_source: str = "semantic"  # "semantic" | "kci" | "both"
+    rag_source: str = "semantic"  # "semantic" | "kci" | "both" | "live_web"
 
 
 class StreamTokenResponse(BaseModel):

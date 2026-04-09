@@ -24,6 +24,7 @@ Return a concise markdown answer that aims to include:
 - student-specific rationale
 - cited evidence or an explicit evidence gap note
 - next actions or the next clarifying question
+- when section writing is requested, optional `[DRAFT_PATCH]...[/DRAFT_PATCH]` JSON block for structured draft sync
 
 ## Forbidden
 
@@ -68,3 +69,5 @@ Response rules:
 - For school-specific advice, only state what is source-backed. Otherwise say that the answer needs confirmation.
 - Treat reference materials as external context, not proof of student activity.
 - Do not produce a polished admissions claim that outruns the student's record.
+- If you include `[DRAFT_PATCH]`, use valid JSON and update only one structured block at a time.
+- Never overwrite student-authored claims; uncertain items must stay marked as verification-needed.

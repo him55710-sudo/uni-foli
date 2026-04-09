@@ -301,6 +301,11 @@ export interface DiagnosisRunResponse {
   response_trace_id: string | null;
   async_job_id: string | null;
   async_job_status: string | null;
+  report_status?: string | null;
+  report_async_job_id?: string | null;
+  report_async_job_status?: string | null;
+  report_artifact_id?: string | null;
+  report_error_message?: string | null;
 }
 
 export interface ConsultantDiagnosisEvidenceItem {

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -15,6 +16,7 @@ from polio_api.db.models.user import User
 from polio_api.schemas.draft import DraftCreate, DraftRead, DraftUpdate
 from polio_api.services.draft_service import create_draft, get_draft, list_drafts_for_project, update_draft
 from polio_api.services.chat_fallback_service import build_conversational_fallback
+from polio_api.services.diagnosis_copilot_service import build_diagnosis_copilot_brief
 from polio_api.services.guided_chat_state_service import load_guided_chat_state
 from polio_api.services.project_service import append_project_discussion_log, get_project
 from polio_api.services.prompt_registry import get_prompt_registry
@@ -30,12 +32,26 @@ class ReferenceMaterial(BaseModel):
     authors: list[str] = Field(default_factory=list, max_length=20)
     abstract: str | None = Field(default=None, max_length=6000)
     year: int | None = Field(default=None, ge=1800, le=2100)
+    source_type: (
+        Literal[
+            "uploaded_student_record",
+            "academic_source",
+            "official_guideline",
+            "live_web_source",
+        ]
+        | None
+    ) = None
+    source_label: str | None = Field(default=None, max_length=80)
+    source_provider: str | None = Field(default=None, max_length=120)
+    freshness_label: Literal["unknown", "archive", "recent", "realtime"] | None = None
+    url: str | None = Field(default=None, max_length=1000)
 
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=5000)
     project_id: str | None = None
     reference_materials: list[ReferenceMaterial] = Field(default_factory=list, max_length=3)
+    draft_snapshot_markdown: str | None = Field(default=None, max_length=100000)
 
 
 def _format_reference_materials(reference_materials: list[ReferenceMaterial]) -> str:
@@ -49,10 +65,16 @@ def _format_reference_materials(reference_materials: list[ReferenceMaterial]) ->
         abstract = (material.abstract or "초록 정보 없음").replace("\n", " ").strip()
         if len(abstract) > 700:
             abstract = f"{abstract[:700]}..."
+        source_text = material.source_label or material.source_type or "external_source"
+        provider_text = material.source_provider or "unknown_provider"
+        freshness_text = material.freshness_label or "unknown"
+        link_text = material.url or "링크 정보 없음"
         blocks.append(
             f"{index}. 제목: {material.title}\n"
             f"   저자: {authors}\n"
             f"   연도: {year_text}\n"
+            f"   출처 유형: {source_text} ({provider_text}, freshness={freshness_text})\n"
+            f"   링크: {link_text}\n"
             f"   요약: {abstract}"
         )
     return "\n".join(blocks)
@@ -70,6 +92,8 @@ def _build_system_instruction(
     reference_materials: list[ReferenceMaterial],
     document_grounding_context: str | None = None,
     guided_state_summary: dict[str, object] | None = None,
+    draft_snapshot_markdown: str | None = None,
+    diagnosis_copilot_brief: str | None = None,
 ) -> str:
     profile_context = (
         f"학생 목표 대학: {target_university or '미정'} / 목표 전공: {target_major or '미정'}"
@@ -85,6 +109,13 @@ def _build_system_instruction(
         sections.append(document_grounding_context)
     if reference_context:
         sections.append(reference_context)
+    if diagnosis_copilot_brief:
+        sections.append(diagnosis_copilot_brief)
+    if draft_snapshot_markdown and draft_snapshot_markdown.strip():
+        snapshot = draft_snapshot_markdown.strip()
+        if len(snapshot) > 5000:
+            snapshot = f"{snapshot[:5000].rstrip()}..."
+        sections.append(f"[우측 최신 초안 스냅샷]\n{snapshot}")
     sections.append(base_instruction)
     return "\n\n".join(sections)
 
@@ -131,12 +162,16 @@ def _build_streaming_response(
         if state:
             guided_state_summary = state.state_summary or None
 
+    diagnosis_copilot_brief = build_diagnosis_copilot_brief(db, project_id=project_id) if project_id else ""
+
     system_instruction = _build_system_instruction(
         target_university=target_university,
         target_major=target_major,
         reference_materials=payload.reference_materials,
         document_grounding_context=document_grounding_context,
         guided_state_summary=guided_state_summary,
+        draft_snapshot_markdown=payload.draft_snapshot_markdown,
+        diagnosis_copilot_brief=diagnosis_copilot_brief,
     )
 
     def save_chat_to_db(user_message: str, user: User) -> None:

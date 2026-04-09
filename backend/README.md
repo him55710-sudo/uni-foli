@@ -51,6 +51,8 @@ Use a separate Vercel project whose Root Directory is `backend/`.
 - Uploads are restricted to `.pdf`, `.txt`, and `.md` by default, with extension, MIME, and size validation enforced by `UPLOAD_ALLOWED_EXTENSIONS` and `UPLOAD_MAX_BYTES`.
 - Remote research URL fetches are limited to public `http`/`https` hosts and capped by `RESEARCH_FETCH_MAX_BYTES`.
 - `KCI_API_KEY` must be set explicitly before KCI search is enabled.
+- Live web search is optional and disabled by default (`LIVE_WEB_SEARCH_ENABLED=false`, `LIVE_WEB_SEARCH_PROVIDER=none`).
+- When live web is requested but unavailable, the API falls back to Semantic Scholar and returns a limitation note.
 - Render job responses expose an authenticated `download_url`, not internal filesystem paths.
 - Workshop render stream tokens expire server-side after five minutes and are cleared after use.
 - Credentialed wildcard CORS is rejected outside local development.
@@ -90,7 +92,13 @@ This backend does not exist for:
 
 - `STUDENT_RECORD` evidence comes from uploaded student documents and can support claims about student actions.
 - `EXTERNAL_RESEARCH` evidence comes from separately ingested research sources and can only support context, comparisons, or recommendations.
+- Search responses now preserve canonical source typing:
+  - `uploaded_student_record`
+  - `academic_source`
+  - `official_guideline`
+  - `live_web_source`
 - External research must never be used as proof that a student did something.
+- Paid LLM selection and paid live web provider selection are separate architecture decisions.
 
 ## Cache And Jobs
 
@@ -113,5 +121,6 @@ Canonical docs now live at the repo root under `../docs/`.
 - `../docs/09-drafting-provenance/README.md`
 - `../docs/12-security-compliance/README.md`
 - `../docs/reports/polio_security_hardening_20260330.md`
+- `../docs/research-search-architecture.md`
 
 Duplicated backend docs and old root-level backend notes were moved to `../archive/legacy/backend/`.

@@ -3,7 +3,6 @@ import { useDropzone } from 'react-dropzone';
 import {
   ArrowRight,
   CheckCircle2,
-  Clock3,
   FileSearch,
   FileText,
   FileUp,
@@ -105,38 +104,25 @@ interface DocumentStatusResponse {
       evidence_gaps?: string[];
       page_insights?: Array<{ page_number?: number; summary?: string }>;
     };
+    student_record_canonical?: {
+      schema_version?: string;
+      document_confidence?: number;
+      timeline_signals?: Array<{ signal?: string }>;
+      grades_subjects?: Array<{ subject?: string }>;
+      subject_special_notes?: Array<{ label?: string }>;
+      extracurricular?: Array<{ label?: string }>;
+      career_signals?: Array<{ label?: string }>;
+      reading_activity?: Array<{ label?: string }>;
+      behavior_opinion?: Array<{ label?: string }>;
+      major_alignment_hints?: Array<{ hint?: string }>;
+      weak_or_missing_sections?: Array<{ section?: string; status?: string }>;
+      uncertainties?: Array<{ message?: string }>;
+    };
   };
 }
 
 const IN_PROGRESS_STATUSES = new Set<DocumentStatus>(['masking', 'parsing', 'retrying']);
 const SUCCESS_STATUSES = new Set<DocumentStatus>(['parsed', 'partial']);
-
-const FRIENDLY_UPLOAD_STEPS = [
-  {
-    id: '01',
-    title: 'PDF 준비',
-    description: '학생부 파일을 PDF로 저장해 주세요.',
-    tip: '파일명은 학년/이름 없이 간단하게 적으면 좋아요.',
-    icon: FileText,
-    accentClassName: 'bg-blue-100 text-blue-700',
-  },
-  {
-    id: '02',
-    title: '파일 올리기',
-    description: '아래 상자에 끌어놓거나 버튼으로 선택해 주세요.',
-    tip: '최대 50MB까지 올릴 수 있어요.',
-    icon: FileUp,
-    accentClassName: 'bg-indigo-100 text-indigo-700',
-  },
-  {
-    id: '03',
-    title: '자동 분석 시작',
-    description: '개인정보 보호 처리와 내용 분석이 자동으로 진행돼요.',
-    tip: '완료되면 바로 작성 화면으로 이동할 수 있어요.',
-    icon: CheckCircle2,
-    accentClassName: 'bg-emerald-100 text-emerald-700',
-  },
-] as const;
 
 const UPLOAD_READY_CHECKLIST = [
   '파일 확장자가 .pdf인지 확인하기',
@@ -422,6 +408,7 @@ export function Record() {
   const canContinue = Boolean(document && SUCCESS_STATUSES.has(document.status));
   const maskingSummary = document?.parse_metadata?.masking;
   const pdfAnalysis = document?.parse_metadata?.pdf_analysis;
+  const canonicalRecord = document?.parse_metadata?.student_record_canonical;
   const pageFailures = document?.parse_metadata?.page_failures ?? [];
   const warnings = document?.parse_metadata?.warnings ?? [];
   const parseErrorMessage =
@@ -468,33 +455,20 @@ export function Record() {
 
       <SectionCard
         title="빠른 업로드 가이드"
-        description="핵심 단계만 간단히 확인하고 바로 시작하세요."
+        description="업로드 전 체크리스트만 확인하고 바로 시작하세요."
         eyebrow="Quick Start"
         className="border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50"
         actions={
-          <StatusBadge status="neutral">
-            <Clock3 size={14} />
-            평균 1~2분
-          </StatusBadge>
+          <button
+            type="button"
+            onClick={() => navigate('/app/help/student-record-pdf')}
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-50"
+          >
+            학생부 PDF 다운로드 방법 보기
+            <ArrowRight size={14} />
+          </button>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          {FRIENDLY_UPLOAD_STEPS.map(step => {
-            const Icon = step.icon;
-            return (
-              <SurfaceCard key={step.id} tone="muted" className="border border-white/80 bg-white/95" padding="sm">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-black tracking-[0.14em] text-slate-400">{step.id}</p>
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${step.accentClassName}`}>
-                    <Icon size={17} />
-                  </div>
-                </div>
-                <p className="mt-3 text-base font-black text-slate-900 break-keep">{step.title}</p>
-                <p className="mt-1 text-sm font-medium leading-6 text-slate-600 break-keep">{step.description}</p>
-              </SurfaceCard>
-            );
-          })}
-        </div>
         <SurfaceCard tone="muted" className="border border-emerald-100 bg-emerald-50/70" padding="sm">
           <p className="text-sm font-black text-emerald-800">업로드 전 체크리스트</p>
           <ul className="mt-2 space-y-2">
@@ -505,6 +479,7 @@ export function Record() {
               </li>
             ))}
           </ul>
+          <p className="mt-3 text-xs font-semibold text-emerald-800/90">PDF 발급/저장 방법은 우측 상단 안내 페이지에서 바로 확인할 수 있어요.</p>
         </SurfaceCard>
       </SectionCard>
 
@@ -613,7 +588,7 @@ export function Record() {
         </SectionCard>
 
         <div className="space-y-6">
-          <SectionCard title="개인정보 보호 요약" description="개인정보 숨김 처리 결과를 확인해요." eyebrow="보안">
+          <SectionCard title="개인정보 보호 요약" description="개인정보 숨김 처리 결과를 확인해요." eyebrow="보안" collapsible defaultCollapsed>
             <div className="flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
               <ShieldCheck size={18} className="mt-0.5 text-blue-700" />
               <p className="text-sm font-medium leading-6 text-blue-900 break-keep">
@@ -645,20 +620,61 @@ export function Record() {
           </SectionCard>
 
           <SectionCard title="Gemma4 PDF 분석" description="페이지별 핵심과 문서 흐름 요약을 확인해요." eyebrow="AI 분석" collapsible defaultCollapsed>
-            {pdfAnalysis?.summary ? (
+            {pdfAnalysis?.summary || canonicalRecord ? (
               <div className="space-y-4">
-                <SurfaceCard tone="muted" padding="sm" className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge status={pdfAnalysis.engine === 'llm' ? 'success' : 'warning'}>
-                      {pdfAnalysis.engine === 'llm' ? 'Gemma4 분석 완료' : '보수 모드 요약'}
-                    </StatusBadge>
-                    {pdfAnalysis.model ? <StatusBadge status="neutral">{pdfAnalysis.model}</StatusBadge> : null}
-                    {hasPdfFallback && pdfAnalysis.attempted_model ? (
-                      <StatusBadge status="neutral">Attempted: {pdfAnalysis.attempted_model}</StatusBadge>
+                {canonicalRecord ? (
+                  <SurfaceCard tone="muted" padding="sm" className="space-y-3 border border-indigo-200 bg-indigo-50/70">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status="active">학생부 구조 분석</StatusBadge>
+                      {typeof canonicalRecord.document_confidence === 'number' ? (
+                        <StatusBadge status={canonicalRecord.document_confidence >= 0.7 ? 'success' : canonicalRecord.document_confidence >= 0.45 ? 'warning' : 'danger'}>
+                          신뢰도 {canonicalRecord.document_confidence.toFixed(3)}
+                        </StatusBadge>
+                      ) : null}
+                    </div>
+                    {canonicalRecord.timeline_signals?.length ? (
+                      <p className="text-sm font-medium text-slate-700">
+                        학기/연도 신호: {canonicalRecord.timeline_signals.map(item => item.signal).filter(Boolean).slice(0, 3).join(', ')}
+                      </p>
                     ) : null}
-                  </div>
-                  <p className="text-sm font-medium leading-6 text-slate-700">{pdfAnalysis.summary}</p>
-                </SurfaceCard>
+                    {canonicalRecord.major_alignment_hints?.length ? (
+                      <p className="text-sm font-medium text-slate-700">
+                        전공 연계 힌트: {canonicalRecord.major_alignment_hints.map(item => item.hint).filter(Boolean).slice(0, 2).join(' / ')}
+                      </p>
+                    ) : null}
+                    {canonicalRecord.weak_or_missing_sections?.length ? (
+                      <p className="text-sm font-medium text-amber-800">
+                        보강 필요 섹션: {canonicalRecord.weak_or_missing_sections.map(item => item.section).filter(Boolean).slice(0, 4).join(', ')}
+                      </p>
+                    ) : null}
+                    {canonicalRecord.uncertainties?.length ? (
+                      <p className="text-xs font-semibold leading-5 text-slate-600">
+                        불확실성: {canonicalRecord.uncertainties.map(item => item.message).filter(Boolean).slice(0, 2).join(' / ')}
+                      </p>
+                    ) : null}
+                  </SurfaceCard>
+                ) : null}
+
+                {pdfAnalysis?.summary ? (
+                  <SurfaceCard tone="muted" padding="sm" className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={pdfAnalysis.engine === 'llm' ? 'success' : 'warning'}>
+                        {pdfAnalysis.engine === 'llm' ? 'Gemma4 분석 완료' : '보수 모드 요약'}
+                      </StatusBadge>
+                      {pdfAnalysis.model ? <StatusBadge status="neutral">{pdfAnalysis.model}</StatusBadge> : null}
+                      {hasPdfFallback && pdfAnalysis.attempted_model ? (
+                        <StatusBadge status="neutral">Attempted: {pdfAnalysis.attempted_model}</StatusBadge>
+                      ) : null}
+                    </div>
+                    <p className="text-sm font-medium leading-6 text-slate-700">{pdfAnalysis.summary}</p>
+                  </SurfaceCard>
+                ) : (
+                  <WorkflowNotice
+                    tone="info"
+                    title="Gemma4 요약은 없지만 학생부 구조 분석은 완료되었습니다."
+                    description="문서 구조 신호를 기반으로 다음 단계 진단/코칭이 진행됩니다."
+                  />
+                )}
 
                 {hasPdfFallback ? (
                   <WorkflowNotice
@@ -666,13 +682,13 @@ export function Record() {
                     title="Gemma4 분석이 실패해 휴리스틱 요약으로 대체되었습니다."
                     description={
                       pdfFallbackReason
-                        ? `${pdfFallbackReason}${pdfAnalysis.attempted_provider ? ` (provider: ${pdfAnalysis.attempted_provider})` : ''}`
+                        ? `${pdfFallbackReason}${pdfAnalysis?.attempted_provider ? ` (provider: ${pdfAnalysis.attempted_provider})` : ''}`
                         : 'LLM 분석이 실패해 보수 모드 요약을 사용했습니다.'
                     }
                   />
                 ) : null}
 
-                {pdfAnalysis.recovered_from_text_fallback ? (
+                {pdfAnalysis?.recovered_from_text_fallback ? (
                   <WorkflowNotice
                     tone="info"
                     title="JSON 파싱 실패 후 텍스트 응답을 복구해 분석을 완료했습니다."
@@ -680,11 +696,11 @@ export function Record() {
                   />
                 ) : null}
 
-                {pdfAnalysis.key_points?.length ? (
+                {pdfAnalysis?.key_points?.length ? (
                   <SurfaceCard tone="muted" padding="sm">
                     <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">핵심 포인트</p>
                     <ul className="mt-2 space-y-2">
-                      {pdfAnalysis.key_points.map(point => (
+                      {pdfAnalysis?.key_points?.map(point => (
                         <li key={point} className="text-sm font-medium leading-6 text-slate-700">
                           • {point}
                         </li>
@@ -693,11 +709,11 @@ export function Record() {
                   </SurfaceCard>
                 ) : null}
 
-                {pdfAnalysis.page_insights?.length ? (
+                {pdfAnalysis?.page_insights?.length ? (
                   <SurfaceCard tone="muted" padding="sm">
                     <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">페이지 요약</p>
                     <div className="mt-2 space-y-2">
-                      {pdfAnalysis.page_insights.slice(0, 8).map((item, index) => (
+                      {pdfAnalysis?.page_insights?.slice(0, 8).map((item, index) => (
                         <div key={`${item.page_number ?? 'na'}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
                           <p className="text-sm font-bold text-slate-800">{item.page_number ?? '?'} 페이지</p>
                           <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
@@ -709,11 +725,11 @@ export function Record() {
                   </SurfaceCard>
                 ) : null}
 
-                {pdfAnalysis.evidence_gaps?.length ? (
+                {pdfAnalysis?.evidence_gaps?.length ? (
                   <SurfaceCard tone="muted" padding="sm" className="border border-amber-200 bg-amber-50/70">
                     <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">근거 부족 안내</p>
                     <ul className="mt-2 space-y-1.5">
-                      {pdfAnalysis.evidence_gaps.map(gap => (
+                      {pdfAnalysis?.evidence_gaps?.map(gap => (
                         <li key={gap} className="text-sm font-medium leading-6 text-amber-900">
                           • {gap}
                         </li>

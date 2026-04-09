@@ -64,6 +64,11 @@ class DiagnosisRunResponse(BaseModel):
     response_trace_id: str | None = None
     async_job_id: str | None = None
     async_job_status: str | None = None
+    report_status: str | None = None
+    report_async_job_id: str | None = None
+    report_async_job_status: str | None = None
+    report_artifact_id: str | None = None
+    report_error_message: str | None = None
 
 
 DiagnosisReportMode = Literal["compact", "premium_10p"]
