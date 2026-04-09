@@ -814,6 +814,19 @@ export function Diagnosis() {
                               {suggestion.label}
                             </button>
                           ))}
+                          {!searchUniversities(univInput, { excludeNames: goalList.map(goal => goal.university) }).length && univInput.trim().length >= 2 ? (
+                            <button
+                              type="button"
+                              data-testid="diagnosis-university-option-manual"
+                              onClick={() => {
+                                setCurrentUniv(univInput.trim());
+                                setUnivInput('');
+                              }}
+                              className="block w-full px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              "{univInput.trim()}" 직접 입력 사용
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>

@@ -225,6 +225,20 @@ export function Onboarding() {
                                {universitySuggestions.map(s => <button key={s.label} onClick={() => { setCurrentUniv(s.label); setUnivInput(''); }} className="w-full text-left p-3 hover:bg-slate-50 text-sm font-bold border-b border-slate-50 last:border-0">{s.label}</button>)}
                             </div>
                          )}
+                         {univInput && universitySuggestions.length === 0 && univInput.trim().length >= 2 && (
+                            <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-xl border border-slate-100 bg-white shadow-xl">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCurrentUniv(univInput.trim());
+                                  setUnivInput('');
+                                }}
+                                className="w-full p-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"
+                              >
+                                "{univInput.trim()}" 직접 입력 사용
+                              </button>
+                            </div>
+                         )}
                        </div>
 
                        {currentUniv && (
