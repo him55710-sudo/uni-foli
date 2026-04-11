@@ -197,9 +197,9 @@ def _build_state_response(
             )
 
     default_message = (
-        f"[{profile.label}] ?대뼡 諛⑹떇?쇰줈 ?쒖옉?좎? 怨좊Ⅴ硫?洹??섏???留욌뒗 ?⑥쟾???뚰겕???먮쫫?쇰줈 ?댁뼱吏묐땲??"
+        f"[{profile.label}] 어떤 방식으로 시작할지 고르면, 상황에 맞는 안전한 워크숍 흐름으로 이어집니다."
         if session.status == WorkshopStatus.COLLECTING_CONTEXT.value
-        else f"[{profile.label}] 珥덉븞 援ъ꽦??怨꾩냽 ?댁뼱媛????덉뼱??"
+        else f"[{profile.label}] 초안 구성을 계속 이어가고 있습니다."
     )
 
     return WorkshopStateResponse(
@@ -298,7 +298,7 @@ def create_workshop_route(
     return _build_state_response(
         session=loaded_session,
         db=db,
-        message=f"[{profile.label}] ?대뼡 諛⑹떇?쇰줈 ?쒖옉?좎? 怨좊Ⅴ硫?洹??섏???留욌뒗 ?⑥쟾???뚰겕???먮쫫?쇰줈 ?댁뼱吏묐땲??",
+        message=f"[{profile.label}] 어떤 방식으로 시작할지 고르면, 상황에 맞는 안전한 워크숍 흐름으로 이어집니다.",
     )
 
 
@@ -331,7 +331,7 @@ def update_quality_level_route(
     return _build_state_response(
         session=loaded_session,
         db=db,
-        message=f"[{profile.label}] ?뚰겕???덉쭏 ?덈꺼??諛섏쁺?섏뿀?듬땲?? ?ㅼ쓬 ?쒖븞???꾩옱 ?덈꺼 湲곗??쇰줈 ?ㅼ떆 援ъ꽦?⑸땲??",
+        message=f"[{profile.label}] 워크숍 레벨 설정을 반영했습니다. 다음 제안은 현재 레벨 기준으로 다시 구성됩니다.",
     )
 
 
@@ -445,7 +445,7 @@ def update_visual_approval_route(
 
     db.commit()
     db.refresh(artifact)
-    return _build_state_response(session=session, db=db, message="?쒓컖????덉쓽 ?뱀씤 ?곹깭媛 ?낅뜲?댄듃?섏뿀?듬땲??")
+    return _build_state_response(session=session, db=db, message="시각 자료 확인 상태가 업데이트되었습니다.")
 
 
 @router.post("/{workshop_id}/artifacts/{artifact_id}/visuals/{visual_id}/replace", response_model=WorkshopStateResponse)
@@ -496,7 +496,7 @@ def replace_visual_route(
 
     db.commit()
     db.refresh(artifact)
-    return _build_state_response(session=session, db=db, message="?덈줈???쒓컖????덉쓣 ?앹꽦?덉뒿?덈떎.")
+    return _build_state_response(session=session, db=db, message="새로운 시각 자료를 생성했습니다.")
 
 
 @router.post("/{workshop_id}/choices", response_model=WorkshopStateResponse)
@@ -690,7 +690,7 @@ def pin_reference_route(
     return _build_state_response(
         session=loaded_session,
         db=db,
-        message="李멸퀬?먮즺瑜?怨좎젙?덉뒿?덈떎. ?꾩옱 留λ씫 ?먯닔? 李멸퀬?먮즺 ?ъ슜 媛뺣룄??留욎떠 濡쒕뱶留듭뿉 諛섏쁺?⑸땲??",
+        message="참고 자료를 고정했습니다. 현재 맥락 점수와 참고자료 활용 강도에 맞춰 로드맵에 반영됩니다.",
     )
 
 
@@ -735,7 +735,7 @@ def trigger_render(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "CONTEXT_INSUFFICIENT",
-                "message": "?꾩옱 留λ씫 ?먯닔 湲곗??쇰줈 ?꾩쭅 濡쒕뱶留듭뿉 ?꾩슂??留λ씫??遺議깊빀?덈떎.",
+                "message": "현재 맥락 점수 기준으로는 아직 초안 생성에 필요한 정보가 부족합니다.",
                 **requirements,
             },
         )
@@ -867,7 +867,7 @@ async def sse_events(
             logger.exception("Workshop stream failed: workshop=%s artifact=%s", workshop_id, artifact_id)
             yield _sse_line(
                 SSEEvent.ERROR,
-                {"message": "Render stream failed. Retry after checking the current draft context."},
+                {"message": "렌더 스트림이 실패했습니다. 현재 초안 맥락을 확인한 뒤 다시 시도해 주세요."},
             )
         finally:
             artifact_db = db.execute(select(DraftArtifact).filter(DraftArtifact.id == artifact_id)).scalar_one_or_none()
@@ -894,7 +894,7 @@ async def sse_events(
                 full_session.status = WorkshopStatus.DONE.value
             elif artifact_db is not None:
                 artifact_db.render_status = "failed"
-                artifact_db.error_message = "?뚮뜑留??ㅽ듃由쇱씠 ?ㅽ뙣?덉뒿?덈떎. ?꾩옱 珥덉븞 留λ씫???먭??????ㅼ떆 ?쒕룄??二쇱꽭??"
+                artifact_db.error_message = "렌더 스트림이 실패했습니다. 현재 초안 맥락을 확인한 뒤 다시 시도해 주세요."
                 full_session.status = WorkshopStatus.COLLECTING_CONTEXT.value
 
             full_session.stream_token = None

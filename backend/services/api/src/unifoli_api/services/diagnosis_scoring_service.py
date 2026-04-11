@@ -24,6 +24,30 @@ class AxisSemanticGrade(BaseModel):
     evidence_hints: list[str] = Field(default_factory=list)
 
 
+class ContinuityLink(BaseModel):
+    title: str = Field(description="Headline of the continuity (e.g. 1st-year Math to 2nd-year Math)")
+    description: str = Field(description="How the inquiry deepened or connected across records")
+    evidence_hooks: list[str] = Field(default_factory=list)
+
+
+class ThemeCluster(BaseModel):
+    theme_name: str = Field(description="Thematic intersection (e.g. 'Renewable Energy')")
+    description: str = Field(description="How different subjects or activities merge around this theme")
+    subjects_involved: list[str] = Field(default_factory=list)
+    evidence_hooks: list[str] = Field(default_factory=list)
+
+
+class OutlierActivity(BaseModel):
+    activity_name: str
+    description: str = Field(description="Why this activity feels unlinked or superficial")
+
+
+class RelationalGraph(BaseModel):
+    continuity_links: list[ContinuityLink] = Field(default_factory=list)
+    theme_clusters: list[ThemeCluster] = Field(default_factory=list)
+    unlinked_outliers: list[OutlierActivity] = Field(default_factory=list)
+
+
 class SemanticDiagnosisExtraction(BaseModel):
     universal_rigor: AxisSemanticGrade
     universal_specificity: AxisSemanticGrade
@@ -31,6 +55,7 @@ class SemanticDiagnosisExtraction(BaseModel):
     relational_continuity: AxisSemanticGrade
     cluster_depth: AxisSemanticGrade
     cluster_suitability: AxisSemanticGrade
+    relational_graph: RelationalGraph | None = None
     summary_insight: str
     strengths: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
@@ -89,6 +114,7 @@ class DiagnosisScoringSheet(BaseModel):
     recommended_topics: list[str] = Field(default_factory=list)
     risk_level: RiskLevel
     recommended_focus: str
+    relational_graph: RelationalGraph | None = None
 
 
 async def extract_semantic_diagnosis(
@@ -112,6 +138,10 @@ async def extract_semantic_diagnosis(
         "You are an elite university admissions evaluator. Analyze student records using a 3-layer framework:\n"
         "1. Universal Layer: Academic rigor and evidence specificity.\n"
         "2. Relational Layer: Narrative development and inquiry continuity across years/subjects.\n"
+        "   - Identify 'ContinuityLinks' (same-subject deepening across grades).\n"
+        "   - Identify 'ThemeClusters' (multi-subject convergence on a theme).\n"
+        "   - Identify 'OutlierActivities' (superficial claims disconnected from core academics).\n"
+        "   - Extract these into the relational_graph explicitly.\n"
         "3. Cluster Layer: Deep exploration into the specified major and specific suitability.\n\n"
         f"Target major: {target_major or 'general'}. Target university: {target_university or 'general'}{interest_context}.\n"
         "Be extremely conservative. If evidence is missing, give low scores. Rationale must be evidence-backed."
@@ -192,6 +222,7 @@ def build_diagnosis_scoring_sheet(
         recommended_topics=recommended_topics,
         risk_level=risk_level,
         recommended_focus=recommended_focus,
+        relational_graph=semantic.relational_graph if semantic else None,
     )
 
 

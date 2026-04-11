@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDropzone } from 'react-dropzone';
 import { 
@@ -26,15 +26,12 @@ import {
   isDiagnosisComplete,
   isDiagnosisFailed,
   getDiagnosisFailureMessage,
-  resolveDiagnosisDeliveryState,
   DIAGNOSIS_STORAGE_KEY
 } from '../lib/diagnosis';
 
 import {
-  PageHeader,
   PrimaryButton,
   SecondaryButton,
-  SectionCard,
   StepIndicator,
   WorkflowNotice,
 } from '../components/primitives';
@@ -90,7 +87,6 @@ function createInitialTimingPhases(): TimingPhaseMap {
 
 export function Diagnosis() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   
   const { 
@@ -103,7 +99,6 @@ export function Diagnosis() {
     setActiveProjectId: setProjectId,
     setActiveDocumentId,
     setActiveDiagnosisRunId: setDiagnosisRunId,
-    submitGoals,
     resetOnboarding,
     syncWithUser
   } = useOnboardingStore();
@@ -111,9 +106,6 @@ export function Diagnosis() {
   const step = diagnosisStep as DiagnosisStep;
   const setStep = setDiagnosisStep;
 
-  const preselectedProjectId = searchParams.get('project_id')?.trim() || null;
-  const autoLoadedProjectRef = useRef<string | null>(null);
-  
   const diagnosisProcessKickoffRef = useRef<Set<string>>(new Set());
   const parseProcessKickoffRef = useRef<Set<string>>(new Set());
 

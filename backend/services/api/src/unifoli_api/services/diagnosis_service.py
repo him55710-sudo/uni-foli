@@ -20,6 +20,7 @@ from unifoli_api.db.models.user import User
 from unifoli_api.services.diagnosis_scoring_service import (
     AdmissionAxisResult,
     DocumentQualitySummary,
+    RelationalGraph,
     SectionAnalysisItem,
 )
 from unifoli_api.services.llm_cache_service import CacheRequest, fetch_cached_response, store_cached_response
@@ -191,6 +192,7 @@ class DiagnosisResult(BaseModel):
     gap_axes: list[GapAxis] = Field(default_factory=list)
     recommended_directions: list[RecommendedDirection] = Field(default_factory=list)
     recommended_default_action: RecommendedDefaultAction | None = None
+    relational_graph: RelationalGraph | None = None
     citations: list[DiagnosisCitation] = Field(default_factory=list)
     policy_codes: list[str] = Field(default_factory=list)
     review_required: bool = False

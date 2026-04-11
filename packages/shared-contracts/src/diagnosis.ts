@@ -244,6 +244,31 @@ export interface DiagnosisGuidedPlanResponse {
   outline: GuidedDraftOutline;
 }
 
+export interface ContinuityLink {
+  subject_chain: string[];
+  description: string;
+  strength: 'weak' | 'moderate' | 'strong';
+}
+
+export interface ThemeCluster {
+  theme: string;
+  evidence: string[];
+  depth_level: 'exploratory' | 'applied' | 'integrated';
+  cross_subject: boolean;
+}
+
+export interface OutlierActivity {
+  activity: string;
+  reason: string;
+}
+
+export interface RelationalGraph {
+  continuity_links: ContinuityLink[];
+  theme_clusters: ThemeCluster[];
+  outlier_activities: OutlierActivity[];
+  major_alignment_score: number;
+}
+
 export interface DiagnosisResultPayload {
   headline: string;
   overview?: string | null;
@@ -276,6 +301,7 @@ export interface DiagnosisResultPayload {
   fallback_used?: boolean | null;
   fallback_reason?: string | null;
   processing_duration_ms?: number | null;
+  relational_graph?: RelationalGraph | null;
 }
 
 export interface StoredDiagnosis {

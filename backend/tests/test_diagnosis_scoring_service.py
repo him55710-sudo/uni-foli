@@ -6,7 +6,7 @@ from unifoli_api.services.student_record_feature_service import StudentRecordFea
 
 def _sample_features() -> StudentRecordFeatures:
     return StudentRecordFeatures(
-        source_mode="neis",
+        source_mode="structured",
         document_count=1,
         total_word_count=1800,
         total_records=14,
@@ -40,7 +40,7 @@ def _sample_features() -> StudentRecordFeatures:
     )
 
 
-def test_scoring_service_is_deterministic() -> None:
+def test_scoring_service_is_deterministic_and_uses_seven_axes() -> None:
     features = _sample_features()
 
     first = build_diagnosis_scoring_sheet(
@@ -57,13 +57,16 @@ def test_scoring_service_is_deterministic() -> None:
     )
 
     assert first.model_dump() == second.model_dump()
-    assert len(first.admission_axes) == 5
+    assert len(first.admission_axes) == 7
     assert {axis.key for axis in first.admission_axes} == {
-        "major_alignment",
-        "inquiry_continuity",
-        "evidence_density",
-        "process_explanation",
+        "universal_rigor",
+        "universal_specificity",
+        "relational_narrative",
+        "relational_continuity",
+        "cluster_depth",
+        "cluster_suitability",
         "authenticity_risk",
     }
     assert all(0 <= axis.score <= 100 for axis in first.admission_axes)
     assert first.document_quality.parse_reliability_score >= 0
+

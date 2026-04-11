@@ -9,12 +9,9 @@ import {
   Presentation,
   Save,
   Send,
-  ShieldCheck,
-  Sparkles,
   ToggleLeft,
   ToggleRight,
   User,
-  WandSparkles,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -257,6 +254,22 @@ const QUALITY_META_MAP: Record<QualityLevel, { label: string; status: 'success' 
 };
 
 const GUIDED_CHAT_GREETING = '안녕하세요 어떤 주제로 보고서를 써볼까요?';
+const DIAGNOSIS_RISK_LABEL_MAP: Record<string, string> = {
+  safe: '근거 충분',
+  warning: '보완 필요',
+  danger: '집중 보완 필요',
+};
+
+function formatDiagnosisRiskLabel(value: string | undefined): string {
+  const key = String(value || '').trim().toLowerCase();
+  return DIAGNOSIS_RISK_LABEL_MAP[key] || '보완 필요';
+}
+
+function formatDraftAttributionLabel(attribution: WorkshopDraftAttribution): string {
+  if (attribution === 'student-authored') return '학생 작성';
+  if (attribution === 'ai-inserted-after-approval') return '승인 후 AI 반영';
+  return 'AI 제안';
+}
 
 function normalizeGuidedSuggestions(response: GuidedTopicSuggestionResponse): GuidedTopicSuggestion[] {
   return ensureThreeSuggestions(response).suggestions.slice(0, 3);
@@ -1303,7 +1316,24 @@ export function Workshop() {
   };
   const diagnosisHeadline = diagnosisSummary.headline;
   const diagnosisRisk = diagnosisSummary.risk_level;
+  const diagnosisRiskKey = typeof diagnosisRisk === 'string' ? diagnosisRisk.toLowerCase() : '';
+  const diagnosisRiskLabel = formatDiagnosisRiskLabel(typeof diagnosisRisk === 'string' ? diagnosisRisk : undefined);
+  const diagnosisRiskStatus = diagnosisRiskKey === 'safe' ? 'success' : diagnosisRiskKey === 'danger' ? 'danger' : 'warning';
   const diagnosisGapCount = diagnosisSummary.gaps?.length || 0;
+  const limitedReason = chatMeta?.limited_reason || null;
+  const limitedModeNotice = useMemo(() => {
+    if (!chatMeta?.limited_mode) return null;
+    if (limitedReason === 'evidence_gap') {
+      return {
+        title: '근거 보완 모드가 활성화되었습니다',
+        description: '현재 확인 가능한 학생 기록이 제한되어 보수적인 제안만 제공합니다.',
+      };
+    }
+    return {
+      title: '제한 모드가 활성화되었습니다',
+      description: '모델 연결이 일시적으로 불안정하여 이번 응답은 안전한 기본 안내로 전환되었습니다.',
+    };
+  }, [chatMeta?.limited_mode, limitedReason]);
   const inputPlaceholder = isProjectBacked && !isGuidedTopicSelected
     ? '관심 과목이나 주제를 입력해 주세요'
     : '메시지를 입력하세요...';
@@ -1422,7 +1452,7 @@ export function Workshop() {
                           <SurfaceCard padding="sm" className="mt-3 space-y-2 border-none bg-white/60">
                             <p className="text-sm font-bold text-slate-900">{diagnosisHeadline}</p>
                             <div className="flex flex-wrap items-center gap-2">
-                              {diagnosisRisk && <StatusBadge status={diagnosisRisk === 'safe' ? 'success' : 'warning'}>{diagnosisRisk}</StatusBadge>}
+                              {diagnosisRisk && <StatusBadge status={diagnosisRiskStatus}>{diagnosisRiskLabel}</StatusBadge>}
                               <StatusBadge status="neutral">보완 {diagnosisGapCount}</StatusBadge>
                             </div>
                           </SurfaceCard>
@@ -1432,11 +1462,11 @@ export function Workshop() {
                   </SurfaceCard>
                 )}
 
-                {chatMeta?.limited_mode && (
+                {limitedModeNotice && (
                   <WorkflowNotice
                     tone="warning"
-                    title="제한 모드가 활성화되었습니다"
-                    description="모델 연결이 일시적으로 불안정하여 이번 응답은 안전한 기본 안내로 전환되었습니다."
+                    title={limitedModeNotice.title}
+                    description={limitedModeNotice.description}
                     className="mb-4"
                   />
                 )}
@@ -1646,7 +1676,7 @@ export function Workshop() {
                           className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-[#004aad] focus:bg-white"
                         />
                         <StatusBadge status={attributionStatus}>
-                          {block.attribution}
+                          {formatDraftAttributionLabel(block.attribution)}
                         </StatusBadge>
                       </div>
                       {definition.id === 'title' ? (
@@ -1677,7 +1707,7 @@ export function Workshop() {
                     className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
                   >
                     {showAdvancedTools ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    Advanced tools
+                    고급 도구
                   </button>
 
                   {showAdvancedTools ? (

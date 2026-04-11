@@ -4,6 +4,8 @@ import { CheckCircle2, AlertTriangle, Zap, Clock, Download, AlertCircle } from '
 import { SectionCard, SurfaceCard, StatusBadge } from '../primitives';
 import { formatRiskLevel } from '../../lib/diagnosis';
 import { DiagnosisRunResponse } from '../../types/api';
+import { DiagnosisRelationalGraph } from './DiagnosisRelationalGraph';
+
 
 interface DiagnosisResultDisplayProps {
   diagnosisResult: any;
@@ -138,6 +140,10 @@ export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ 
             </ul>
           </SurfaceCard>
         </div>
+
+        {diagnosisResult.relational_graph && (
+          <DiagnosisRelationalGraph graph={diagnosisResult.relational_graph} />
+        )}
 
         {diagnosisResult.next_actions?.length || diagnosisResult.recommended_focus ? (
           <div className="mt-8 rounded-[2rem] bg-slate-900 p-8 text-white shadow-2xl">

@@ -19,7 +19,7 @@ function makeDiagnosisPayload(): DiagnosisResultPayload {
     },
     gap_axes: [
       {
-        key: 'conceptual_depth',
+        key: 'cluster_depth',
         label: 'Conceptual depth',
         score: 42,
         severity: 'weak',
@@ -28,12 +28,12 @@ function makeDiagnosisPayload(): DiagnosisResultPayload {
     ],
     recommended_directions: [
       {
-        id: 'conceptual_depth',
+        id: 'cluster_depth',
         label: 'Concept-driven reset',
         summary: 'Shift the next draft toward principles and mechanisms.',
         why_now: 'This is the weakest axis.',
         complexity: 'balanced',
-        related_axes: ['conceptual_depth'],
+        related_axes: ['cluster_depth'],
         topic_candidates: [
           {
             id: 'why_this_works',
@@ -110,7 +110,7 @@ function makeDiagnosisPayload(): DiagnosisResultPayload {
       },
     ],
     recommended_default_action: {
-      direction_id: 'conceptual_depth',
+      direction_id: 'cluster_depth',
       topic_id: 'why_this_works',
       page_count: 3,
       export_format: 'pdf',
@@ -124,7 +124,7 @@ test('buildInitialGuidedSelection respects the recommended default action', () =
   const selection = buildInitialGuidedSelection(makeDiagnosisPayload());
 
   assert.deepEqual(selection, {
-    directionId: 'conceptual_depth',
+    directionId: 'cluster_depth',
     topicId: 'why_this_works',
     pageCount: 3,
     format: 'pdf',
@@ -138,7 +138,7 @@ test('buildInitialGuidedSelection falls back to the first available structured c
 
   const selection = buildInitialGuidedSelection(diagnosis);
 
-  assert.equal(selection.directionId, 'conceptual_depth');
+  assert.equal(selection.directionId, 'cluster_depth');
   assert.equal(selection.topicId, 'why_this_works');
   assert.equal(selection.pageCount, 3);
   assert.equal(selection.format, 'pdf');
