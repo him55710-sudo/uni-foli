@@ -96,7 +96,7 @@ def _get_session_loaded(workshop_id: str, db: Session) -> WorkshopSession:
     )
     session = db.execute(stmt).unique().scalar_one_or_none()
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workshop session not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="워크숍 세션을 찾을 수 없습니다.")
     return session
 
 
@@ -113,7 +113,7 @@ def _get_session_loaded_for_user(workshop_id: str, db: Session, owner_user_id: s
     )
     session = db.execute(stmt).unique().scalar_one_or_none()
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workshop session not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="워크숍 세션을 찾을 수 없습니다.")
     return session
 
 
@@ -224,7 +224,7 @@ def _validate_quest_belongs_to_project(quest: Quest | None, project_id: str) -> 
     if blueprint_project_id and blueprint_project_id != project_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Quest does not belong to the requested project.",
+            detail="요청한 프로젝트에 속하지 않는 퀘스트입니다.",
         )
 
 
@@ -274,13 +274,13 @@ def create_workshop_route(
 ) -> WorkshopStateResponse:
     project = get_project(db, payload.project_id, owner_user_id=current_user.id)
     if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로젝트를 찾을 수 없습니다.")
 
     quest = None
     if payload.quest_id:
         quest = db.execute(select(Quest).filter(Quest.id == payload.quest_id)).scalar_one_or_none()
         if quest is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quest not found.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="퀘스트를 찾을 수 없습니다.")
         _validate_quest_belongs_to_project(quest, payload.project_id)
 
     session = WorkshopSession(
@@ -359,7 +359,7 @@ def update_latest_draft_content(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "message": "Draft has been updated elsewhere. Reload before saving.",
+                    "message": "다른 곳에서 초안이 업데이트되었습니다. 최신 내용을 불러온 뒤 다시 저장해 주세요.",
                     "latest_document_content": latest.report_markdown or "",
                     "latest_updated_at": latest.updated_at.isoformat(),
                     "latest_structured_draft": (
@@ -380,7 +380,7 @@ def update_latest_draft_content(
         db.refresh(latest)
         return WorkshopSaveDraftResponse(
             status="ok",
-            message="Draft auto-saved successfully.",
+            message="초안을 자동 저장했습니다.",
             saved_updated_at=latest.updated_at,
             structured_draft=structured_to_save,
         )
@@ -402,7 +402,7 @@ def update_latest_draft_content(
         db.refresh(artifact)
         return WorkshopSaveDraftResponse(
             status="ok",
-            message="Draft auto-saved successfully.",
+            message="초안을 자동 저장했습니다.",
             saved_updated_at=artifact.updated_at,
             structured_draft=structured_to_save,
         )
@@ -423,7 +423,7 @@ def update_visual_approval_route(
     ).unique().scalar_one_or_none()
     
     if not artifact:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="결과 아티팩트를 찾을 수 없습니다.")
 
     # Update in visual_specs
     updated = False
@@ -464,7 +464,7 @@ def replace_visual_route(
     ).unique().scalar_one_or_none()
     
     if not artifact:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="결과 아티팩트를 찾을 수 없습니다.")
 
     # Call service to find/generate a variant
     variant = regenerate_visual_variant(
@@ -476,7 +476,7 @@ def replace_visual_route(
     )
 
     if not variant:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No suitable replacement found.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="교체 가능한 시각 자료를 찾지 못했습니다.")
 
     # Update artifact: mark old as REPLACED and add the new one
     new_visuals = []
@@ -774,18 +774,18 @@ async def sse_events(
 ) -> StreamingResponse:
     session = db.execute(select(WorkshopSession).filter(WorkshopSession.id == workshop_id)).scalar_one_or_none()
     if session is None or session.stream_token != stream_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired stream token.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않거나 만료된 스트림 토큰입니다.")
     if _is_expired(session.stream_token_expires_at):
         session.stream_token = None
         session.stream_token_expires_at = None
         db.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired stream token.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않거나 만료된 스트림 토큰입니다.")
 
     artifact = db.execute(
         select(DraftArtifact).filter(DraftArtifact.id == artifact_id, DraftArtifact.session_id == workshop_id)
     ).scalar_one_or_none()
     if artifact is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="결과 아티팩트를 찾을 수 없습니다.")
 
     if artifact.render_status == "completed":
         async def already_done() -> AsyncIterator[str]:

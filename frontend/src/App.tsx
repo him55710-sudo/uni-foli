@@ -66,14 +66,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   const hasProfile = Boolean(dbUser?.grade && dbUser?.track);
-  const hasGoals = Boolean(dbUser?.target_university && dbUser?.target_major);
-  const isFullyOnboarded = hasProfile && hasGoals;
   const isDiagnosisRoute = location.pathname.includes('/diagnosis');
 
-  // If user is authenticated but hasn't completed profile/goals, 
-  // they should be allowed to access /app/diagnosis to complete them.
-  // Other protected routes (dashboard, record, etc.) should redirect to diagnosis.
-  if (!isFullyOnboarded && !isDiagnosisRoute && location.pathname !== '/onboarding') {
+  // Only block navigation for brand-new users who haven't even set grade/track.
+  // Once profile basics are set, allow free navigation to all routes.
+  // Users can always access /app/diagnosis regardless of onboarding state.
+  if (!hasProfile && !isDiagnosisRoute && location.pathname !== '/onboarding') {
     return <Navigate to="/app/diagnosis" replace />;
   }
 

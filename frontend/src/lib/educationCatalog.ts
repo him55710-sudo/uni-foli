@@ -147,17 +147,44 @@ export function searchMajors(
     return [];
   }
 
-  // Always search from all_majors to show all possible department names
-  // as per user request to see "all majors" instead of just university-specific ones
-  const source = catalog.all_majors;
+  // When a university is selected, prioritise that university's own departments.
+  const universityMajors = universityName ? getMajorsForUniversity(universityName) : [];
 
-  return searchNames(source, query, limit).map((name) => {
-    return {
-      id: `major:${universityName ?? 'all'}:${name}`,
+  if (universityMajors.length > 0) {
+    // Search within the university's departments first
+    const universityResults = searchNames(universityMajors, query, limit).map((name) => ({
+      id: `major:${universityName}:${name}`,
       label: name,
-      // Removed secondary label to satisfy user request: "차라리 밑에 대학은 뜨지 않고 그냥 학과에 대해서만 뜨는 것도 좋을 것 같음"
       secondary: undefined,
       type: 'major' as const,
-    };
-  });
+    }));
+
+    // If we have enough results from the university, return them directly
+    if (universityResults.length >= limit || !query) {
+      return universityResults.slice(0, limit);
+    }
+
+    // Otherwise supplement from global list, excluding already-found names
+    const foundNames = new Set(universityResults.map((r) => r.label));
+    const globalFill = searchNames(
+      catalog.all_majors.filter((m) => !foundNames.has(m)),
+      query,
+      limit - universityResults.length,
+    ).map((name) => ({
+      id: `major:all:${name}`,
+      label: name,
+      secondary: undefined,
+      type: 'major' as const,
+    }));
+
+    return [...universityResults, ...globalFill];
+  }
+
+  // Fallback: no university selected — search all majors
+  return searchNames(catalog.all_majors, query, limit).map((name) => ({
+    id: `major:all:${name}`,
+    label: name,
+    secondary: undefined,
+    type: 'major' as const,
+  }));
 }
