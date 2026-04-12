@@ -69,6 +69,18 @@ const riskVariant = (risk: string): any => {
   }
 };
 
+function toCompactDiagnosisSummary(headline?: string | null): string {
+  const cleaned = (headline || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return 'AI 진단 실행';
+  if (cleaned.includes('AI diagnosis fallback applied after')) {
+    return '상세 진단 요약은 진단 페이지에서 확인할 수 있어요.';
+  }
+  if (cleaned.length > 120) {
+    return `${cleaned.slice(0, 96)}...`;
+  }
+  return cleaned;
+}
+
 const levelSummary = (level: string) => {
   switch (level) {
     case 'Diamond': return { label: '다이아몬드', color: 'text-cyan-600', bg: 'bg-cyan-50' };
@@ -84,11 +96,11 @@ const QuestCard = ({ quest, onStart, isStarting }: { quest: BlueprintQuest; onSt
   const diffVariant: any = quest.difficulty === 'high' ? 'danger' : quest.difficulty === 'medium' ? 'warning' : 'success';
 
   return (
-    <SurfaceCard className="group relative flex flex-col justify-between overflow-hidden p-6 transition-all hover:shadow-2xl hover:shadow-blue-500/10 active:scale-[0.98]">
+    <SurfaceCard className="group relative flex flex-col justify-between overflow-hidden border-[#d8e6ff] bg-white/90 p-6 shadow-[0_14px_30px_rgba(24,66,170,0.11)] transition-all hover:-translate-y-0.5 hover:shadow-[0_20px_38px_rgba(24,66,170,0.16)] active:scale-[0.98]">
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <StatusBadge status={diffVariant} className="font-black px-2.5 py-0.5 text-[10px]">난이도 {diffLabel}</StatusBadge>
-          <div className="rounded-xl bg-blue-50 p-2 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
+          <div className="rounded-xl bg-[#ecf4ff] p-2 text-[#2350b8] transition-colors group-hover:bg-[#1d4fff] group-hover:text-white">
             <Zap size={16} fill="currentColor" className="opacity-80" />
           </div>
         </div>
@@ -98,7 +110,7 @@ const QuestCard = ({ quest, onStart, isStarting }: { quest: BlueprintQuest; onSt
         </div>
       </div>
       
-      <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-100 pt-5">
+      <div className="mt-6 flex items-center justify-between gap-4 border-t border-[#e4edff] pt-5">
         <div className="flex flex-col">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">관련 과목</span>
           <span className="text-sm font-bold text-slate-700">{quest.subject}</span>
@@ -106,7 +118,7 @@ const QuestCard = ({ quest, onStart, isStarting }: { quest: BlueprintQuest; onSt
         <button
           onClick={() => onStart(quest)}
           disabled={isStarting}
-          className="inline-flex h-9 items-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-black text-white transition-all hover:bg-blue-600 disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-2 rounded-xl bg-[linear-gradient(135deg,#1d4fff_0%,#2da3ff_100%)] px-4 text-xs font-black text-white shadow-[0_8px_18px_rgba(29,79,255,0.28)] transition-all hover:-translate-y-0.5 disabled:opacity-50"
         >
           {isStarting ? '준비 중...' : '시작하기'}
           {!isStarting && <PlayCircle size={14} />}
@@ -288,10 +300,14 @@ export default function Dashboard() {
   const primaryQuest = blueprint?.priority_quests[0] ?? null;
 
   const workflowSteps = useMemo<WorkflowStep[]>(() => {
+    const diagnosisSummary = hasDiagnosis
+      ? toCompactDiagnosisSummary(storedDiagnosis?.diagnosis.headline)
+      : 'AI 진단 실행';
+
     const steps: WorkflowStep[] = [
       { key: 'targets', title: '목표 설정', description: hasPrimaryGoal ? `${profile?.target_university} · ${profile?.target_major}` : '지원 대학/학과 설정', status: hasPrimaryGoal ? 'done' : 'active' },
       { key: 'record', title: '기록 업로드', description: hasDiagnosis ? '업로드 완료' : (hasPrimaryGoal ? '학생부 PDF 업로드' : '대기 중'), status: hasDiagnosis ? 'done' : (hasPrimaryGoal ? 'active' : 'pending') },
-      { key: 'diagnosis', title: '진단 실행', description: hasDiagnosis ? (storedDiagnosis?.diagnosis.headline || '완료') : 'AI 진단 실행', status: hasDiagnosis ? 'done' : (hasPrimaryGoal && !hasDiagnosis ? 'pending' : 'pending') },
+      { key: 'diagnosis', title: '진단 실행', description: diagnosisSummary, status: hasDiagnosis ? 'done' : (hasPrimaryGoal && !hasDiagnosis ? 'pending' : 'pending') },
       { key: 'workshop', title: '워크숍 실행', description: hasBlueprint ? (primaryQuest ? `우선: ${primaryQuest.title}` : '진행 가능') : '액션 플랜 대기', status: hasBlueprint ? 'active' : 'pending' },
     ];
     return steps;
@@ -342,34 +358,34 @@ export default function Dashboard() {
   const primaryGoal = allGoals[0] ?? null;
 
   return (
-    <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-1000 space-y-10 pb-20">
+    <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 space-y-6 pb-20 duration-1000 sm:space-y-10">
       {/* Hero Section */}
-      <div className="relative overflow-hidden rounded-[2.5rem] bg-[#004aad] p-8 md:p-12">
-        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-[#00c2ff]/20 blur-3xl" />
+      <div className="relative overflow-hidden rounded-[2rem] border border-[#d4e3ff] bg-[linear-gradient(135deg,#1d4fff_0%,#2d8eff_55%,#57b8ff_100%)] p-5 shadow-[0_22px_46px_rgba(29,79,255,0.22)] sm:rounded-[2.5rem] sm:p-8 md:p-12">
+        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/16 blur-3xl animate-shine-pulse" />
+        <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-[#9edfff]/34 blur-3xl" />
         
         <div className="relative z-10">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 backdrop-blur-md">
-            <TrendingUp size={14} className="text-[#00c2ff]" />
-            <span className="text-sm font-bold tracking-tight text-[#00c2ff]">준비율: {stats.completion_rate}%</span>
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/16 px-3 py-1.5 backdrop-blur-md sm:px-4">
+            <TrendingUp size={14} className="text-[#bff0ff]" />
+            <span className="text-sm font-bold tracking-tight text-[#bff0ff]">준비율: {stats.completion_rate}%</span>
           </div>
 
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-5 sm:gap-8 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-4">
-              <h1 className="text-3xl font-black tracking-tight text-white md:text-5xl lg:leading-[1.15]">
+              <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl md:text-5xl lg:leading-[1.15]">
                 {profile?.target_university ? (
                   <>
-                    <span className="text-[#00c2ff]">{profile.target_university}</span> {profile.target_major} <br className="hidden sm:block" />
+                    <span className="text-[#bbecff]">{profile.target_university}</span> {profile.target_major} <br className="hidden sm:block" />
                     합격 플랜이 가동 중입니다
                   </>
                 ) : (
                   <>
-                    나만의 <span className="text-[#00c2ff]">UniFoli</span> <br className="hidden sm:block" />
+                    나만의 <span className="text-[#bbecff]">UniFoli</span> <br className="hidden sm:block" />
                     합격 전략을 만드세요
                   </>
                 )}
               </h1>
-              <p className="max-w-xl text-lg font-medium leading-relaxed text-blue-100/80">
+              <p className="max-w-xl text-sm font-medium leading-relaxed text-blue-100/88 sm:text-lg">
                 실시간 데이터와 AI가 분석한 나의 생기부 점수, <br className="hidden sm:block" />
                 그리고 합격을 위한 최적의 액션 플랜을 확인하세요.
               </p>
@@ -379,7 +395,7 @@ export default function Dashboard() {
               {hasPrimaryGoal && (
                 <button
                   onClick={() => navigate('/app/diagnosis')}
-                  className="inline-flex h-12 items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-6 font-bold text-white transition-all hover:bg-white/20 backdrop-blur-sm"
+                  className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/28 bg-white/14 px-4 text-sm font-bold text-white transition-all hover:bg-white/22 backdrop-blur-sm sm:h-12 sm:px-6 sm:text-base"
                 >
                   <Settings2 size={18} />
                   목표 정보 관리
@@ -387,7 +403,7 @@ export default function Dashboard() {
               )}
               <button
                 onClick={nextAction.onPrimary}
-                className="inline-flex h-12 items-center gap-2 rounded-2xl bg-white px-8 font-black text-[#004aad] shadow-xl shadow-[#004aad]/20 transition-all hover:scale-105 active:scale-95"
+                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/70 bg-white px-5 text-sm font-black text-[#1d4fff] shadow-xl shadow-[#1d4fff]/24 transition-all hover:scale-105 active:scale-95 sm:h-12 sm:px-8 sm:text-base"
               >
                 {nextAction.primaryLabel}
                 <ArrowRight size={18} />
@@ -395,15 +411,15 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="mt-10 flex flex-wrap items-center gap-2">
-            <StatusBadge status="active" className="bg-white/10 text-white border-white/20 backdrop-blur-md">
+          <div className="mt-6 flex flex-wrap items-center gap-2 sm:mt-10">
+            <StatusBadge status="active" className="border-white/28 bg-white/16 text-white backdrop-blur-md">
               {progressLabel}
             </StatusBadge>
-            <StatusBadge status="neutral" className="bg-white/10 text-white border-white/20 backdrop-blur-md">
+            <StatusBadge status="neutral" className="border-white/28 bg-white/16 text-white backdrop-blur-md">
               보유 분석서 {stats.report_count}개
             </StatusBadge>
             {storedDiagnosis && (
-              <StatusBadge status={riskVariant(storedDiagnosis.diagnosis.risk_level)} className="backdrop-blur-md">
+              <StatusBadge status={riskVariant(storedDiagnosis.diagnosis.risk_level)} className="backdrop-blur-md bg-white/20 border-white/20 text-white">
                 진단 리스크: {storedDiagnosis.diagnosis.risk_level === 'danger' ? '집중 보완' : storedDiagnosis.diagnosis.risk_level === 'warning' ? '주의' : '안정'}
               </StatusBadge>
             )}
@@ -412,29 +428,29 @@ export default function Dashboard() {
       </div>
 
       {/* Target & Progress Grid */}
-      <div className="grid gap-8 lg:grid-cols-3">
+      <div className="grid gap-6 sm:gap-8 lg:grid-cols-3">
         {/* Target Card */}
-        <SurfaceCard className="lg:col-span-2 p-8 overflow-hidden relative border-none bg-blue-50/50">
+        <SurfaceCard className="relative overflow-hidden border-[#d4e3ff] bg-white/88 p-5 shadow-[0_18px_36px_rgba(24,66,170,0.14)] sm:p-8 lg:col-span-2">
           <div className="relative z-10 space-y-8">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-4 sm:gap-6">
                 <UniversityLogo
                   universityName={primaryGoal?.university}
-                  className="h-20 w-20 rounded-3xl bg-white object-contain p-3 shadow-2xl shadow-blue-900/10"
+                  className="h-16 w-16 rounded-2xl border border-[#d8e6ff] bg-white object-contain p-2.5 shadow-[0_14px_28px_rgba(24,66,170,0.12)] sm:h-20 sm:w-20 sm:rounded-3xl sm:p-3"
                 />
                 <div className="min-w-0">
-                  <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-[11px] font-black tracking-widest text-[#004aad] ring-1 ring-inset ring-blue-500/10 uppercase">
+                  <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-[#eaf2ff] px-3 py-1 text-[11px] font-black tracking-widest text-[#2150b8] ring-1 ring-inset ring-[#2150b8]/12 uppercase">
                     <Flag size={10} />
                     핵심 목표
                   </div>
-                  <h2 className="truncate text-3xl font-black tracking-tight text-slate-900">{primaryGoal?.university || '목표 설정 필요'}</h2>
-                  <p className="mt-1 truncate text-lg font-bold text-slate-500">{primaryGoal?.major || '학과를 설정해주세요'}</p>
+                  <h2 className="truncate text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{primaryGoal?.university || '목표 설정 필요'}</h2>
+                  <p className="mt-1 truncate text-base font-bold text-slate-500 sm:text-lg">{primaryGoal?.major || '학과를 설정해주세요'}</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-2 lg:justify-end">
                 {allGoals.slice(1, 4).map((goal, index) => (
-                  <div key={index} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm border border-slate-100">
+                  <div key={index} className="flex items-center gap-3 rounded-2xl border border-[#dce8ff] bg-white/95 p-3 shadow-[0_10px_22px_rgba(24,66,170,0.09)]">
                     <UniversityLogo universityName={goal.university} className="h-10 w-10 rounded-xl bg-slate-50 p-1" />
                     <div className="min-w-[120px]">
                       <p className="text-[10px] font-black text-slate-400 uppercase">차순위 {index + 1}</p>
@@ -453,14 +469,14 @@ export default function Dashboard() {
             {workflowSteps.map((step) => (
               <div key={step.key} className="flex gap-4 p-2">
                 <div className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
-                  step.status === 'done' ? 'bg-blue-600 border-blue-600 text-white' : 
-                  step.status === 'active' ? 'border-blue-600 text-blue-600' : 'border-slate-200 text-slate-200'
+                  step.status === 'done' ? 'bg-[#1d4fff] border-[#1d4fff] text-white' : 
+                  step.status === 'active' ? 'border-[#1d4fff] text-[#1d4fff]' : 'border-slate-200 text-slate-200'
                 }`}>
                   {step.status === 'done' ? <CheckCircle2 size={14} /> : <div className="h-1.5 w-1.5 rounded-full bg-current" />}
                 </div>
                 <div>
                   <h4 className={`text-sm font-black ${step.status === 'pending' ? 'text-slate-400' : 'text-slate-900'}`}>{step.title}</h4>
-                  <p className="text-xs font-medium text-slate-500">{step.description}</p>
+                  <p className="line-clamp-3 text-xs font-medium leading-5 text-slate-500 sm:line-clamp-none">{step.description}</p>
                 </div>
               </div>
             ))}
@@ -477,7 +493,7 @@ export default function Dashboard() {
         >
           {isLoadingBlueprint ? (
             <div className="flex h-64 flex-col items-center justify-center gap-4 text-slate-400">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1d4fff] border-t-transparent" />
               <p className="text-sm font-bold">합격 가능성을 분석하여 퀘스트를 생성하고 있습니다...</p>
             </div>
           ) : blueprint ? (
@@ -496,16 +512,16 @@ export default function Dashboard() {
               </div>
 
               {/* Subject Groups */}
-              <div className="space-y-6 pt-6 border-t border-slate-100">
+              <div className="space-y-6 border-t border-[#e4edff] pt-6">
                 <h3 className="text-xl font-black text-slate-900">과목별 탐구 플랜</h3>
                 {blueprint.subject_groups.map(group => (
                   <div key={group.name} className="space-y-4">
                     <button 
                       onClick={() => setOpenSubjectGroups(prev => ({ ...prev, [group.name]: !prev[group.name] }))}
-                      className="flex w-full items-center justify-between rounded-2xl bg-slate-50 p-4 transition-colors hover:bg-slate-100"
+                      className="flex w-full items-center justify-between rounded-2xl border border-[#dce8ff] bg-[#f5f9ff] p-4 transition-colors hover:bg-[#edf4ff]"
                     >
                       <div className="flex items-center gap-3">
-                        <School size={18} className="text-slate-400" />
+                        <School size={18} className="text-[#6b83af]" />
                         <span className="font-black text-slate-700">{group.name}</span>
                         <StatusBadge status="neutral">{group.quests.length}개</StatusBadge>
                       </div>

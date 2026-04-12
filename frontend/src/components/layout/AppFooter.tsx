@@ -10,13 +10,16 @@ interface AppFooterProps {
 
 export function AppFooter({ onOpenPartnership }: AppFooterProps) {
   return (
-    <SurfaceCard className="mt-8 p-5 sm:mt-12 sm:p-8">
+    <SurfaceCard className="mt-8 border-[#d8e6ff] bg-white/86 p-5 shadow-[0_18px_36px_rgba(24,66,170,0.12)] sm:mt-12 sm:p-8">
       <div className="grid gap-8 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="space-y-4">
           <div className="mt-1 space-y-2">
             <UniFoliLogo size="sm" subtitle={null} />
             <p className="text-sm font-medium leading-relaxed text-slate-500">
+              <span className="sm:hidden">학생 기록 기반 분석과 문서 작성을 지원하는 준비 도구입니다.</span>
+              <span className="hidden sm:inline">
               UniFoli는 학생 기록 기반 분석과 초안 작성 워크플로를 돕는 도구입니다. 합격을 보장하지 않으며, 준비 과정의 품질과 실행력을 높이는 데 집중합니다.
+              </span>
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -43,7 +46,7 @@ export function AppFooter({ onOpenPartnership }: AppFooterProps) {
               개인정보처리방침
             </Link>
           </div>
-          <p className="text-xs leading-6 text-slate-400">기록은 최소 수집 원칙으로 처리되며, 초안 작성은 사용자 검토를 전제로 합니다.</p>
+          <p className="hidden text-xs leading-6 text-slate-400 sm:block">기록은 최소 수집 원칙으로 처리되며, 초안 작성은 사용자 검토를 전제로 합니다.</p>
         </div>
       </div>
     </SurfaceCard>
