@@ -11,27 +11,27 @@ RiskLevel = Literal["safe", "warning", "danger"]
 
 
 class AxisSemanticGrade(BaseModel):
-    score: int = Field(ge=0, le=100)
-    rationale: str
-    evidence_hints: list[str] = Field(default_factory=list)
+    score: int = Field(ge=0, le=100, description="0~100점 사이의 정량 점수")
+    rationale: str = Field(description="점수 부여 근거 (전문적인 입학사정관 톤의 한국어)")
+    evidence_hints: list[str] = Field(default_factory=list, description="점수의 근거가 된 학생부 내 핵심 문구 및 단서")
 
 
 class ContinuityLink(BaseModel):
-    title: str = Field(description="Headline of the continuity (e.g. 1st-year Math to 2nd-year Math)")
-    description: str = Field(description="How the inquiry deepened or connected across records")
-    evidence_hooks: list[str] = Field(default_factory=list)
+    title: str = Field(description="탐구 연속성 헤드라인 (예: 1학년 수학에서 2학년 심화수학으로의 연계)")
+    description: str = Field(description="학년별/기록별로 탐구가 어떻게 심화되거나 연결되었는지에 대한 상세 설명")
+    evidence_hooks: list[str] = Field(default_factory=list, description="연속성을 증명하는 학생부 내 핵심 추출 문구")
 
 
 class ThemeCluster(BaseModel):
-    theme_name: str = Field(description="Thematic intersection (e.g. 'Renewable Energy')")
-    description: str = Field(description="How different subjects or activities merge around this theme")
-    subjects_involved: list[str] = Field(default_factory=list)
-    evidence_hooks: list[str] = Field(default_factory=list)
+    theme_name: str = Field(description="융합 탐구 테마 명칭 (예: '신재생 에너지의 경제적 타당성')")
+    description: str = Field(description="서로 다른 과목이나 활동이 이 테마를 중심으로 어떻게 융합되었는지에 대한 설명")
+    subjects_involved: list[str] = Field(default_factory=list, description="관여된 교과목 목록")
+    evidence_hooks: list[str] = Field(default_factory=list, description="융합을 증명하는 학생부 내 핵심 추출 문구")
 
 
 class OutlierActivity(BaseModel):
     activity_name: str
-    description: str = Field(description="Why this activity feels unlinked or superficial")
+    description: str = Field(description="이 활동이 왜 핵심 학업 역량과 단절되어 보이거나 표면적으로 느껴지는지에 대한 사유")
 
 
 class RelationalGraph(BaseModel):
@@ -41,16 +41,16 @@ class RelationalGraph(BaseModel):
 
 
 class SemanticDiagnosisExtraction(BaseModel):
-    universal_rigor: AxisSemanticGrade
-    universal_specificity: AxisSemanticGrade
-    relational_narrative: AxisSemanticGrade
-    relational_continuity: AxisSemanticGrade
-    cluster_depth: AxisSemanticGrade
-    cluster_suitability: AxisSemanticGrade
-    relational_graph: RelationalGraph | None = None
-    summary_insight: str
-    strengths: list[str] = Field(default_factory=list)
-    gaps: list[str] = Field(default_factory=list)
+    universal_rigor: AxisSemanticGrade = Field(description="학업 및 근거 엄밀성: 기록의 신뢰도와 학업 성취 수준")
+    universal_specificity: AxisSemanticGrade = Field(description="근거 구체성: 구체적 사실, 수치, 방법론의 기재 정도")
+    relational_narrative: AxisSemanticGrade = Field(description="서사적 발전성: 섹션 간 조화와 성장 서사의 풍부함")
+    relational_continuity: AxisSemanticGrade = Field(description="탐구의 연속성: 학년별/과목별 탐구 주제의 반복 및 심화 과정")
+    cluster_depth: AxisSemanticGrade = Field(description="전공 심층성: 목표 전공 관련 심화 활동 및 지적 호기심의 깊이")
+    cluster_suitability: AxisSemanticGrade = Field(description="전공 적합성: 기록 전반에 나타난 진로 지향성과 계열 적합 인성")
+    relational_graph: RelationalGraph | None = Field(None, description="기록 간의 관계망 (연속성, 융합, 단절 활동)")
+    summary_insight: str = Field(description="전체 진단 요약 및 총평 (입학사정관 스타일의 전문적 조언)")
+    strengths: list[str] = Field(default_factory=list, description="발굴된 강점 후보군 리스트")
+    gaps: list[str] = Field(default_factory=list, description="보강이 필요한 약점/공백 후보군 리스트")
 
 
 class AdmissionAxisResult(BaseModel):
@@ -108,30 +108,29 @@ async def extract_semantic_diagnosis(
 ) -> SemanticDiagnosisExtraction:
     from unifoli_api.core.llm import get_llm_client
 
+    from unifoli_api.services.prompt_registry import get_prompt_registry
+
     llm = get_llm_client()
-    if hasattr(llm, "model_name"):
-        llm.model_name = "gemini-1.5-flash"
+    registry = get_prompt_registry()
+
+    # Get base instruction from registry
+    base_instruction = registry.compose_prompt("diagnosis.semantic-scoring")
 
     interest_context = ""
     if interest_universities:
-        interest_context = f" / Additional targets: {', '.join(interest_universities)}"
+        interest_context = f" / 추가 목표 대학: {', '.join(interest_universities)}"
 
+    # Perform variable substitution
     system_instruction = (
-        "You are an elite university admissions evaluator. Analyze student records using a 3-layer framework:\n"
-        "1. Universal Layer: Academic rigor and evidence specificity.\n"
-        "2. Relational Layer: Narrative development and inquiry continuity across years/subjects.\n"
-        "   - Identify 'ContinuityLinks' (same-subject deepening across grades).\n"
-        "   - Identify 'ThemeClusters' (multi-subject convergence on a theme).\n"
-        "   - Identify 'OutlierActivities' (superficial claims disconnected from core academics).\n"
-        "   - Extract these into the relational_graph explicitly.\n"
-        "3. Cluster Layer: Deep exploration into the specified major and specific suitability.\n\n"
-        f"Target major: {target_major or 'general'}. Target university: {target_university or 'general'}{interest_context}.\n"
-        "Be extremely conservative. If evidence is missing, give low scores. Rationale must be evidence-backed."
+        base_instruction.replace("{{target_major}}", target_major or "미정")
+        .replace("{{target_university}}", target_university or "미정")
+        .replace("{{interest_context}}", interest_context)
     )
+
     prompt = (
-        "Perform a deep semantic diagnosis of the following student record content. "
-        "Strictly follow the SemanticDiagnosisExtraction schema.\n\n"
-        f"CONTENT:\n{masked_text[:15000]}"
+        "다음 학생부 텍스트를 바탕으로 심층적인 의미론적 진단을 수행하십시오. "
+        "반드시 부여된 SemanticDiagnosisExtraction 스키마를 엄격히 준수하여 JSON 형태로 출력하십시오.\n\n"
+        f"분석 대상 텍스트:\n{masked_text[:15000]}"
     )
     return await llm.generate_json(
         prompt=prompt,

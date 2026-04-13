@@ -8,10 +8,15 @@ from sqlalchemy.orm import Session
 from unifoli_api.core.llm import LLMRequestError, get_llm_client, get_llm_temperature
 from unifoli_api.db.models.user import User
 from unifoli_api.schemas.guided_chat import (
+    GuidedChoiceGroup,
+    GuidedChoiceOption,
+    GuidedConversationPhase,
     GuidedChatStartResponse,
     GuidedChatStatePayload,
     OutlineSection,
+    PageRangeSelectionResponse,
     PageRangeOption,
+    StructureSelectionResponse,
     TopicSelectionResponse,
     TopicSuggestion,
     TopicSuggestionResponse,
@@ -23,22 +28,48 @@ from unifoli_api.services.prompt_registry import get_prompt_registry
 GUIDED_CHAT_GREETING = "안녕하세요. 어떤 주제로 보고서를 써볼까요?"
 LIMITED_CONTEXT_NOTE = "현재 확인 가능한 학생 맥락이 제한되어 보수적으로 제안합니다."
 
+DEFAULT_SUBJECT_OPTIONS: list[GuidedChoiceOption] = [
+    GuidedChoiceOption(id="subject-math", label="수학", value="수학"),
+    GuidedChoiceOption(id="subject-math2", label="수2", value="수2"),
+    GuidedChoiceOption(id="subject-chemistry", label="화학", value="화학"),
+    GuidedChoiceOption(id="subject-biology", label="생명과학", value="생명과학"),
+]
+
 
 def start_guided_chat(*, db: Session, user: User, project_id: str | None) -> GuidedChatStartResponse:
     context = build_guided_chat_context(db=db, user=user, project_id=project_id)
     saved_state = load_guided_chat_state(db, context.project_id) if context.project_id else None
+    phase = _resolve_phase_from_saved_state(saved_state)
+    selected_page_label = saved_state.selected_page_range_label if saved_state else None
+    selected_structure_id = saved_state.selected_structure_id if saved_state else None
+    structure_options = saved_state.structure_options if saved_state else []
+    next_action_options = saved_state.next_action_options if saved_state else []
     state_summary = _build_state_summary(
         context=context,
+        phase=phase,
         subject=saved_state.subject if saved_state else None,
         selected_topic_id=saved_state.selected_topic_id if saved_state else None,
+        selected_page_range_label=selected_page_label,
+        selected_structure_id=selected_structure_id,
         suggestions=saved_state.suggestions if saved_state else [],
+        page_ranges=saved_state.recommended_page_ranges if saved_state else [],
         outline=saved_state.recommended_outline if saved_state else [],
+        structure_options=structure_options,
+        next_action_options=next_action_options,
         starter_draft_markdown=saved_state.starter_draft_markdown if saved_state else None,
+    )
+    assistant_message, choice_groups = _build_start_prompt(
+        phase=phase,
+        context=context,
+        state_summary=state_summary,
     )
     return GuidedChatStartResponse(
         greeting=GUIDED_CHAT_GREETING,
+        assistant_message=assistant_message,
+        phase=phase,
         project_id=context.project_id,
         evidence_gap_note=_evidence_gap_note(context),
+        choice_groups=choice_groups,
         limited_mode=bool(context.evidence_gaps),
         limited_reason="evidence_gap" if context.evidence_gaps else None,
         state_summary=state_summary,
@@ -63,19 +94,48 @@ async def generate_topic_suggestions(
     )
     summary = _build_state_summary(
         context=context,
+        phase="topic_selection",
         subject=normalized_subject,
         selected_topic_id=None,
+        selected_page_range_label=None,
+        selected_structure_id=None,
         suggestions=normalized,
+        page_ranges=[],
         outline=[],
+        structure_options=[],
+        next_action_options=[],
         starter_draft_markdown=None,
     )
     limited_mode = bool(context.evidence_gaps or limited_reason)
+    assistant_message = (
+        f"좋아요. '{normalized_subject}'를 바탕으로 학생 기록 흐름에 맞는 주제 3가지를 준비했어요.\n"
+        "아래에서 가장 끌리는 방향을 골라주세요."
+    )
+    choice_groups = [
+        GuidedChoiceGroup(
+            id="topic-selection",
+            title="이 중에서 가장 마음에 드는 주제를 골라주세요.",
+            style="cards",
+            options=[
+                GuidedChoiceOption(
+                    id=item.id,
+                    label=item.title,
+                    description=_clip_line(item.why_fit_student, item.link_to_record_flow, 140),
+                    value=item.id,
+                )
+                for item in normalized
+            ],
+        )
+    ]
 
     response = TopicSuggestionResponse(
         greeting=GUIDED_CHAT_GREETING,
+        assistant_message=assistant_message,
+        phase="topic_selection",
         subject=normalized_subject,
         suggestions=normalized,
         evidence_gap_note=_evidence_gap_note(context) or (llm_response.evidence_gap_note if llm_response else None),
+        choice_groups=choice_groups,
         limited_mode=limited_mode,
         limited_reason=limited_reason or ("evidence_gap" if context.evidence_gaps else None),
         state_summary=summary,
@@ -86,11 +146,16 @@ async def generate_topic_suggestions(
             db,
             context.project_id,
             GuidedChatStatePayload(
+                phase="topic_selection",
                 subject=response.subject,
                 suggestions=response.suggestions,
                 selected_topic_id=None,
+                selected_page_range_label=None,
+                selected_structure_id=None,
                 recommended_page_ranges=[],
                 recommended_outline=[],
+                structure_options=[],
+                next_action_options=[],
                 starter_draft_markdown=None,
                 state_summary=summary,
                 limited_mode=response.limited_mode,
@@ -129,6 +194,8 @@ def select_topic(
 
     page_ranges = _build_page_ranges(context=context)
     outline = _build_outline(context=context, selected=selected)
+    structure_options = _build_structure_options(context=context)
+    next_action_options = _build_next_action_options(context=context)
     starter_draft = _build_starter_markdown(
         subject=normalized_subject,
         selected=selected,
@@ -136,31 +203,57 @@ def select_topic(
         context=context,
     )
 
-    guidance_parts = [f"선택한 주제는 '{selected.title}'입니다."]
+    guidance_parts = [f"좋아요. 선택한 주제는 '{selected.title}'예요."]
     if context.known_target_info.get("target_major"):
         guidance_parts.append(
             f"목표 전공 '{context.known_target_info['target_major']}'과 연결되는 흐름으로 구조화했습니다."
         )
     if context.evidence_gaps:
         guidance_parts.append("근거가 부족한 지점은 '추가 확인 필요'로 표시해 안전하게 확장하세요.")
+    guidance_parts.append("먼저 보고서 분량을 정하면 바로 개요를 고정해드릴게요.")
     guidance_message = " ".join(guidance_parts)
 
     summary = _build_state_summary(
         context=context,
+        phase="page_range_selection",
         subject=normalized_subject,
         selected_topic_id=selected.id,
+        selected_page_range_label=None,
+        selected_structure_id=None,
         suggestions=normalized,
+        page_ranges=page_ranges,
         outline=outline,
+        structure_options=structure_options,
+        next_action_options=next_action_options,
         starter_draft_markdown=starter_draft,
+    )
+    page_range_choice_group = GuidedChoiceGroup(
+        id="page-range-selection",
+        title="보고서 분량을 선택해 주세요.",
+        style="cards",
+        options=[
+            GuidedChoiceOption(
+                id=f"page-range-{option.label}",
+                label=f"{option.min_pages}~{option.max_pages}쪽",
+                description=option.why_this_length,
+                value=option.label,
+            )
+            for option in page_ranges
+        ],
     )
 
     response = TopicSelectionResponse(
+        phase="page_range_selection",
+        assistant_message="좋아요. 이제 분량을 정해볼게요. 원하는 분량 카드를 눌러주세요.",
         selected_topic_id=selected.id,
         selected_title=selected.title,
         recommended_page_ranges=page_ranges,
         recommended_outline=outline,
         starter_draft_markdown=starter_draft,
         guidance_message=guidance_message,
+        structure_options=structure_options,
+        next_action_options=next_action_options,
+        choice_groups=[page_range_choice_group],
         limited_mode=bool(context.evidence_gaps),
         limited_reason="evidence_gap" if context.evidence_gaps else None,
         state_summary=summary,
@@ -171,11 +264,16 @@ def select_topic(
             db,
             context.project_id,
             GuidedChatStatePayload(
+                phase="page_range_selection",
                 subject=normalized_subject,
                 suggestions=normalized,
                 selected_topic_id=response.selected_topic_id,
+                selected_page_range_label=None,
+                selected_structure_id=None,
                 recommended_page_ranges=response.recommended_page_ranges,
                 recommended_outline=response.recommended_outline,
+                structure_options=structure_options,
+                next_action_options=next_action_options,
                 starter_draft_markdown=response.starter_draft_markdown,
                 state_summary=summary,
                 limited_mode=response.limited_mode,
@@ -183,6 +281,362 @@ def select_topic(
             ),
         )
     return response
+
+
+def select_page_range(
+    *,
+    db: Session,
+    user: User,
+    project_id: str | None,
+    selected_page_range_label: str,
+    selected_topic_id: str | None = None,
+) -> PageRangeSelectionResponse:
+    context = build_guided_chat_context(db=db, user=user, project_id=project_id)
+    saved_state = load_guided_chat_state(db, context.project_id) if context.project_id else None
+    if saved_state is None:
+        saved_state = GuidedChatStatePayload(
+            phase="page_range_selection",
+            subject=_normalize_subject(subject="탐구"),
+            suggestions=[],
+            recommended_page_ranges=_build_page_ranges(context=context),
+            recommended_outline=[],
+            structure_options=_build_structure_options(context=context),
+            next_action_options=_build_next_action_options(context=context),
+            starter_draft_markdown=None,
+            state_summary={},
+            limited_mode=bool(context.evidence_gaps),
+            limited_reason="evidence_gap" if context.evidence_gaps else None,
+        )
+
+    page_ranges = list(saved_state.recommended_page_ranges or _build_page_ranges(context=context))
+    selected = next((item for item in page_ranges if item.label == selected_page_range_label), page_ranges[0])
+    structure_options = list(saved_state.structure_options or _build_structure_options(context=context))
+
+    summary = _build_state_summary(
+        context=context,
+        phase="structure_selection",
+        subject=saved_state.subject,
+        selected_topic_id=selected_topic_id or saved_state.selected_topic_id,
+        selected_page_range_label=selected.label,
+        selected_structure_id=saved_state.selected_structure_id,
+        suggestions=saved_state.suggestions,
+        page_ranges=page_ranges,
+        outline=saved_state.recommended_outline,
+        structure_options=structure_options,
+        next_action_options=saved_state.next_action_options,
+        starter_draft_markdown=saved_state.starter_draft_markdown,
+    )
+    structure_choice_group = GuidedChoiceGroup(
+        id="structure-selection",
+        title="구성 스타일을 골라주세요.",
+        style="cards",
+        options=structure_options,
+    )
+    response = PageRangeSelectionResponse(
+        phase="structure_selection",
+        assistant_message=(
+            f"좋아요. 분량은 '{selected.min_pages}~{selected.max_pages}쪽'으로 진행할게요. "
+            "이제 구성 스타일을 선택하면 바로 개요와 초안 방향을 고정해드릴게요."
+        ),
+        selected_page_range_label=selected.label,
+        selected_page_range_note=selected.why_this_length,
+        structure_options=structure_options,
+        choice_groups=[structure_choice_group],
+        limited_mode=bool(context.evidence_gaps),
+        limited_reason="evidence_gap" if context.evidence_gaps else None,
+        state_summary=summary,
+    )
+
+    if context.project_id:
+        save_guided_chat_state(
+            db,
+            context.project_id,
+            GuidedChatStatePayload(
+                phase="structure_selection",
+                subject=saved_state.subject,
+                suggestions=saved_state.suggestions,
+                selected_topic_id=selected_topic_id or saved_state.selected_topic_id,
+                selected_page_range_label=selected.label,
+                selected_structure_id=saved_state.selected_structure_id,
+                recommended_page_ranges=page_ranges,
+                recommended_outline=saved_state.recommended_outline,
+                structure_options=structure_options,
+                next_action_options=saved_state.next_action_options,
+                starter_draft_markdown=saved_state.starter_draft_markdown,
+                state_summary=summary,
+                limited_mode=response.limited_mode,
+                limited_reason=response.limited_reason,
+            ),
+        )
+    return response
+
+
+def select_structure(
+    *,
+    db: Session,
+    user: User,
+    project_id: str | None,
+    selected_structure_id: str,
+) -> StructureSelectionResponse:
+    context = build_guided_chat_context(db=db, user=user, project_id=project_id)
+    saved_state = load_guided_chat_state(db, context.project_id) if context.project_id else None
+    if saved_state is None:
+        saved_state = GuidedChatStatePayload(
+            phase="structure_selection",
+            subject=_normalize_subject(subject="탐구"),
+            suggestions=[],
+            selected_topic_id=None,
+            selected_page_range_label="3~5쪽",
+            recommended_page_ranges=_build_page_ranges(context=context),
+            recommended_outline=[],
+            structure_options=_build_structure_options(context=context),
+            next_action_options=_build_next_action_options(context=context),
+            starter_draft_markdown=None,
+            state_summary={},
+            limited_mode=bool(context.evidence_gaps),
+            limited_reason="evidence_gap" if context.evidence_gaps else None,
+        )
+
+    structure_options = list(saved_state.structure_options or _build_structure_options(context=context))
+    selected = next((item for item in structure_options if item.id == selected_structure_id), structure_options[0])
+    next_action_options = _build_next_action_options(context=context)
+
+    summary = _build_state_summary(
+        context=context,
+        phase="drafting_next_step",
+        subject=saved_state.subject,
+        selected_topic_id=saved_state.selected_topic_id,
+        selected_page_range_label=saved_state.selected_page_range_label,
+        selected_structure_id=selected.id,
+        suggestions=saved_state.suggestions,
+        page_ranges=saved_state.recommended_page_ranges,
+        outline=saved_state.recommended_outline,
+        structure_options=structure_options,
+        next_action_options=next_action_options,
+        starter_draft_markdown=saved_state.starter_draft_markdown,
+    )
+    next_action_group = GuidedChoiceGroup(
+        id="next-action-selection",
+        title="다음으로 무엇을 할까요?",
+        style="chips",
+        options=next_action_options,
+    )
+
+    response = StructureSelectionResponse(
+        phase="drafting_next_step",
+        assistant_message=(
+            f"좋아요. '{selected.label}' 스타일로 진행할게요. "
+            "아래에서 다음 작업을 눌러 바로 이어가세요."
+        ),
+        selected_structure_id=selected.id,
+        selected_structure_label=selected.label,
+        next_action_options=next_action_options,
+        choice_groups=[next_action_group],
+        limited_mode=bool(context.evidence_gaps),
+        limited_reason="evidence_gap" if context.evidence_gaps else None,
+        state_summary=summary,
+    )
+
+    if context.project_id:
+        save_guided_chat_state(
+            db,
+            context.project_id,
+            GuidedChatStatePayload(
+                phase="drafting_next_step",
+                subject=saved_state.subject,
+                suggestions=saved_state.suggestions,
+                selected_topic_id=saved_state.selected_topic_id,
+                selected_page_range_label=saved_state.selected_page_range_label,
+                selected_structure_id=selected.id,
+                recommended_page_ranges=saved_state.recommended_page_ranges,
+                recommended_outline=saved_state.recommended_outline,
+                structure_options=structure_options,
+                next_action_options=next_action_options,
+                starter_draft_markdown=saved_state.starter_draft_markdown,
+                state_summary=summary,
+                limited_mode=response.limited_mode,
+                limited_reason=response.limited_reason,
+            ),
+        )
+    return response
+
+
+def _resolve_phase_from_saved_state(saved_state: GuidedChatStatePayload | None) -> GuidedConversationPhase:
+    if saved_state is None:
+        return "subject_input"
+    if saved_state.phase:
+        return saved_state.phase
+    if saved_state.selected_structure_id:
+        return "drafting_next_step"
+    if saved_state.selected_page_range_label:
+        return "structure_selection"
+    if saved_state.selected_topic_id:
+        return "page_range_selection"
+    if saved_state.suggestions:
+        return "topic_selection"
+    if saved_state.subject:
+        return "specific_topic_check"
+    return "subject_input"
+
+
+def _build_start_prompt(
+    *,
+    phase: GuidedConversationPhase,
+    context: GuidedChatContext,
+    state_summary: dict[str, object],
+) -> tuple[str, list[GuidedChoiceGroup]]:
+    subject = str(state_summary.get("subject") or "").strip()
+    selected_topic = str(state_summary.get("selected_topic") or "").strip()
+    choice_groups: list[GuidedChoiceGroup] = []
+
+    if phase == "subject_input":
+        choice_groups.append(
+            GuidedChoiceGroup(
+                id="subject-quick-picks",
+                title="자주 선택하는 과목",
+                style="chips",
+                options=DEFAULT_SUBJECT_OPTIONS,
+            )
+        )
+        return (
+            "안녕하세요. 어떤 과목의 탐구보고서를 준비하고 계신가요?\n"
+            "예를 들어 수학, 수2, 화학, 생명과학처럼 편하게 적어주세요.",
+            choice_groups,
+        )
+
+    if phase == "specific_topic_check":
+        choice_groups.append(
+            GuidedChoiceGroup(
+                id="specific-topic-check",
+                title="특별히 생각해둔 주제가 있나요?",
+                style="buttons",
+                options=[
+                    GuidedChoiceOption(
+                        id="specific-yes",
+                        label="주제가 있어요",
+                        description="생각해둔 주제를 바로 입력할게요.",
+                        value="주제가 있어요",
+                    ),
+                    GuidedChoiceOption(
+                        id="specific-no-recommend",
+                        label="추천 3개 받아보기",
+                        description="학생 기록과 목표를 바탕으로 추천받을게요.",
+                        value="추천 3개 받아보기",
+                    ),
+                ],
+            )
+        )
+        return (
+            f"좋아요. {subject or '해당 과목'}로 진행해볼게요.\n"
+            "특별히 생각해 둔 주제가 있을까요? 아직 없다면 학생 기록을 바탕으로 3개 추천해드릴게요.",
+            choice_groups,
+        )
+
+    if phase == "topic_selection":
+        raw_suggestions = state_summary.get("suggestions")
+        if isinstance(raw_suggestions, list) and raw_suggestions:
+            choice_groups.append(
+                GuidedChoiceGroup(
+                    id="topic-selection",
+                    title="이 중에서 가장 마음에 드는 주제를 골라주세요.",
+                    style="cards",
+                    options=[
+                        GuidedChoiceOption(
+                            id=str(item.get("id") or f"topic-{index + 1}"),
+                            label=str(item.get("title") or f"주제 {index + 1}"),
+                            description=_clip_line(
+                                str(item.get("why_fit_student") or ""),
+                                str(item.get("link_to_record_flow") or ""),
+                                140,
+                            ),
+                            value=str(item.get("id") or f"topic-{index + 1}"),
+                        )
+                        for index, item in enumerate(raw_suggestions)
+                        if isinstance(item, dict)
+                    ],
+                )
+            )
+        return (
+            "이 중에서 어떤 방향이 가장 마음에 드시나요?\n바로 시작할 수 있게 개요와 초안도 잡아드릴까요?",
+            choice_groups,
+        )
+
+    if phase == "page_range_selection":
+        raw_page_ranges = state_summary.get("recommended_page_ranges")
+        if isinstance(raw_page_ranges, list) and raw_page_ranges:
+            choice_groups.append(
+                GuidedChoiceGroup(
+                    id="page-range-selection",
+                    title="보고서 분량을 선택해 주세요.",
+                    style="cards",
+                    options=[
+                        GuidedChoiceOption(
+                            id=f"page-range-{str(item.get('label') or index + 1)}",
+                            label=str(item.get("label") or f"{item.get('min_pages', 1)}~{item.get('max_pages', 3)}쪽"),
+                            description=str(item.get("why_this_length") or ""),
+                            value=str(item.get("label") or ""),
+                        )
+                        for index, item in enumerate(raw_page_ranges)
+                        if isinstance(item, dict)
+                    ],
+                )
+            )
+        return (
+            f"좋아요. '{selected_topic or '선택한 주제'}'로 진행할게요.\n"
+            "보고서 분량은 어느 정도를 원하시나요?",
+            choice_groups,
+        )
+
+    if phase == "structure_selection":
+        raw_structure_options = state_summary.get("structure_options")
+        if isinstance(raw_structure_options, list) and raw_structure_options:
+            choice_groups.append(
+                GuidedChoiceGroup(
+                    id="structure-selection",
+                    title="구성 스타일을 골라주세요.",
+                    style="cards",
+                    options=[
+                        GuidedChoiceOption(
+                            id=str(item.get("id") or f"structure-{index + 1}"),
+                            label=str(item.get("label") or f"구성 {index + 1}"),
+                            description=str(item.get("description") or ""),
+                            value=str(item.get("value") or item.get("id") or ""),
+                        )
+                        for index, item in enumerate(raw_structure_options)
+                        if isinstance(item, dict)
+                    ],
+                )
+            )
+        return (
+            "구성 방식도 골라주시면 바로 개요를 잡아드릴게요.",
+            choice_groups,
+        )
+
+    if phase == "drafting_next_step":
+        raw_next_actions = state_summary.get("next_action_options")
+        if isinstance(raw_next_actions, list) and raw_next_actions:
+            choice_groups.append(
+                GuidedChoiceGroup(
+                    id="next-action-selection",
+                    title="다음으로 무엇을 할까요?",
+                    style="chips",
+                    options=[
+                        GuidedChoiceOption(
+                            id=str(item.get("id") or f"next-{index + 1}"),
+                            label=str(item.get("label") or f"다음 작업 {index + 1}"),
+                            description=str(item.get("description") or ""),
+                            value=str(item.get("value") or item.get("label") or ""),
+                        )
+                        for index, item in enumerate(raw_next_actions)
+                        if isinstance(item, dict)
+                    ],
+                )
+            )
+        return ("다음으로 무엇을 할까요? 아래 옵션을 누르면 바로 이어서 도와드릴게요.", choice_groups)
+
+    if context.evidence_gaps:
+        return ("근거가 부족한 부분을 먼저 보완하면서 안전하게 진행해볼게요.", choice_groups)
+    return ("원하시는 방향으로 이어서 코칭해드릴게요.", choice_groups)
 
 
 async def _try_llm_topic_suggestions(
@@ -231,6 +685,9 @@ def _build_topic_prompt(*, subject: str, context: GuidedChatContext) -> str:
         "[요청]\n"
         "- TopicSuggestionResponse JSON만 출력하세요.\n"
         "- 정확히 3개의 서로 다른 주제를 제시하세요.\n"
+        "- 각 주제는 학생 기록의 약한 연결 지점을 보완하는 방향이어야 합니다.\n"
+        "- 새 활동을 지어내지 말고 기존 기록을 구체화하는 방식으로 제안하세요.\n"
+        "- why_fit_student와 link_to_record_flow는 반드시 학생별 맥락을 포함하세요.\n"
         "- 학생 기록 근거가 약하면 보수적으로 제안하고 evidence_gap_note를 작성하세요.\n"
         "- 과장/합격보장 표현은 금지하세요.\n"
     )
@@ -335,26 +792,85 @@ def _build_page_ranges(*, context: GuidedChatContext) -> list[PageRangeOption]:
     limited = bool(context.evidence_gaps)
     return [
         PageRangeOption(
-            label="핵심형",
+            label="1~3쪽",
+            min_pages=1,
+            max_pages=3,
+            why_this_length="핵심 질문과 결론만 빠르게 정리할 때 적합합니다.",
+        ),
+        PageRangeOption(
+            label="3~5쪽",
             min_pages=3,
-            max_pages=4,
-            why_this_length="핵심 근거와 질문을 빠르게 정리하기에 적합합니다.",
-        ),
-        PageRangeOption(
-            label="균형형",
-            min_pages=4,
             max_pages=5,
-            why_this_length="배경-근거-해석-후속계획을 균형 있게 담기 좋습니다.",
+            why_this_length="근거, 분석, 결론을 균형 있게 담기 좋습니다.",
         ),
         PageRangeOption(
-            label="심화형" if not limited else "안전 심화형",
-            min_pages=5 if not limited else 4,
-            max_pages=6 if not limited else 5,
+            label="5~10쪽",
+            min_pages=5,
+            max_pages=10,
             why_this_length=(
-                "비교/검증 단계를 포함한 심화 서술에 적합합니다."
+                "비교·검증·확장까지 포함한 심화 탐구형 보고서에 적합합니다."
                 if not limited
-                else "근거 부족 구간을 명시적으로 분리해 안전하게 심화합니다."
+                else "근거 경계를 분리해 보수적으로 심화 내용을 담을 수 있습니다."
             ),
+        ),
+    ]
+
+
+def _build_structure_options(*, context: GuidedChatContext) -> list[GuidedChoiceOption]:
+    return [
+        GuidedChoiceOption(
+            id="structure-quick-core",
+            label="빠르게 핵심만 정리형",
+            description="핵심 주장과 근거를 짧고 명확하게 정리합니다.",
+        ),
+        GuidedChoiceOption(
+            id="structure-balanced",
+            label="균형형",
+            description="배경·근거·해석·결론을 균형 있게 구성합니다.",
+        ),
+        GuidedChoiceOption(
+            id="structure-deep-inquiry",
+            label="심화 탐구형",
+            description="비교·검증·한계 분석까지 깊게 다룹니다.",
+        ),
+        GuidedChoiceOption(
+            id="structure-record-linked",
+            label="세특 연결 강조형",
+            description="학생부 기록 흐름과의 연결을 전면에 배치합니다.",
+        ),
+        GuidedChoiceOption(
+            id="structure-career-linked",
+            label="진로 연계 강조형",
+            description="희망 전공/진로 맥락을 사실 기반으로 연결합니다.",
+        ),
+    ]
+
+
+def _build_next_action_options(*, context: GuidedChatContext) -> list[GuidedChoiceOption]:
+    return [
+        GuidedChoiceOption(
+            id="next-outline-first",
+            label="개요 먼저 잡기",
+            description="섹션별 핵심 문장을 먼저 고정합니다.",
+            value="다음으로 개요를 먼저 잡아볼까요?",
+        ),
+        GuidedChoiceOption(
+            id="next-intro-first",
+            label="도입 문단부터 쓰기",
+            description="첫 문단을 작성하고 전체 톤을 맞춥니다.",
+            value="도입 문단부터 써볼까요?",
+        ),
+        GuidedChoiceOption(
+            id="next-thesis-one-line",
+            label="탐구 질문 한 문장 정리",
+            description="보고서의 중심 질문을 한 문장으로 확정합니다.",
+            value="탐구 질문을 먼저 한 문장으로 정리할까요?",
+        ),
+        GuidedChoiceOption(
+            id="next-evidence-gaps",
+            label="근거 부족 부분 보완",
+            description="근거가 약한 부분을 먼저 안전하게 보강합니다.",
+            value="근거가 부족한 부분부터 보완할까요?",
         ),
     ]
 
@@ -463,10 +979,16 @@ def _build_starter_markdown(
 def _build_state_summary(
     *,
     context: GuidedChatContext,
+    phase: GuidedConversationPhase,
     subject: str | None,
     selected_topic_id: str | None,
+    selected_page_range_label: str | None,
+    selected_structure_id: str | None,
     suggestions: list[TopicSuggestion],
+    page_ranges: list[PageRangeOption],
     outline: list[OutlineSection],
+    structure_options: list[GuidedChoiceOption],
+    next_action_options: list[GuidedChoiceOption],
     starter_draft_markdown: str | None,
 ) -> dict[str, object]:
     selected_title = next((item.title for item in suggestions if item.id == selected_topic_id), None)
@@ -474,11 +996,22 @@ def _build_state_summary(
     if context.record_flow_summary:
         confirmed_points.append(_clip_line(context.record_flow_summary, "", 160))
     return {
+        "phase": phase,
         "subject": subject,
         "selected_topic": selected_title,
         "selected_topic_id": selected_topic_id,
+        "selected_page_range_label": selected_page_range_label,
+        "suggestions": [item.model_dump(mode="json") for item in suggestions],
+        "recommended_page_ranges": [item.model_dump(mode="json") for item in page_ranges],
+        "structure_options": [item.model_dump(mode="json") for item in structure_options],
+        "selected_structure_id": selected_structure_id,
+        "selected_structure_label": next(
+            (item.label for item in structure_options if item.id == selected_structure_id),
+            None,
+        ),
         "thesis_question": selected_title,
         "accepted_outline": [item.title for item in outline],
+        "next_action_options": [item.model_dump(mode="json") for item in next_action_options],
         "confirmed_evidence_points": confirmed_points,
         "unresolved_evidence_gaps": context.evidence_gaps[:6],
         "draft_intent": context.project_discussion_log[-1] if context.project_discussion_log else None,

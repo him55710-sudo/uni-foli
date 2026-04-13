@@ -78,6 +78,18 @@
         "backend/services/api/src/unifoli_api/services/diagnosis_service.py"
       ]
     },
+    "diagnosis.semantic-scoring": {
+      "category": "diagnosis",
+      "version": "1.0.0",
+      "relative_path": "diagnosis/semantic-scoring-v1/prompt.md",
+      "description": "Semantic scoring and latent axis extraction for student records.",
+      "output_mode": "json",
+      "wiring_status": "wired",
+      "dependencies": [],
+      "runtime_targets": [
+        "backend/services/api/src/unifoli_api/services/diagnosis_scoring_service.py"
+      ]
+    },
     "chat.guided-diagnosis-orchestration": {
       "category": "chat",
       "version": "1.0.0",

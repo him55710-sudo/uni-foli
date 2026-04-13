@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import abc
+import asyncio
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Literal, Type, TypeVar
 from urllib.parse import urlparse
 
-from openai import APIConnectionError, APIError, APITimeoutError, AsyncOpenAI, BadRequestError
+from openai import APIConnectionError, APIError, APITimeoutError, AsyncOpenAI, BadRequestError, NotFoundError
 from pydantic import BaseModel
 
 from unifoli_api.core.config import get_settings
@@ -20,6 +22,7 @@ LLMProfile = Literal["fast", "standard", "render"]
 logger = logging.getLogger("unifoli.llm")
 _OLLAMA_LOG_COOLDOWN_SECONDS = 120.0
 _last_ollama_failure_logs: dict[str, float] = {}
+_ollama_model_alias_cache: dict[str, str] = {}
 
 
 class LLMRequestError(RuntimeError):
@@ -151,7 +154,9 @@ class OllamaClient(LLMClient):
             timeout=request_timeout_seconds,
             max_retries=1,
         )
-        self.model = model
+        self.requested_model = (model or "").strip()
+        cached_model = _resolve_cached_ollama_model_alias(self.base_url, self.requested_model)
+        self.model = cached_model or self.requested_model
         self.keep_alive = keep_alive
         self.default_temperature = default_temperature
         self.options: dict[str, int] = {}
@@ -185,6 +190,50 @@ class OllamaClient(LLMClient):
             )
             return False, reason
 
+    async def _list_available_models(self) -> list[str]:
+        try:
+            payload = await self.client.models.list()
+        except Exception:  # noqa: BLE001
+            return []
+        models: list[str] = []
+        for item in getattr(payload, "data", []) or []:
+            model_id = str(getattr(item, "id", "") or "").strip()
+            if model_id:
+                models.append(model_id)
+        return models
+
+    async def _resolve_model_not_found_fallback(self, exc: Exception) -> str | None:
+        if _classify_ollama_failure(exc) != "model_not_found":
+            return None
+
+        missing_model = _extract_missing_model_from_exception(exc) or self.model or self.requested_model
+        if not missing_model:
+            return None
+
+        cached_model = _resolve_cached_ollama_model_alias(self.base_url, missing_model)
+        if cached_model and cached_model != self.model:
+            self.model = cached_model
+            return cached_model
+
+        available_models = await self._list_available_models()
+        fallback_model = _select_ollama_fallback_model(missing_model, available_models)
+        if not fallback_model or fallback_model == self.model:
+            return None
+
+        _remember_ollama_model_alias(self.base_url, missing_model, fallback_model)
+        if self.requested_model and self.requested_model != missing_model:
+            _remember_ollama_model_alias(self.base_url, self.requested_model, fallback_model)
+        self.model = fallback_model
+        logger.warning(
+            "Configured Ollama model was unavailable; retrying with fallback model=%s requested=%s missing=%s base_url=%s profile=%s",
+            fallback_model,
+            self.requested_model,
+            missing_model,
+            self.base_url,
+            self.profile_name,
+        )
+        return fallback_model
+
     async def generate_json(
         self,
         prompt: str,
@@ -215,12 +264,29 @@ class OllamaClient(LLMClient):
                 extra_body=self._extra_body(),
             )
         except Exception as exc:  # noqa: BLE001
-            raise _to_ollama_request_error(
-                exc,
-                base_url=self.base_url,
-                model=self.model,
-                profile=self.profile_name,
-            ) from exc
+            fallback_model = await self._resolve_model_not_found_fallback(exc)
+            if not fallback_model:
+                raise _to_ollama_request_error(
+                    exc,
+                    base_url=self.base_url,
+                    model=self.model,
+                    profile=self.profile_name,
+                ) from exc
+            try:
+                response = await self.client.chat.completions.create(
+                    model=fallback_model,
+                    messages=messages,
+                    temperature=temperature,
+                    response_format={"type": "json_object"},
+                    extra_body=self._extra_body(),
+                )
+            except Exception as retry_exc:  # noqa: BLE001
+                raise _to_ollama_request_error(
+                    retry_exc,
+                    base_url=self.base_url,
+                    model=fallback_model,
+                    profile=self.profile_name,
+                ) from retry_exc
 
         content = response.choices[0].message.content
         if not content:
@@ -264,12 +330,102 @@ class OllamaClient(LLMClient):
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         except Exception as exc:  # noqa: BLE001
-            raise _to_ollama_request_error(
-                exc,
-                base_url=self.base_url,
-                model=self.model,
-                profile=self.profile_name,
-            ) from exc
+            fallback_model = await self._resolve_model_not_found_fallback(exc)
+            if not fallback_model:
+                raise _to_ollama_request_error(
+                    exc,
+                    base_url=self.base_url,
+                    model=self.model,
+                    profile=self.profile_name,
+                ) from exc
+            try:
+                response = await self.client.chat.completions.create(
+                    model=fallback_model,
+                    messages=messages,
+                    temperature=temperature,
+                    stream=True,
+                    extra_body=self._extra_body(),
+                )
+                async for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            except Exception as retry_exc:  # noqa: BLE001
+                raise _to_ollama_request_error(
+                    retry_exc,
+                    base_url=self.base_url,
+                    model=fallback_model,
+                    profile=self.profile_name,
+                ) from retry_exc
+
+
+class RobustLLMClient(LLMClient):
+    """
+    여러 LLM 제공자를 순차적으로 시도하여 실패 없는 호출을 보장하는 클라이언트.
+    Gemini를 우선 시도하고, 실패 시 Ollama로 Fallback합니다.
+    """
+
+    def __init__(self, primary: LLMClient, fallback: LLMClient | None = None):
+        self.primary = primary
+        self.fallback = fallback
+
+    async def generate_json(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        system_instruction: str | None = None,
+        temperature: float = 0.2,
+        max_retries: int = 2,
+    ) -> T:
+        last_exception = None
+        
+        # 1. Primary 시도 (재시도 포함)
+        for attempt in range(max_retries + 1):
+            try:
+                return await self.primary.generate_json(
+                    prompt, response_model, system_instruction, temperature
+                )
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Primary LLM attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries:
+                    # 지수 백오프: 1s, 2s, 4s...
+                    await asyncio.sleep(2**attempt)
+                else:
+                    logger.error(f"Primary LLM exhausted all {max_retries + 1} attempts.")
+
+        # 2. Fallback 시도
+        if self.fallback:
+            logger.warning("Attempting fallback LLM...")
+            try:
+                return await self.fallback.generate_json(
+                    prompt, response_model, system_instruction, temperature
+                )
+            except Exception as e:
+                logger.error(f"Fallback LLM also failed: {e}")
+                raise e
+        
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("LLM call failed without specific exception")
+
+    async def stream_chat(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        temperature: float = 0.5,
+        max_retries: int = 1,
+    ) -> AsyncIterator[str]:
+        # 스트리밍은 구조상 재시도가 복잡하므로 단순 전환만 수행
+        try:
+            async for chunk in self.primary.stream_chat(prompt, system_instruction, temperature):
+                yield chunk
+        except Exception as e:
+            logger.error(f"Primary Stream failed: {e}. Attempting fallback...")
+            if self.fallback:
+                async for chunk in self.fallback.stream_chat(prompt, system_instruction, temperature):
+                    yield chunk
+            else:
+                raise
 
 
 def get_llm_client(*, profile: LLMProfile = "standard") -> LLMClient:
@@ -278,29 +434,28 @@ def get_llm_client(*, profile: LLMProfile = "standard") -> LLMClient:
     api_key = (settings.gemini_api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
     has_valid_gemini_key = bool(api_key) and api_key != "DUMMY_KEY"
 
-    if provider == "ollama":
-        return _build_ollama_client(profile=profile)
-
-    if provider not in {"gemini", "ollama"}:
-        if settings.app_env == "local" and not has_valid_gemini_key:
-            return _build_ollama_client(profile=profile)
-        raise RuntimeError(f"Unsupported LLM provider: {settings.llm_provider}")
-
+    gemini = None
     if has_valid_gemini_key:
-        return GeminiClient(api_key=api_key)
+        gemini = GeminiClient(api_key=api_key)
 
-    if _has_remote_ollama_endpoint(settings.ollama_base_url):
-        logger.warning(
-            "Gemini API key is missing; falling back to remote Ollama profile=%s base_url=%s",
-            profile,
-            settings.ollama_base_url,
-        )
-        return _build_ollama_client(profile=profile)
+    ollama = None
+    if settings.app_env == "local" or _has_remote_ollama_endpoint(settings.ollama_base_url):
+        ollama = _build_ollama_client(profile=profile)
 
-    if settings.app_env == "local":
-        return _build_ollama_client(profile=profile)
+    if provider == "ollama" and ollama:
+        return ollama
 
-    raise RuntimeError("Gemini API key is not configured.")
+    if gemini and ollama:
+        # Gemini 우선, 실패 시 Ollama로 Fallback
+        return RobustLLMClient(primary=gemini, fallback=ollama)
+
+    if gemini:
+        return gemini
+
+    if ollama:
+        return ollama
+
+    raise RuntimeError("No valid LLM client (Gemini or Ollama) could be configured.")
 
 
 def get_llm_temperature(*, profile: LLMProfile = "standard") -> float:
@@ -317,6 +472,9 @@ def get_llm_temperature(*, profile: LLMProfile = "standard") -> float:
 
 async def probe_ollama_connectivity(*, profile: LLMProfile = "standard") -> tuple[bool, str | None]:
     client = get_llm_client(profile=profile)
+    # RobustLLMClient인 경우 Fallback(Ollama)이 있으면 확인
+    if isinstance(client, RobustLLMClient) and isinstance(client.fallback, OllamaClient):
+        return await client.fallback.check_connectivity()
     if not isinstance(client, OllamaClient):
         return True, None
     return await client.check_connectivity()
@@ -329,24 +487,38 @@ def get_pdf_analysis_llm_client() -> LLMClient:
         settings.pdf_analysis_gemini_api_key or settings.gemini_api_key or os.environ.get("GEMINI_API_KEY") or ""
     ).strip()
 
+    primary: LLMClient | None = None
+    fallback: LLMClient | None = None
+
+    # Gemini 설정 시도
+    if gemini_api_key and gemini_api_key != "DUMMY_KEY":
+        primary = GeminiClient(api_key=gemini_api_key)
+
+    # Ollama 설정 시도
+    ollama = _build_ollama_client(
+        profile="render",
+        base_url=settings.pdf_analysis_ollama_base_url or settings.ollama_base_url,
+        model=settings.pdf_analysis_ollama_model or settings.ollama_model,
+        request_timeout_seconds=settings.pdf_analysis_timeout_seconds,
+        keep_alive=settings.pdf_analysis_keep_alive,
+        num_ctx=settings.pdf_analysis_num_ctx,
+        num_predict=settings.pdf_analysis_num_predict,
+        num_thread=settings.pdf_analysis_num_thread,
+    )
+
+    if provider == "gemini" and primary:
+        return RobustLLMClient(primary=primary, fallback=ollama)
+    
     if provider == "ollama":
-        return _build_ollama_client(
-            profile="render",
-            base_url=settings.pdf_analysis_ollama_base_url or settings.ollama_base_url,
-            model=settings.pdf_analysis_ollama_model or settings.ollama_model,
-            request_timeout_seconds=settings.pdf_analysis_timeout_seconds,
-            keep_alive=settings.pdf_analysis_keep_alive,
-            num_ctx=settings.pdf_analysis_num_ctx,
-            num_predict=settings.pdf_analysis_num_predict,
-            num_thread=settings.pdf_analysis_num_thread,
-        )
+        # Ollama가 메인이면 Gemini를 Fallback으로 사용 (키가 있는 경우)
+        if primary:
+            return RobustLLMClient(primary=ollama, fallback=primary)
+        return ollama
 
-    if provider == "gemini":
-        if not gemini_api_key or gemini_api_key == "DUMMY_KEY":
-            raise RuntimeError("PDF analysis Gemini API key is not configured.")
-        return GeminiClient(api_key=gemini_api_key)
-
-    raise RuntimeError(f"Unsupported PDF analysis LLM provider: {settings.pdf_analysis_llm_provider}")
+    if primary:
+        return primary
+    
+    return ollama
 
 
 def resolve_pdf_analysis_llm_resolution() -> PDFAnalysisLLMResolution:
@@ -385,6 +557,9 @@ def _describe_client_provider_model(
     requested_provider: str,
     requested_model: str,
 ) -> tuple[str, str]:
+    if isinstance(client, RobustLLMClient):
+        # primary 기준으로 설명
+        return _describe_client_provider_model(client.primary, requested_provider=requested_provider, requested_model=requested_model)
     if isinstance(client, OllamaClient):
         return "ollama", str(client.model or requested_model).strip() or requested_model
     if isinstance(client, GeminiClient):
@@ -461,9 +636,17 @@ def _classify_ollama_failure(exc: Exception) -> str:
         return "timeout"
     if isinstance(exc, APIConnectionError):
         return "unreachable"
+    if isinstance(exc, NotFoundError):
+        if _extract_missing_model_from_exception(exc):
+            return "model_not_found"
+        return "provider_error"
     if isinstance(exc, BadRequestError):
+        if _extract_missing_model_from_exception(exc):
+            return "model_not_found"
         return "invalid_request"
     if isinstance(exc, APIError):
+        if _extract_missing_model_from_exception(exc):
+            return "model_not_found"
         return "provider_error"
     if isinstance(exc, OSError):
         return "unreachable"
@@ -515,11 +698,13 @@ def _to_ollama_request_error(
     _log_ollama_failure_once(reason, base_url=base_url, model=model, profile=profile, exc=exc)
 
     if reason in {"timeout", "unreachable"}:
-        message = "AI 응답이 지연되어 제한 모드로 전환합니다."
+        message = "AI 응답이 지연되어 안전 모드로 전환합니다."
+    elif reason == "model_not_found":
+        message = "요청한 AI 모델을 찾지 못해 안전 모드로 전환합니다."
     elif reason == "invalid_request":
-        message = "AI 요청 구성이 맞지 않아 제한 모드로 전환합니다."
+        message = "AI 요청 구성이 올바르지 않아 안전 모드로 전환합니다."
     else:
-        message = "AI 호출 중 오류가 발생해 제한 모드로 전환합니다."
+        message = "AI 처리 중 오류가 발생해 안전 모드로 전환합니다."
 
     return LLMRequestError(
         message,
@@ -527,3 +712,114 @@ def _to_ollama_request_error(
         provider="ollama",
         profile=profile,
     )
+
+
+def _ollama_alias_cache_key(base_url: str, model: str) -> str:
+    return f"{(base_url or '').strip().lower()}::{(model or '').strip().lower()}"
+
+
+def _resolve_cached_ollama_model_alias(base_url: str, requested_model: str) -> str | None:
+    if not requested_model:
+        return None
+    return _ollama_model_alias_cache.get(_ollama_alias_cache_key(base_url, requested_model))
+
+
+def _remember_ollama_model_alias(base_url: str, requested_model: str, fallback_model: str) -> None:
+    normalized_requested = str(requested_model or "").strip()
+    normalized_fallback = str(fallback_model or "").strip()
+    if not normalized_requested or not normalized_fallback:
+        return
+    _ollama_model_alias_cache[_ollama_alias_cache_key(base_url, normalized_requested)] = normalized_fallback
+
+
+def _extract_missing_model_from_exception(exc: Exception) -> str | None:
+    message = str(exc or "")
+    match = re.search(r"model ['\"]([^'\"]+)['\"] not found", message, flags=re.IGNORECASE)
+    if not match:
+        return None
+    missing_model = str(match.group(1) or "").strip()
+    return missing_model or None
+
+
+def _split_ollama_model_name(value: str) -> tuple[str, str | None]:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return "", None
+    if ":" not in normalized:
+        return normalized.lower(), None
+    base, tag = normalized.rsplit(":", 1)
+    return base.lower(), tag.lower()
+
+
+def _parse_ollama_size_tag(tag: str | None) -> float | None:
+    if not tag:
+        return None
+    match = re.match(r"(\d+(?:\.\d+)?)b$", tag.strip().lower())
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _select_ollama_fallback_model(requested_model: str, available_models: list[str]) -> str | None:
+    normalized_requested = str(requested_model or "").strip()
+    if not normalized_requested:
+        return None
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw in available_models:
+        candidate = str(raw or "").strip()
+        if not candidate:
+            continue
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+
+    if not deduped:
+        return None
+
+    for candidate in deduped:
+        if candidate.lower() == normalized_requested.lower():
+            return candidate
+
+    requested_base, requested_tag = _split_ollama_model_name(normalized_requested)
+    family_candidates = [
+        candidate
+        for candidate in deduped
+        if _split_ollama_model_name(candidate)[0] == requested_base and requested_base
+    ]
+    if family_candidates:
+        latest = [
+            candidate
+            for candidate in family_candidates
+            if (_split_ollama_model_name(candidate)[1] or "") == "latest"
+        ]
+        if latest:
+            return sorted(latest, key=lambda item: item.lower())[0]
+
+        requested_size = _parse_ollama_size_tag(requested_tag)
+        if requested_size is not None:
+            sized_candidates: list[tuple[str, float]] = []
+            for candidate in family_candidates:
+                _, candidate_tag = _split_ollama_model_name(candidate)
+                candidate_size = _parse_ollama_size_tag(candidate_tag)
+                if candidate_size is not None:
+                    sized_candidates.append((candidate, candidate_size))
+            if sized_candidates:
+                sized_candidates.sort(key=lambda item: item[1])
+                for candidate, candidate_size in sized_candidates:
+                    if candidate_size >= requested_size:
+                        return candidate
+                return sized_candidates[-1][0]
+
+        return sorted(family_candidates, key=lambda item: item.lower())[0]
+
+    latest_any = [candidate for candidate in deduped if candidate.lower().endswith(":latest")]
+    if latest_any:
+        return sorted(latest_any, key=lambda item: item.lower())[0]
+    return sorted(deduped, key=lambda item: item.lower())[0]

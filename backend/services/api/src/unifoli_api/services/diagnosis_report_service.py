@@ -71,23 +71,33 @@ class _NarrativeGenerationResult(BaseModel):
 
 
 _PREMIUM_SECTION_ORDER: tuple[str, ...] = (
-    "executive_summary",
+    "cover_title_summary",
+    "executive_verdict",
     "record_baseline_dashboard",
-    "narrative_timeline",
-    "evidence_cards",
+    "student_evaluation_matrix",
+    "system_quality_reliability",
     "strength_analysis",
-    "risk_analysis",
-    "major_fit",
-    "interview_questions",
+    "weakness_risk_analysis",
+    "section_by_section_diagnosis",
+    "major_fit_interpretation",
+    "recommended_report_directions",
+    "avoid_repetition_topics",
+    "evidence_cards",
+    "interview_readiness",
     "roadmap",
+    "uncertainty_verification_note",
+    "citation_appendix",
 )
 
 _COMPACT_SECTION_ORDER: tuple[str, ...] = (
-    "executive_summary",
+    "executive_verdict",
     "record_baseline_dashboard",
     "strength_analysis",
     "risk_analysis",
+    "recommended_report_direction",
     "roadmap",
+    "uncertainty_verification_note",
+    "citation_appendix",
 )
 
 
@@ -432,6 +442,7 @@ async def build_consultant_report_payload(
         result=result,
         document_structure=document_structure,
         evidence_items=evidence_items,
+        evidence_bank=evidence_bank,
     )
     if reanalysis_required:
         uncertainty_notes = _dedupe(
@@ -447,6 +458,12 @@ async def build_consultant_report_payload(
             limit=10,
         )
     roadmap = _build_roadmap(result=result, uncertainty_notes=uncertainty_notes)
+    diagnosis_intelligence = _build_diagnosis_intelligence(
+        result=result,
+        document_structure=document_structure,
+        evidence_bank=evidence_bank,
+        evidence_items=evidence_items,
+    )
     narratives_result_raw = await _generate_narratives(
         project=project,
         result=result,
@@ -493,6 +510,7 @@ async def build_consultant_report_payload(
         narratives=narratives,
         uncertainty_notes=uncertainty_notes,
         reanalysis_required=reanalysis_required,
+        diagnosis_intelligence=diagnosis_intelligence,
     )
     sections = _enforce_section_architecture(sections, report_mode=report_mode)
 
@@ -502,6 +520,23 @@ async def build_consultant_report_payload(
         appendix_notes.extend(internal_qa_artifact)
     if include_citations and report_mode == "compact":
         appendix_notes.append("인용 부록에는 주장-근거 연결 검증을 위한 출처 라인이 포함됩니다.")
+    diagnosis_confidence_block = next(
+        (
+            block
+            for block in (system_score_group.blocks if system_score_group else [])
+            if block.key == "diagnosis_confidence_gate"
+        ),
+        None,
+    )
+    analysis_confidence_score = (
+        (float(diagnosis_confidence_block.score) / 100.0)
+        if diagnosis_confidence_block is not None
+        else float(
+            ((document_structure.get("coverage_check") or {}).get("coverage_score", 0.0))
+            if isinstance(document_structure.get("coverage_check"), dict)
+            else 0.0
+        )
+    )
 
     report_payload = ConsultantDiagnosisReport(
         diagnosis_run_id=run.id,
@@ -520,22 +555,27 @@ async def build_consultant_report_payload(
         uncertainty_notes=uncertainty_notes,
         final_consultant_memo=narratives.final_consultant_memo,
         appendix_notes=appendix_notes,
+        diagnosis_intelligence=diagnosis_intelligence,
         render_hints={
             "a4": True,
             "minimum_pages": 10 if report_mode == "premium_10p" else 5,
             "visual_tone": "consultant_premium",
             "include_appendix": include_appendix,
             "include_citations": include_citations,
-            "analysis_confidence_score": float(
-                ((document_structure.get("coverage_check") or {}).get("coverage_score", 0.0))
-                if isinstance(document_structure.get("coverage_check"), dict)
-                else 0.0
-            ),
+            "analysis_confidence_score": analysis_confidence_score,
             "one_line_verdict": _clean_line(narratives.executive_summary, max_len=150),
             "public_appendix_enabled": bool(include_appendix and report_mode == "compact"),
             "public_citations_enabled": bool(include_citations and report_mode == "compact"),
             "section_order": list(_PREMIUM_SECTION_ORDER if report_mode == "premium_10p" else _COMPACT_SECTION_ORDER),
+            "provisional_label": "reference_only" if reanalysis_required else "verified_ready",
+            "verified_vs_inferred_policy": {
+                "verified": "근거 앵커로 확인된 문장만 단정적으로 표현",
+                "inferred": "추론 문장은 가능성/해석 표현으로 제한",
+                "uncertainty": "근거 부족 항목은 추가 확인 필요로 명시",
+            },
+            "section_semantics": _build_section_semantics(report_mode=report_mode),
             "design_contract": design_contract,
+            "diagnosis_intelligence": diagnosis_intelligence,
             "internal_qa_artifact": {
                 "appendix_notes": internal_qa_artifact,
                 "evidence_bank_size": len(evidence_bank),
@@ -671,6 +711,95 @@ def _collect_evidence_bank(documents: list[Any]) -> list[dict[str, Any]]:
     return collected
 
 
+def _bounded_score(value: float) -> int:
+    return int(max(0, min(100, round(float(value)))))
+
+
+def _student_band(score: int) -> str:
+    if score >= 80:
+        return "strong"
+    if score >= 60:
+        return "watch"
+    return "weak"
+
+
+def _system_band(score: int) -> str:
+    if score >= 80:
+        return "high"
+    if score >= 60:
+        return "mid"
+    return "low"
+
+
+def _axis_score_lookup(result: DiagnosisResultPayload) -> dict[str, int]:
+    scores: dict[str, int] = {}
+    for axis in result.admission_axes or []:
+        key = str(axis.key or "").strip()
+        if not key:
+            continue
+        scores[key] = _bounded_score(axis.score)
+    return scores
+
+
+def _build_student_score_block(
+    *,
+    key: str,
+    label: str,
+    interpretation: str,
+    next_best_action: str,
+    base_score: int,
+    evidence_key: str,
+    evidence_bank: list[dict[str, Any]],
+    required_anchor_count: int,
+    required_page_diversity: int,
+    page_diversity: int,
+    coverage_score: float,
+    missing_required_count: int,
+    contradiction_passed: bool,
+    support_signal_count: int,
+) -> ConsultantDiagnosisScoreBlock:
+    anchor_ids = _select_anchor_ids_for_score(key=evidence_key, evidence_bank=evidence_bank)
+    anchor_count = len(anchor_ids)
+    adjusted_score = _bounded_score(base_score)
+    missing_evidence: list[str] = []
+
+    if anchor_count < required_anchor_count:
+        adjusted_score = min(adjusted_score, 55)
+        missing_evidence.append(f"축별 최소 앵커 기준({required_anchor_count}) 미달")
+    if page_diversity < required_page_diversity:
+        adjusted_score = min(adjusted_score, 60)
+        missing_evidence.append(f"페이지 다양성 기준({required_page_diversity}) 미달")
+    if coverage_score < 0.65:
+        adjusted_score = min(adjusted_score, 65)
+        missing_evidence.append("파싱 커버리지 65% 미만")
+    if missing_required_count > 0:
+        adjusted_score = min(adjusted_score, 62)
+        missing_evidence.append(f"필수 섹션 누락 {missing_required_count}건")
+    if not contradiction_passed:
+        adjusted_score = min(adjusted_score, 40)
+        missing_evidence.append("모순 검증 실패")
+
+    evidence_summary = (
+        f"고유 앵커 {anchor_count}개 · 페이지 다양성 {page_diversity}개 · 관련 신호 {support_signal_count}개"
+    )
+    if missing_evidence:
+        uncertainty_note = "reference-only: 근거 조건 일부 미충족으로 보수적 클램프를 적용했습니다."
+    else:
+        uncertainty_note = "근거 조건 충족: 앵커/페이지 분산을 확인했습니다."
+
+    return ConsultantDiagnosisScoreBlock(
+        key=key,
+        label=label,
+        score=adjusted_score,
+        band=_student_band(adjusted_score),
+        interpretation=interpretation,
+        uncertainty_note=uncertainty_note,
+        evidence_summary=evidence_summary,
+        missing_evidence="; ".join(missing_evidence) if missing_evidence else None,
+        next_best_action=next_best_action,
+    )
+
+
 def _build_score_groups(
     *,
     result: DiagnosisResultPayload,
@@ -688,98 +817,447 @@ def _build_score_groups(
         if isinstance(document_structure.get("contradiction_check"), dict)
         else {"passed": True, "items": []}
     )
-    parse_coverage_score = int(round(float(coverage_check.get("coverage_score", 0.0)) * 100))
+    parse_coverage_score = _bounded_score(float(coverage_check.get("coverage_score", 0.0)) * 100.0)
+    missing_required_sections = [
+        str(item).strip()
+        for item in coverage_check.get("missing_required_sections", [])
+        if str(item).strip()
+    ] if isinstance(coverage_check.get("missing_required_sections"), list) else []
 
-    student_blocks: list[ConsultantDiagnosisScoreBlock] = []
-    
-    # Map the 6 primary evaluation axes from the diagnosis result
-    # This ensures consistency between the diagnosis engine and the reporting logic.
-    for axis in result.admission_axes or []:
-        if axis.key == "authenticity_risk":
-            continue
-            
-        anchor_ids = _select_anchor_ids_for_score(key=axis.key, evidence_bank=evidence_bank)
-        score = axis.score
-        
-        # Security: Apply conservative penalty if evidence anchors are insufficient
-        if len(anchor_ids) < 2:
-            score = min(score, 45)
-            uncertainty = "고유 근거 앵커가 2개 미만이라 보수적 재평가가 필요합니다."
-        else:
-            uncertainty = f"고유 근거 앵커 {len(anchor_ids)}개 확인"
+    continuity_signals = [
+        str(item).strip()
+        for item in document_structure.get("continuity_signals", [])
+        if str(item).strip()
+    ]
+    alignment_signals = [
+        str(item).strip()
+        for item in document_structure.get("subject_major_alignment_signals", [])
+        if str(item).strip()
+    ]
+    process_signals = [
+        str(item).strip()
+        for item in document_structure.get("process_reflection_signals", [])
+        if str(item).strip()
+    ]
+    weak_sections = [str(item).strip() for item in document_structure.get("weak_sections", []) if str(item).strip()]
 
-        student_blocks.append(
-            ConsultantDiagnosisScoreBlock(
-                key=axis.key,
-                label=axis.label,
-                score=score,
-                band=axis.band,
-                interpretation=axis.rationale,
-                uncertainty_note=uncertainty,
-            )
-        )
-
-    unique_citation_pages = len({item.page_number for item in evidence_items if item.page_number})
-    citation_coverage_score = min(100, int(round((unique_citation_pages / max(len(evidence_items), 1)) * 100)))
-    unique_quotes = {str(item.get("quote") or "").strip() for item in evidence_bank if str(item.get("quote") or "").strip()}
-    evidence_uniqueness_score = min(100, int(round((len(unique_quotes) / max(len(evidence_bank), 1)) * 100)))
+    unique_anchor_ids = {
+        str(item.get("anchor_id") or "").strip()
+        for item in evidence_bank
+        if str(item.get("anchor_id") or "").strip()
+    }
+    unique_anchor_pages = {
+        int(item.get("page") or 0)
+        for item in evidence_bank
+        if int(item.get("page") or 0) > 0
+    }
+    unique_citation_pages = {int(item.page_number or 0) for item in evidence_items if int(item.page_number or 0) > 0}
+    unique_quotes = {
+        str(item.get("quote") or "").strip()
+        for item in evidence_bank
+        if str(item.get("quote") or "").strip()
+    }
+    anchor_diversity_score = _bounded_score((len(unique_anchor_ids) / 12.0) * 100.0)
+    page_diversity_score = _bounded_score((len(unique_anchor_pages) / 8.0) * 100.0)
+    citation_coverage_score = _bounded_score((len(unique_citation_pages) / max(len(unique_anchor_pages), 1)) * 100.0)
+    evidence_uniqueness_score = _bounded_score((len(unique_quotes) / max(len(evidence_bank), 1)) * 100.0)
     redaction_safety_score = 100 if _redaction_safety_ok(evidence_bank) else 55
     contradiction_passed = bool(contradiction_check.get("passed", True))
     contradiction_score = 100 if contradiction_passed else 0
+    section_coverage_reliability_score = _bounded_score(
+        parse_coverage_score - (len(missing_required_sections) * 10.0)
+    )
+    evidence_anchor_gate_failed = len(unique_anchor_ids) < 10 or len(unique_anchor_pages) < 6
+    required_section_gate_failed = bool(missing_required_sections)
+    reanalysis_required = (
+        bool(coverage_check.get("reanalysis_required"))
+        or parse_coverage_score < 72
+        or evidence_anchor_gate_failed
+        or required_section_gate_failed
+    )
+    reanalysis_requirement_score = 35 if reanalysis_required else 100
+    diagnosis_confidence_score = _bounded_score(
+        (parse_coverage_score * 0.26)
+        + (citation_coverage_score * 0.18)
+        + (evidence_uniqueness_score * 0.16)
+        + (anchor_diversity_score * 0.16)
+        + (section_coverage_reliability_score * 0.12)
+        + (redaction_safety_score * 0.12)
+    )
+    if reanalysis_required:
+        diagnosis_confidence_score = min(diagnosis_confidence_score, 64)
+    if evidence_anchor_gate_failed:
+        diagnosis_confidence_score = min(diagnosis_confidence_score, 58)
+    if not contradiction_passed:
+        diagnosis_confidence_score = 0
+
+    axis_scores = _axis_score_lookup(result)
+    u_rigor = axis_scores.get("universal_rigor", 52)
+    u_spec = axis_scores.get("universal_specificity", 50)
+    r_narr = axis_scores.get("relational_narrative", 50)
+    r_cont = axis_scores.get("relational_continuity", 50)
+    c_depth = axis_scores.get("cluster_depth", 50)
+    c_suit = axis_scores.get("cluster_suitability", 50)
+    authenticity_risk = axis_scores.get("authenticity_risk", 50)
+    authenticity_safety = _bounded_score(100.0 - authenticity_risk)
+
+    evidence_density_signal = _bounded_score(
+        len(unique_anchor_ids) * 7.0
+        + len(unique_anchor_pages) * 6.0
+        + len(unique_citation_pages) * 4.0
+    )
+    process_signal_strength = _bounded_score(len(process_signals) * 22.0)
+    continuity_signal_strength = _bounded_score(len(continuity_signals) * 18.0)
+    alignment_signal_strength = _bounded_score(len(alignment_signals) * 18.0)
+
+    inquiry_depth = _bounded_score((c_depth * 0.78) + (u_rigor * 0.22))
+    evidence_density = _bounded_score((u_spec * 0.4) + (evidence_density_signal * 0.6))
+    process_reflection_quality = _bounded_score((r_narr * 0.55) + (process_signal_strength * 0.45))
+    continuity_across_grades = _bounded_score((r_cont * 0.7) + (continuity_signal_strength * 0.3))
+    major_fit_alignment = _bounded_score((c_suit * 0.75) + (alignment_signal_strength * 0.25))
+    originality_without_overclaim = _bounded_score(
+        (c_depth * 0.45)
+        + (evidence_uniqueness_score * 0.35)
+        + (authenticity_safety * 0.2)
+    )
+    if len(unique_anchor_ids) < 8:
+        originality_without_overclaim = min(originality_without_overclaim, 62)
+    authenticity_safety_score = _bounded_score((authenticity_safety * 0.75) + (redaction_safety_score * 0.25))
+    narrative_cohesion = _bounded_score((r_narr * 0.52) + (r_cont * 0.48))
+    actionability_for_next_report = _bounded_score(
+        (narrative_cohesion * 0.35)
+        + (major_fit_alignment * 0.25)
+        + (_bounded_score((len(result.next_actions) * 18.0) + (len(result.recommended_topics) * 14.0)) * 0.4)
+    )
+    interview_explainability = _bounded_score(
+        (narrative_cohesion * 0.4)
+        + (process_reflection_quality * 0.35)
+        + (evidence_density * 0.25)
+    )
+
+    student_blocks = [
+        _build_student_score_block(
+            key="academic_rigor",
+            label="학업 엄밀성",
+            interpretation="교과 성취와 탐구 정확도에서 학업 기반의 신뢰도를 평가합니다.",
+            next_best_action="핵심 과목 2개에서 관찰값 또는 근거 문장을 각 1개 이상 추가하세요.",
+            base_score=u_rigor,
+            evidence_key="universal_rigor",
+            evidence_bank=evidence_bank,
+            required_anchor_count=3,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(process_signals),
+        ),
+        _build_student_score_block(
+            key="specificity_and_concreteness",
+            label="구체성·정량성",
+            interpretation="주장에 대응하는 수치·관찰·방법 설명의 구체성을 평가합니다.",
+            next_best_action="핵심 주장 3개를 선택해 각각 페이지 앵커와 측정/관찰 단서를 붙이세요.",
+            base_score=u_spec,
+            evidence_key="universal_specificity",
+            evidence_bank=evidence_bank,
+            required_anchor_count=3,
+            required_page_diversity=3,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(unique_citation_pages),
+        ),
+        _build_student_score_block(
+            key="inquiry_depth",
+            label="탐구 심화도",
+            interpretation="단발 활동이 아닌 비교·확장·심화 흔적의 밀도를 평가합니다.",
+            next_best_action="동일 주제에서 '문제-시도-한계-보완' 흐름을 1개 사례로 정리하세요.",
+            base_score=inquiry_depth,
+            evidence_key="cluster_depth",
+            evidence_bank=evidence_bank,
+            required_anchor_count=3,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(continuity_signals),
+        ),
+        _build_student_score_block(
+            key="evidence_density",
+            label="근거 밀도",
+            interpretation="주요 주장 대비 인용·앵커·페이지 분산의 충분성을 평가합니다.",
+            next_best_action="한 문단당 최소 1개 근거 앵커를 연결하고 근거 없는 문장은 분리하세요.",
+            base_score=evidence_density,
+            evidence_key="universal_specificity",
+            evidence_bank=evidence_bank,
+            required_anchor_count=4,
+            required_page_diversity=3,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(unique_anchor_ids),
+        ),
+        _build_student_score_block(
+            key="process_reflection_quality",
+            label="과정 성찰력",
+            interpretation="활동 과정의 의사결정·한계 인식·개선 연결성을 평가합니다.",
+            next_best_action="활동 1개를 선택해 의사결정 이유와 한계 인식을 2문장으로 명시하세요.",
+            base_score=process_reflection_quality,
+            evidence_key="relational_narrative",
+            evidence_bank=evidence_bank,
+            required_anchor_count=2,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(process_signals),
+        ),
+        _build_student_score_block(
+            key="continuity_across_grades",
+            label="학년 간 연속성",
+            interpretation="학년이 올라갈수록 관심 주제가 연결·심화되는 흐름을 평가합니다.",
+            next_best_action="학년별 활동 3개를 연결한 연속성 문장을 먼저 작성하세요.",
+            base_score=continuity_across_grades,
+            evidence_key="relational_continuity",
+            evidence_bank=evidence_bank,
+            required_anchor_count=2,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(continuity_signals),
+        ),
+        _build_student_score_block(
+            key="major_fit_alignment",
+            label="전공 적합성 정합",
+            interpretation="교과·활동·진로 신호가 목표 전공 해석으로 일관되게 묶이는지 평가합니다.",
+            next_best_action="전공 키워드 2개를 기준으로 기존 활동을 재분류해 연결 문장을 만드세요.",
+            base_score=major_fit_alignment,
+            evidence_key="cluster_suitability",
+            evidence_bank=evidence_bank,
+            required_anchor_count=3,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(alignment_signals),
+        ),
+        _build_student_score_block(
+            key="originality_without_overclaim",
+            label="차별성(과장 배제)",
+            interpretation="차별성은 유지하되 근거가 약한 성과 과장을 억제하는 안전성을 평가합니다.",
+            next_best_action="새 활동을 지어내지 말고 기존 활동의 문제정의·해결과정을 더 구체화하세요.",
+            base_score=originality_without_overclaim,
+            evidence_key="cluster_depth",
+            evidence_bank=evidence_bank,
+            required_anchor_count=3,
+            required_page_diversity=3,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=max(len(unique_quotes), 1),
+        ),
+        _build_student_score_block(
+            key="authenticity_safety",
+            label="진정성 안전성",
+            interpretation="검증 가능한 사실 범위를 벗어나지 않는지, 과장 위험이 통제되는지 평가합니다.",
+            next_best_action="근거가 약한 주장에는 '추가 확인 필요' 라벨을 명시하세요.",
+            base_score=authenticity_safety_score,
+            evidence_key="relational_narrative",
+            evidence_bank=evidence_bank,
+            required_anchor_count=3,
+            required_page_diversity=3,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=max(1, len(unique_citation_pages)),
+        ),
+        _build_student_score_block(
+            key="narrative_cohesion",
+            label="서사 응집도",
+            interpretation="활동·교과·전공 연결 문장이 하나의 축으로 읽히는지를 평가합니다.",
+            next_best_action="핵심 서사 문장을 1개 정하고 모든 사례를 그 문장에 연결해 재배열하세요.",
+            base_score=narrative_cohesion,
+            evidence_key="relational_narrative",
+            evidence_bank=evidence_bank,
+            required_anchor_count=2,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(continuity_signals),
+        ),
+        _build_student_score_block(
+            key="actionability_for_next_report",
+            label="다음 보고서 실행 가능성",
+            interpretation="진단 결과를 실제 탐구보고서 과제로 전환할 준비도를 평가합니다.",
+            next_best_action="추천 축 중 1개를 선택해 1페이지 분량 실행 체크리스트를 작성하세요.",
+            base_score=actionability_for_next_report,
+            evidence_key="cluster_suitability",
+            evidence_bank=evidence_bank,
+            required_anchor_count=2,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(result.next_actions),
+        ),
+        _build_student_score_block(
+            key="interview_explainability",
+            label="면접 설명 가능성",
+            interpretation="질문 상황에서 근거·과정·전공 연결을 명료하게 설명할 수 있는지를 평가합니다.",
+            next_best_action="예상 질문 3개에 대해 근거 페이지를 포함한 2문장 답변 초안을 작성하세요.",
+            base_score=interview_explainability,
+            evidence_key="relational_narrative",
+            evidence_bank=evidence_bank,
+            required_anchor_count=2,
+            required_page_diversity=2,
+            page_diversity=len(unique_anchor_pages),
+            coverage_score=float(coverage_check.get("coverage_score", 0.0) or 0.0),
+            missing_required_count=len(missing_required_sections),
+            contradiction_passed=contradiction_passed,
+            support_signal_count=len(process_signals),
+        ),
+    ]
 
     system_blocks = [
         ConsultantDiagnosisScoreBlock(
             key="parse_coverage",
             label="파싱 커버리지",
-            score=max(0, min(100, parse_coverage_score)),
-            band="high" if parse_coverage_score >= 80 else "mid" if parse_coverage_score >= 60 else "low",
-            interpretation="필수 항목 및 섹션 추출 커버리지",
-            uncertainty_note=None,
+            score=parse_coverage_score,
+            band=_system_band(parse_coverage_score),
+            interpretation="필수 항목 및 섹션 추출의 전반적 커버리지입니다.",
+            uncertainty_note="필수 섹션 추출 결과를 기준으로 계산했습니다.",
+            evidence_summary=f"필수 섹션 누락 {len(missing_required_sections)}건",
+            missing_evidence=", ".join(missing_required_sections[:4]) if missing_required_sections else None,
+            next_best_action="누락 섹션 원문을 재업로드하거나 OCR 품질을 점검하세요." if missing_required_sections else None,
         ),
         ConsultantDiagnosisScoreBlock(
             key="citation_coverage",
             label="인용 커버리지",
             score=citation_coverage_score,
-            band="high" if citation_coverage_score >= 65 else "mid" if citation_coverage_score >= 35 else "low",
-            interpretation="근거 페이지 분산과 인용 연결성",
-            uncertainty_note=None,
+            band=_system_band(citation_coverage_score),
+            interpretation="문장-근거 연결에서 페이지 분산이 확보됐는지 평가합니다.",
+            uncertainty_note="인용 페이지가 적으면 보수적으로 해석됩니다.",
+            evidence_summary=f"인용 페이지 {len(unique_citation_pages)}개 / 앵커 페이지 {len(unique_anchor_pages)}개",
+            missing_evidence=None if citation_coverage_score >= 60 else "핵심 주장 대비 인용 페이지가 부족합니다.",
+            next_best_action="주장별 인용 페이지를 최소 1개 이상 연결하세요.",
         ),
         ConsultantDiagnosisScoreBlock(
             key="evidence_uniqueness",
             label="근거 고유성",
             score=evidence_uniqueness_score,
-            band="high" if evidence_uniqueness_score >= 75 else "mid" if evidence_uniqueness_score >= 50 else "low",
-            interpretation="중복 인용 과다 여부",
-            uncertainty_note=None,
+            band=_system_band(evidence_uniqueness_score),
+            interpretation="동일 인용 반복 여부를 점검해 근거 다양성을 평가합니다.",
+            uncertainty_note="고유성이 낮으면 반복형 주제 추천을 제한합니다.",
+            evidence_summary=f"고유 인용 {len(unique_quotes)}개 / 전체 앵커 {len(evidence_bank)}개",
+            missing_evidence=None if evidence_uniqueness_score >= 60 else "반복 인용 비율이 높습니다.",
+            next_best_action="같은 문장 재활용 대신 다른 페이지 근거를 추가 확보하세요.",
+        ),
+        ConsultantDiagnosisScoreBlock(
+            key="anchor_diversity",
+            label="앵커 다양성",
+            score=anchor_diversity_score,
+            band=_system_band(anchor_diversity_score),
+            interpretation="고유 앵커 수가 진단 신뢰도 기준을 충족하는지 평가합니다.",
+            uncertainty_note="중요 축은 최소 10개 이상의 고유 앵커를 권장합니다.",
+            evidence_summary=f"고유 앵커 {len(unique_anchor_ids)}개",
+            missing_evidence=None if len(unique_anchor_ids) >= 10 else "고유 앵커가 10개 미만입니다.",
+            next_best_action="핵심 축(엄밀성·구체성·전공연계) 기준 앵커를 우선 보강하세요.",
+        ),
+        ConsultantDiagnosisScoreBlock(
+            key="page_diversity",
+            label="페이지 다양성",
+            score=page_diversity_score,
+            band=_system_band(page_diversity_score),
+            interpretation="특정 페이지만 과도하게 의존하지 않는지 평가합니다.",
+            uncertainty_note="페이지 다양성 미달 시 점수는 reference-only로 간주합니다.",
+            evidence_summary=f"고유 페이지 {len(unique_anchor_pages)}개",
+            missing_evidence=None if len(unique_anchor_pages) >= 6 else "고유 페이지가 6개 미만입니다.",
+            next_best_action="다른 학년/섹션 페이지로 근거 분산을 확대하세요.",
+        ),
+        ConsultantDiagnosisScoreBlock(
+            key="section_coverage_reliability",
+            label="섹션 커버리지 신뢰도",
+            score=section_coverage_reliability_score,
+            band=_system_band(section_coverage_reliability_score),
+            interpretation="필수 섹션 누락 여부를 반영한 커버리지 신뢰도입니다.",
+            uncertainty_note="누락 섹션이 존재하면 자동으로 보수 모드가 적용됩니다.",
+            evidence_summary=f"누락 섹션 {len(missing_required_sections)}건",
+            missing_evidence=", ".join(missing_required_sections[:5]) if missing_required_sections else None,
+            next_best_action="누락 섹션의 원문 추출을 먼저 완료한 뒤 재진단하세요." if missing_required_sections else None,
         ),
         ConsultantDiagnosisScoreBlock(
             key="contradiction_check",
             label="모순 검증",
             score=contradiction_score,
-            band="high" if contradiction_passed else "low",
-            interpretation="섹션 누락/과다 상태 모순 검증",
-            uncertainty_note=None if contradiction_passed else "모순이 감지되어 프리미엄 렌더를 차단했습니다.",
+            band=_system_band(contradiction_score),
+            interpretation="누락/충분 판정 간 충돌 여부를 검사합니다.",
+            uncertainty_note=None if contradiction_passed else "모순 감지로 premium 렌더를 차단합니다.",
+            evidence_summary=f"모순 항목 {len(contradiction_check.get('items', []) if isinstance(contradiction_check.get('items'), list) else [])}건",
+            missing_evidence=None if contradiction_passed else "구조 판정이 충돌합니다.",
+            next_best_action="모순 섹션을 우선 정정한 뒤 다시 파싱하세요." if not contradiction_passed else None,
         ),
         ConsultantDiagnosisScoreBlock(
             key="redaction_safety",
             label="비식별 안전성",
             score=redaction_safety_score,
-            band="high" if redaction_safety_score >= 80 else "low",
-            interpretation="민감정보 노출 위험 여부",
-            uncertainty_note=None if redaction_safety_score >= 80 else "민감정보 패턴이 감지되어 검토가 필요합니다.",
+            band=_system_band(redaction_safety_score),
+            interpretation="민감정보 노출 패턴 여부를 점검합니다.",
+            uncertainty_note=None if redaction_safety_score >= 80 else "민감정보 패턴 감지로 검토가 필요합니다.",
+            evidence_summary="전화번호/주민번호/이메일 패턴 검사 기준",
+            missing_evidence=None if redaction_safety_score >= 80 else "민감정보가 포함된 원문이 있습니다.",
+            next_best_action="민감정보를 비식별 처리한 뒤 재업로드하세요." if redaction_safety_score < 80 else None,
+        ),
+        ConsultantDiagnosisScoreBlock(
+            key="reanalysis_requirement",
+            label="재분석 필요도 게이트",
+            score=reanalysis_requirement_score,
+            band=_system_band(reanalysis_requirement_score),
+            interpretation="현재 데이터 품질에서 즉시 활용 가능한지 여부를 나타냅니다.",
+            uncertainty_note="reanalysis_required가 true이면 결과는 provisional로 표시됩니다." if reanalysis_required else None,
+            evidence_summary=(
+                "근거 게이트 통과"
+                if not reanalysis_required
+                else f"게이트 미통과(앵커:{len(unique_anchor_ids)}·페이지:{len(unique_anchor_pages)}·누락:{len(missing_required_sections)})"
+            ),
+            missing_evidence=None if not reanalysis_required else "게이트 조건을 충족하지 못했습니다.",
+            next_best_action="게이트 조건을 충족한 뒤 최신 진단을 다시 생성하세요." if reanalysis_required else None,
+        ),
+        ConsultantDiagnosisScoreBlock(
+            key="diagnosis_confidence_gate",
+            label="진단 신뢰도 게이트",
+            score=diagnosis_confidence_score,
+            band=_system_band(diagnosis_confidence_score),
+            interpretation="파싱/근거/안전성 지표를 종합한 진단 신뢰도입니다.",
+            uncertainty_note="합격 예측 지표가 아닌 분석 신뢰도 지표입니다.",
+            evidence_summary=(
+                f"parse {parse_coverage_score} · citation {citation_coverage_score} · anchor {anchor_diversity_score}"
+            ),
+            missing_evidence=None if diagnosis_confidence_score >= 65 else "신뢰도 게이트가 낮아 결과 해석을 제한합니다.",
+            next_best_action="신뢰도 65점 이상이 되도록 누락 섹션과 근거 밀도를 먼저 보완하세요.",
         ),
     ]
 
-    reanalysis_required = bool(coverage_check.get("reanalysis_required")) or parse_coverage_score < 70
     student_group = ConsultantDiagnosisScoreGroup(
         group="student_evaluation",
         title="학생 평가 점수",
         blocks=student_blocks,
         gating_status="reanalysis_required" if reanalysis_required else "ok",
         note=(
-            "파싱 커버리지가 낮아 학생 점수는 참고용으로만 제시합니다."
+            "reference-only: 근거 앵커/페이지 다양성 또는 필수 섹션 커버리지가 부족해 보수적으로 산출했습니다."
             if reanalysis_required
-            else "모든 점수는 최소 2개 이상의 고유 근거 앵커를 기준으로 산출했습니다."
+            else "학생 평가는 근거 앵커·페이지 분산·섹션 커버리지 게이트 통과 조건에서 산출했습니다."
         ),
     )
     system_group = ConsultantDiagnosisScoreGroup(
@@ -788,9 +1266,9 @@ def _build_score_groups(
         blocks=system_blocks,
         gating_status="blocked" if not contradiction_passed else ("reanalysis_required" if reanalysis_required else "ok"),
         note=(
-            "모순 검증 실패로 프리미엄 PDF 렌더를 중단합니다."
+            "모순 검증 실패로 premium PDF 렌더를 차단합니다."
             if not contradiction_passed
-            else "시스템 품질 점수는 학생 평가 점수와 분리해 해석합니다."
+            else "시스템 품질 점수는 학생 평가 점수와 분리해 진단 신뢰도만 평가합니다."
         ),
     )
     return [student_group, system_group]
@@ -1095,6 +1573,7 @@ def _build_uncertainty_notes(
     result: DiagnosisResultPayload,
     document_structure: dict[str, Any],
     evidence_items: list[ConsultantDiagnosisEvidenceItem],
+    evidence_bank: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     notes: list[str] = []
     coverage_check = (
@@ -1107,10 +1586,30 @@ def _build_uncertainty_notes(
         if isinstance(document_structure.get("contradiction_check"), dict)
         else {"passed": True, "items": []}
     )
+    effective_evidence_bank = evidence_bank or []
+    unique_anchor_ids = {
+        str(item.get("anchor_id") or "").strip()
+        for item in effective_evidence_bank
+        if str(item.get("anchor_id") or "").strip()
+    }
+    unique_pages = {
+        int(item.get("page") or 0)
+        for item in effective_evidence_bank
+        if int(item.get("page") or 0) > 0
+    }
+    citation_pages = {int(item.page_number or 0) for item in evidence_items if int(item.page_number or 0) > 0}
+
+    notes.append("검증 원칙: 공식 학생부 근거가 약한 내용은 추론으로만 표기합니다.")
     if result.document_quality and result.document_quality.needs_review:
         notes.append("문서 품질 검토가 필요합니다. 누락 페이지와 섹션 구조를 다시 확인해 주세요.")
     if not evidence_items:
         notes.append("직접 인용 가능한 근거가 부족합니다. 주요 주장마다 원문 출처를 보강해 주세요.")
+    if unique_anchor_ids and len(unique_anchor_ids) < 10:
+        notes.append(f"고유 앵커가 {len(unique_anchor_ids)}개로 기준(10개) 미달입니다. 점수는 reference-only로 해석하세요.")
+    if unique_pages and len(unique_pages) < 6:
+        notes.append(f"고유 페이지가 {len(unique_pages)}개로 기준(6개) 미달입니다. 페이지 분산을 확대해 주세요.")
+    if citation_pages and len(citation_pages) < 5:
+        notes.append("인용 페이지 분산이 낮아 핵심 주장 일부는 추론으로 분류됩니다.")
     if result.review_required:
         notes.append("정합성/안전성 플래그가 감지되어 보수적 해석 상태로 전환되었습니다.")
     if bool(coverage_check.get("reanalysis_required")):
@@ -1121,11 +1620,13 @@ def _build_uncertainty_notes(
             notes.append("필수 섹션 커버리지가 낮아 보완이 필요합니다.")
     if not bool(contradiction_check.get("passed", True)):
         notes.append("모순 검증 실패: 누락 상태와 과다 상태가 충돌하여 보수 모드로 전환되었습니다.")
+    if not bool(contradiction_check.get("passed", True)) or bool(coverage_check.get("reanalysis_required")):
+        notes.append("현재 결과는 provisional 진단이며, 재파싱/재검증 후 최종본으로 확정해야 합니다.")
     for item in document_structure.get("uncertain_items", [])[:4]:
         notes.append(f"구조 추정 불확실: {item}")
     if not notes:
         notes.append("현재 근거 범위 안에서 보수적으로 해석했습니다. 신규 사실은 추가 검증 후 반영해 주세요.")
-    return _dedupe(notes, limit=8)
+    return _dedupe(notes, limit=10)
 
 
 def _build_roadmap(
@@ -1188,6 +1689,251 @@ def _build_roadmap(
             caution_notes=["합격 가능성 단정 문구 금지", "검증 불가 사실은 보류"],
         ),
     ]
+
+
+def _build_diagnosis_intelligence(
+    *,
+    result: DiagnosisResultPayload,
+    document_structure: dict[str, Any],
+    evidence_bank: list[dict[str, Any]],
+    evidence_items: list[ConsultantDiagnosisEvidenceItem],
+) -> dict[str, Any]:
+    section_density = (
+        document_structure.get("section_density")
+        if isinstance(document_structure.get("section_density"), dict)
+        else {}
+    )
+    strong_sections = sorted(
+        [
+            (str(section).strip(), float(density))
+            for section, density in section_density.items()
+            if str(section).strip() and float(density or 0.0) >= 0.66
+        ],
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    weak_sections = [str(item).strip() for item in document_structure.get("weak_sections", []) if str(item).strip()]
+    continuity_signals = [str(item).strip() for item in document_structure.get("continuity_signals", []) if str(item).strip()]
+    alignment_signals = [
+        str(item).strip()
+        for item in document_structure.get("subject_major_alignment_signals", [])
+        if str(item).strip()
+    ]
+    process_signals = [
+        str(item).strip()
+        for item in document_structure.get("process_reflection_signals", [])
+        if str(item).strip()
+    ]
+
+    unique_anchor_ids = {
+        str(item.get("anchor_id") or "").strip()
+        for item in evidence_bank
+        if str(item.get("anchor_id") or "").strip()
+    }
+    unique_pages = {
+        int(item.get("page") or 0)
+        for item in evidence_bank
+        if int(item.get("page") or 0) > 0
+    }
+    citation_pages = {int(item.page_number or 0) for item in evidence_items if int(item.page_number or 0) > 0}
+    unique_quotes = {
+        str(item.get("quote") or "").strip()
+        for item in evidence_bank
+        if str(item.get("quote") or "").strip()
+    }
+    coverage_check = (
+        document_structure.get("coverage_check")
+        if isinstance(document_structure.get("coverage_check"), dict)
+        else {}
+    )
+    missing_required_sections = [
+        str(item).strip()
+        for item in coverage_check.get("missing_required_sections", [])
+        if str(item).strip()
+    ] if isinstance(coverage_check.get("missing_required_sections"), list) else []
+
+    missing_dimensions: list[str] = []
+    if len(unique_anchor_ids) < 10 or len(unique_pages) < 6 or len(citation_pages) < 5:
+        missing_dimensions.append("측정 가능한 근거 밀도")
+    if len(process_signals) < 2:
+        missing_dimensions.append("과정 설명력")
+    if len(continuity_signals) < 2:
+        missing_dimensions.append("학년 간 연속성")
+    if len(alignment_signals) < 2:
+        missing_dimensions.append("전공 연계 해석")
+    if len(unique_quotes) < max(8, len(evidence_bank) // 2):
+        missing_dimensions.append("차별성(반복 최소화)")
+    if missing_required_sections:
+        missing_dimensions.append("필수 섹션 커버리지")
+    missing_dimensions = _dedupe(missing_dimensions, limit=6)
+
+    recommended_reinforcement_axes = _dedupe(
+        [
+            "근거 밀도 보강",
+            "과정 설명 정밀화",
+            "전공 연결 문장 강화",
+            "학년 간 연속성 명확화",
+            *[f"{item} 보완" for item in missing_dimensions[:3]],
+        ],
+        limit=5,
+    )
+    safe_reinforcement_points = _dedupe(
+        [
+            *(f"{section}는 이미 밀도가 높아 확장 근거로 활용하기 좋습니다." for section, _ in strong_sections[:3]),
+            "새 활동을 지어내기보다 기존 활동의 맥락·한계·개선을 구체화하는 방식이 안전합니다.",
+            *(f"{signal} 축은 기존 기록 흐름과 무리 없이 이어질 수 있습니다." for signal in alignment_signals[:2]),
+        ],
+        limit=5,
+    )
+    best_report_styles_now = _dedupe(
+        [
+            "verification_comparison_type",
+            "extension_deepening_type" if len(continuity_signals) < 3 else "application_design_type",
+            "problem_solving_type" if len(process_signals) < 3 else "interdisciplinary_connection_type",
+        ],
+        limit=3,
+    )
+    style_labels = {
+        "verification_comparison_type": "검증/비교형",
+        "extension_deepening_type": "확장/심화형",
+        "application_design_type": "적용/설계형",
+        "problem_solving_type": "문제해결형",
+        "interdisciplinary_connection_type": "융합 연결형",
+    }
+
+    recommended_report_directions: list[dict[str, Any]] = []
+    for direction in result.recommended_directions:
+        topics = list(direction.topic_candidates or [])
+        if not topics:
+            topics = [
+                type("TopicLike", (), {"title": direction.label, "summary": direction.summary, "why_it_fits": direction.why_now, "evidence_hooks": []})()
+            ]
+        for topic in topics:
+            if len(recommended_report_directions) >= 5:
+                break
+            existing_evidence = [str(item).strip() for item in getattr(topic, "evidence_hooks", []) if str(item).strip()]
+            if not existing_evidence:
+                existing_evidence = [section for section, _ in strong_sections[:2]] or ["기존 학생부 핵심 활동"]
+            compensate_for = (
+                missing_dimensions[0]
+                if missing_dimensions
+                else "기록 연결성 강화"
+            )
+            new_evidence_to_collect = (
+                "비교 근거(수치·관찰·변화)를 최소 2개 확보"
+                if "근거" in compensate_for or "밀도" in compensate_for
+                else "과정 선택 이유와 한계/개선 메모를 1개 이상 확보"
+            )
+            recommended_report_directions.append(
+                {
+                    "title": _clean_line(str(getattr(topic, "title", direction.label)), max_len=90),
+                    "why_it_fits_current_record": _clean_line(
+                        str(getattr(topic, "why_it_fits", direction.why_now or direction.summary)),
+                        max_len=180,
+                    ),
+                    "compensates_weak_point": compensate_for,
+                    "existing_evidence": existing_evidence[:3],
+                    "new_evidence_to_collect": new_evidence_to_collect,
+                    "overclaim_guardrail": "합격·수상 확정 표현은 금지하고, 확인 가능한 사실만 기술합니다.",
+                }
+            )
+        if len(recommended_report_directions) >= 5:
+            break
+
+    if len(recommended_report_directions) < 3:
+        for topic in result.recommended_topics[:5]:
+            if len(recommended_report_directions) >= 5:
+                break
+            recommended_report_directions.append(
+                {
+                    "title": _clean_line(str(topic), max_len=90),
+                    "why_it_fits_current_record": "현재 기록의 관심축과 자연스럽게 연결되며 과장 위험을 통제하기 쉽습니다.",
+                    "compensates_weak_point": missing_dimensions[0] if missing_dimensions else "연결성 보완",
+                    "existing_evidence": [section for section, _ in strong_sections[:2]] or ["기존 교과·활동 기록"],
+                    "new_evidence_to_collect": "근거 페이지와 관찰/과정 메모를 함께 확보",
+                    "overclaim_guardrail": "새로운 성과를 단정하지 말고 기존 기록 근거로만 서술합니다.",
+                }
+            )
+
+    avoid_report_directions = _dedupe(
+        [
+            "기존 문장을 거의 반복하는 요약형 주제",
+            "근거 없이 결과를 크게 확장하는 성과 단정형 주제",
+            "전공 연결이 약한 단발 체험 나열형 주제",
+        ],
+        limit=3,
+    )
+    high_overclaim_risk_claims = _dedupe(
+        [
+            "검증 근거 없이 전국/최상위 수준 성취를 단정하는 표현",
+            "실제 수행 범위를 넘어서는 설계 완성도·성과를 서술하는 표현",
+            "근거 없는 합격 가능성 또는 결과 예측 표현",
+        ],
+        limit=3,
+    )
+
+    return {
+        "추천 보완 축": recommended_reinforcement_axes,
+        "피해야 할 반복형 주제": avoid_report_directions,
+        "지금 쓰면 좋은 탐구보고서 유형": [style_labels.get(item, item) for item in best_report_styles_now],
+        "현재 기록에서 가장 안전하게 강화할 수 있는 포인트": safe_reinforcement_points,
+        "추가 근거 없이는 과장 위험이 큰 주장": high_overclaim_risk_claims,
+        "recommended_reinforcement_axes": recommended_reinforcement_axes,
+        "avoid_repetitive_topics": avoid_report_directions,
+        "best_report_styles_now": best_report_styles_now,
+        "safe_reinforcement_points": safe_reinforcement_points,
+        "high_overclaim_risk_claims": high_overclaim_risk_claims,
+        "strong_sections_to_avoid_repeating": [section for section, _ in strong_sections[:4]],
+        "weak_sections_to_complement": weak_sections[:6],
+        "missing_dimensions": missing_dimensions,
+        "recommended_report_directions": recommended_report_directions[:5],
+        "avoid_report_directions": [
+            {
+                "title": title,
+                "why_risky": "기록 차별성이 약하거나 근거 과장 위험이 높습니다.",
+                "safer_alternative": "기존 근거를 재해석하는 보완형 탐구로 조정하세요.",
+            }
+            for title in avoid_report_directions[:3]
+        ],
+        "evidence_metrics": {
+            "unique_anchor_count": len(unique_anchor_ids),
+            "unique_page_count": len(unique_pages),
+            "citation_page_count": len(citation_pages),
+            "missing_required_sections": missing_required_sections[:8],
+        },
+    }
+
+
+def _build_section_semantics(*, report_mode: DiagnosisReportMode) -> dict[str, str]:
+    premium = {
+        "cover_title_summary": "meta",
+        "executive_verdict": "action",
+        "record_baseline_dashboard": "verified",
+        "student_evaluation_matrix": "verified",
+        "system_quality_reliability": "verified",
+        "strength_analysis": "verified",
+        "weakness_risk_analysis": "uncertainty",
+        "section_by_section_diagnosis": "verified",
+        "major_fit_interpretation": "inferred",
+        "recommended_report_directions": "action",
+        "avoid_repetition_topics": "uncertainty",
+        "evidence_cards": "verified",
+        "interview_readiness": "inferred",
+        "roadmap": "action",
+        "uncertainty_verification_note": "uncertainty",
+        "citation_appendix": "verified",
+    }
+    compact = {
+        "executive_verdict": "action",
+        "record_baseline_dashboard": "verified",
+        "strength_analysis": "verified",
+        "risk_analysis": "uncertainty",
+        "recommended_report_direction": "action",
+        "roadmap": "action",
+        "uncertainty_verification_note": "uncertainty",
+        "citation_appendix": "verified",
+    }
+    return premium if report_mode == "premium_10p" else compact
 
 
 async def _generate_narratives(
@@ -1463,12 +2209,25 @@ def _enforce_section_architecture(
 
 def _humanize_section_title(section_id: str) -> str:
     title_map = {
-        "executive_summary": "핵심 요약",
+        "cover_title_summary": "표지 / 요약",
+        "executive_verdict": "핵심 판정",
         "record_baseline_dashboard": "학업·기록 베이스라인 대시보드",
+        "student_evaluation_matrix": "학생 평가 점수 매트릭스",
+        "system_quality_reliability": "시스템 품질·신뢰도",
+        "section_by_section_diagnosis": "섹션별 학생부 진단",
+        "major_fit_interpretation": "전공 적합성 해석",
+        "recommended_report_directions": "추천 탐구보고서 방향",
+        "recommended_report_direction": "추천 탐구보고서 방향",
+        "avoid_repetition_topics": "피해야 할 반복형 주제",
+        "interview_readiness": "면접·설명 준비도",
+        "uncertainty_verification_note": "불확실성·검증 메모",
+        "citation_appendix": "근거/출처 요약",
+        "executive_summary": "핵심 요약",
         "narrative_timeline": "서사 타임라인",
         "evidence_cards": "근거 카드",
         "strength_analysis": "강점 분석",
         "risk_analysis": "리스크 분석",
+        "weakness_risk_analysis": "약점·리스크 분석",
         "major_fit": "목표 전공 적합성 해석",
         "interview_questions": "면접 예상 질문",
         "roadmap": "실행 로드맵",
@@ -1510,6 +2269,7 @@ def _build_sections(
     narratives: _ConsultantNarrativePayload,
     uncertainty_notes: list[str],
     reanalysis_required: bool,
+    diagnosis_intelligence: dict[str, Any],
 ) -> list[ConsultantDiagnosisSection]:
     top_citations = _build_diverse_evidence_items(
         evidence_items=evidence_items,
@@ -1550,37 +2310,82 @@ def _build_sections(
 
     student_score_group = next((group for group in score_groups if group.group == "student_evaluation"), None)
     system_score_group = next((group for group in score_groups if group.group == "system_quality"), None)
-    score_lines: list[str] = []
-    for group in (student_score_group, system_score_group):
-        if not group:
-            continue
-        score_lines.append(f"[{group.title}]")
-        for block in group.blocks:
-            score_lines.append(f"{block.label}: {block.score}점 ({block.band})")
+    student_matrix_lines = [
+        f"{block.label}: {block.score}점 ({block.band}) | {block.evidence_summary or '근거 요약 없음'}"
+        for block in (student_score_group.blocks if student_score_group else [])
+    ]
+    system_matrix_lines = [
+        f"{block.label}: {block.score}점 ({block.band}) | {block.uncertainty_note or block.interpretation}"
+        for block in (system_score_group.blocks if system_score_group else [])
+    ]
 
-    evidence_cards = evidence_bank[:6]
+    evidence_cards = evidence_bank[:8]
     evidence_card_lines: list[str] = []
     for idx, card in enumerate(evidence_cards, start=1):
-        quote = _clean_line(str(card.get("quote") or ""), max_len=62)
-        interpretation = _clean_line(str(card.get("theme") or "핵심 활동"), max_len=28)
-        why_it_matters = _clean_line(
-            ", ".join(str(item) for item in (card.get("major_relevance") or [])[:2]) or "전공 연계",
-            max_len=26,
-        )
-        risk_note = "설명 보강 필요" if not bool((card.get("process_elements") or {}).get("limitation")) else "한계 인식 포함"
+        quote = _clean_line(str(card.get("quote") or ""), max_len=90)
+        interpretation = _clean_line(str(card.get("theme") or "핵심 활동"), max_len=44)
+        section = _clean_line(str(card.get("section") or "학생부"), max_len=24)
+        risk_note = "한계 인식 확인" if bool((card.get("process_elements") or {}).get("limitation")) else "과정/한계 설명 보강 필요"
         evidence_card_lines.append(
-            f"[카드 {idx}] p.{card.get('page')} | 원문: {quote} | 해석: {interpretation} | 의미: {why_it_matters} | 리스크: {risk_note}"
+            f"[근거 {idx}] {section} p.{card.get('page')} | {quote} | 해석: {interpretation} | 검증메모: {risk_note}"
+        )
+
+    section_diagnosis_lines: list[str] = []
+    for section, density in sorted(
+        section_density.items(),
+        key=lambda item: float(item[1] or 0.0),
+        reverse=True,
+    ):
+        normalized_density = max(0.0, min(1.0, float(density or 0.0)))
+        status = "강점 구간" if normalized_density >= 0.66 else "보통 구간" if normalized_density >= 0.45 else "보완 우선"
+        section_diagnosis_lines.append(
+            f"{section}: 밀도 {int(round(normalized_density * 100))}% ({status})"
+        )
+
+    recommended_directions = (
+        diagnosis_intelligence.get("recommended_report_directions")
+        if isinstance(diagnosis_intelligence.get("recommended_report_directions"), list)
+        else []
+    )
+    recommended_direction_lines: list[str] = []
+    for idx, item in enumerate(recommended_directions[:5], start=1):
+        if not isinstance(item, dict):
+            continue
+        recommended_direction_lines.extend(
+            [
+                f"[추천 {idx}] {item.get('title') or '추천 방향'}",
+                f"- 적합 이유: {item.get('why_it_fits_current_record') or '기존 기록과의 연결성이 높습니다.'}",
+                f"- 보완 축: {item.get('compensates_weak_point') or '기록 연결성 강화'}",
+                f"- 기존 근거: {', '.join(item.get('existing_evidence') or ['학생부 핵심 활동'])}",
+                f"- 추가로 필요한 근거: {item.get('new_evidence_to_collect') or '관찰/과정 근거 보강'}",
+                f"- 과장 주의: {item.get('overclaim_guardrail') or '검증되지 않은 성과 단정 금지'}",
+            ]
+        )
+
+    avoid_directions = (
+        diagnosis_intelligence.get("avoid_report_directions")
+        if isinstance(diagnosis_intelligence.get("avoid_report_directions"), list)
+        else []
+    )
+    avoid_direction_lines: list[str] = []
+    for idx, item in enumerate(avoid_directions[:3], start=1):
+        if not isinstance(item, dict):
+            continue
+        avoid_direction_lines.extend(
+            [
+                f"[회피 {idx}] {item.get('title') or '반복형 주제'}",
+                f"- 위험 이유: {item.get('why_risky') or '근거 대비 반복/과장 위험이 높습니다.'}",
+                f"- 대안: {item.get('safer_alternative') or '기존 근거를 재해석하는 보완형 탐구로 조정'}",
+            ]
         )
 
     interview_questions = _dedupe(
         [
-            "지원 전공과 관련해 가장 구체적으로 설명할 수 있는 활동은 무엇인가요?",
-            "학년 간 활동 변화에서 본인의 탐구가 어떻게 심화됐는지 설명해 주세요.",
-            "구조/재료 선택에서 어떤 기준으로 판단했는지 근거를 들어 설명해 보세요.",
-            "사용자 경험이나 공간 인문 관점에서 보완하고 싶은 지점은 무엇인가요?",
-            "교과와 세특의 탐구를 실제 설계 사고와 어떻게 연결했나요?",
-            "향후 6개월 동안 스토리라인을 강화하기 위한 실행 계획은 무엇인가요?",
-            *[f"근거 기반 확인 질문: {signal}" for signal in continuity_signals[:2]],
+            "현재 기록에서 가장 강한 근거 1개를 선택해 전공과의 연결을 2문장으로 설명해 보세요.",
+            "활동 과정에서 무엇을 선택했고 왜 그렇게 판단했는지 한계까지 포함해 설명해 보세요.",
+            "학년 간 연속성이 가장 잘 보이는 사례와 부족한 사례를 각각 1개씩 말해 보세요.",
+            "새 활동을 추가하지 않고도 기존 기록을 더 설득력 있게 보완할 방법은 무엇인가요?",
+            *[f"근거 확인 질문: {signal}" for signal in continuity_signals[:2]],
         ],
         limit=8,
     )
@@ -1590,41 +2395,91 @@ def _build_sections(
         roadmap_lines.append(item.title)
         roadmap_lines.extend([f"- {action}" for action in item.actions[:3]])
 
-    storyline = "도시/기후 대응형 지속가능 건축"
-    one_line_verdict = (
-        "전공 적합성과 연속성은 확인되지만 서사 축이 분산되어 있어 "
-        f"'{storyline}' 중심의 통합이 필요합니다."
+    missing_required_sections = (
+        [str(item).strip() for item in coverage_check.get("missing_required_sections", []) if str(item).strip()]
+        if isinstance(coverage_check.get("missing_required_sections"), list)
+        else []
     )
-    if reanalysis_required:
-        one_line_verdict = "보완 필요: 필수 섹션 추출 커버리지가 부족해 학생평가 점수는 참고용으로만 제시합니다."
-
+    one_line_verdict = (
+        "현재 기록에서 확인되는 강점은 유효하지만, 근거 밀도와 섹션 커버리지를 보완해야 안정적 해석이 가능합니다."
+        if reanalysis_required
+        else "근거 분산과 전공 연결성은 확인되며, 다음 보고서는 보완 축 중심으로 설계하는 것이 안전합니다."
+    )
     baseline_lines = [
         target_context,
-        f"분석 신뢰도: {int(round(float(coverage_check.get('coverage_score', 0.0)) * 100))}%",
-        *(score_lines[:14] or ["점수 데이터가 제한적입니다."]),
-        f"섹션 커버리지 누락: {', '.join(coverage_check.get('missing_required_sections', [])[:5]) or '없음'}",
+        f"분석 신뢰도(진단 게이트): {int(round(float(coverage_check.get('coverage_score', 0.0)) * 100))}%",
+        f"고유 앵커 수: {len({str(item.get('anchor_id') or '').strip() for item in evidence_bank if str(item.get('anchor_id') or '').strip()})}개",
+        f"고유 페이지 수: {len({int(item.get('page') or 0) for item in evidence_bank if int(item.get('page') or 0) > 0})}개",
+        f"필수 섹션 누락: {', '.join(missing_required_sections[:5]) or '없음'}",
     ]
 
-    timeline_lines = timeline_signals[:6] or ["학년별 연속 신호가 제한적이어서 페이지 근거 중심 보정이 필요합니다."]
-    fit_lines = [
-        narratives.major_fit_brief or "건축 관련 연속성은 강하지만 스토리라인 통합이 우선 과제입니다.",
-        "강점 축: 기술/구조/재료/환경 테마의 일관성",
-        "보완 축: 사용자·언어·경험·공간 인문 프레임",
-        f"권장 통합 주제: {storyline}",
-        *(alignment_signals[:2] or []),
+    strength_lines = [
+        *(result.strengths[:4] or ["현재 기록에서 확인되는 강점 진술이 제한적입니다."]),
+        narratives.strengths_brief or "강점은 반드시 페이지 근거와 함께 제시해야 합니다.",
+        *[
+            f"반복 최소화 권고: {section}"
+            for section in (diagnosis_intelligence.get("strong_sections_to_avoid_repeating") or [])[:2]
+            if str(section).strip()
+        ],
     ]
+    risk_lines = [
+        *(result.gaps[:4] or ["핵심 리스크 진술이 제한적입니다."]),
+        narratives.weaknesses_risks_brief or "불확실한 구간은 단정 대신 검증 과제로 분리해야 합니다.",
+        *(weak_sections[:3] or ["취약 섹션 정보가 제한적입니다."]),
+        *[f"누락 차원: {item}" for item in (diagnosis_intelligence.get("missing_dimensions") or [])[:3]],
+    ]
+    major_fit_lines = [
+        narratives.major_fit_brief or "전공 적합성은 확인되지만 연결 문장의 일관성 보강이 필요합니다.",
+        *(alignment_signals[:3] or ["전공 연계 신호가 제한적이므로 관련 근거를 추가 확보해야 합니다."]),
+        "아래 제안은 합격 예측이 아니라 기록 보완 전략입니다.",
+    ]
+    uncertainty_lines = _dedupe(
+        [
+            *(uncertainty_notes[:6] or ["현재 근거 범위에서 보수적으로 해석했습니다."]),
+            (
+                "reference-only: 파싱 커버리지 또는 근거 앵커 조건 미달로 임시 해석 상태입니다."
+                if reanalysis_required
+                else "verified-ready: 핵심 게이트를 통과했으나 불확실 항목은 별도 검증이 필요합니다."
+            ),
+            "검증된 사실과 추론 문장을 구분해 해석하세요.",
+        ],
+        limit=9,
+    )
 
-    sections = [
+    citation_appendix_lines: list[str] = []
+    for item in top_citations[:8]:
+        source = _clean_line(item.source_label, max_len=42)
+        page = f"p.{item.page_number}" if item.page_number else "p.-"
+        citation_appendix_lines.append(
+            f"{source} {page}: {_clean_line(item.excerpt, max_len=96)} ({item.support_status})"
+        )
+    if not citation_appendix_lines:
+        citation_appendix_lines.append("출처 근거가 부족해 추가 확인이 필요합니다.")
+
+    premium_sections = [
         ConsultantDiagnosisSection(
-            id="executive_summary",
-            title="핵심 요약",
-            subtitle="핵심 판정 · 강점 3 · 리스크 3",
+            id="cover_title_summary",
+            title="표지 / 요약",
+            subtitle="진단 목적과 해석 범위",
             body_markdown=_bulleted(
                 [
-                    f"핵심 판정: {one_line_verdict}",
-                    *(result.strengths[:3] or ["핵심 강점 근거가 제한적입니다."]),
-                    *(result.gaps[:3] or ["핵심 리스크 근거가 제한적입니다."]),
-                    f"최우선 축: {result.recommended_focus}",
+                    target_context,
+                    narratives.current_record_status_brief or "현재 진단은 학생부 근거 중심의 보수적 해석입니다.",
+                    "본 문서는 합격 예측이 아니라 기록 보완 전략 문서입니다.",
+                ]
+            ),
+            evidence_items=pick_evidence(2),
+        ),
+        ConsultantDiagnosisSection(
+            id="executive_verdict",
+            title="핵심 판정",
+            subtitle="실행 우선순위 중심 요약",
+            body_markdown=_bulleted(
+                [
+                    one_line_verdict,
+                    f"우선 보완 축: {result.recommended_focus}",
+                    *(result.next_actions[:3] or ["다음 행동 지시가 제한적입니다."]),
+                    "합격 보장/단정 문구 없이 근거 중심으로만 해석합니다.",
                 ]
             ),
             evidence_items=pick_evidence(3),
@@ -1632,97 +2487,210 @@ def _build_sections(
         ),
         ConsultantDiagnosisSection(
             id="record_baseline_dashboard",
-            title="학업·기록 베이스라인 대시보드",
-            subtitle="학생평가 점수와 시스템 품질 점수 분리",
+            title="기록 베이스라인 대시보드",
+            subtitle="근거 분산·커버리지·누락 섹션 현황",
             body_markdown=_bulleted(baseline_lines),
             evidence_items=pick_evidence(2),
-            additional_verification_needed=weak_sections[:3],
+            additional_verification_needed=missing_required_sections[:3],
         ),
         ConsultantDiagnosisSection(
-            id="narrative_timeline",
-            title="서사 타임라인",
-            subtitle="학년별 관점 진화 흐름",
-            body_markdown=_bulleted(
-                [
-                    "1학년: 기초 탐색과 주제 발견",
-                    "2학년: 구조/재료/환경 테마 심화",
-                    "3학년: 전공 연계 스토리 통합 필요",
-                    *timeline_lines,
-                ]
-            ),
+            id="student_evaluation_matrix",
+            title="학생 평가 점수 매트릭스",
+            subtitle="다차원 학생 평가(근거 조건 포함)",
+            body_markdown=_bulleted(student_matrix_lines[:14] or ["학생 평가 매트릭스가 비어 있습니다."]),
             evidence_items=pick_evidence(2),
+            additional_verification_needed=[
+                block.missing_evidence
+                for block in (student_score_group.blocks if student_score_group else [])
+                if block.missing_evidence
+            ][:3],
         ),
         ConsultantDiagnosisSection(
-            id="evidence_cards",
-            title="근거 카드",
-            subtitle="핵심 근거 6개 카드",
-            body_markdown=_bulleted(evidence_card_lines or ["핵심 근거 카드를 만들기 위한 앵커가 부족합니다."]),
-            evidence_items=pick_evidence(4),
-            unsupported_claims=["원문 없는 추상·정성·수치 결과는 생성하지 않습니다."],
+            id="system_quality_reliability",
+            title="시스템 품질 / 신뢰도",
+            subtitle="파싱·검증 게이트",
+            body_markdown=_bulleted(system_matrix_lines[:10] or ["시스템 품질 데이터가 없습니다."]),
+            evidence_items=pick_evidence(2),
+            additional_verification_needed=(
+                [system_score_group.note] if system_score_group and system_score_group.note else []
+            ),
         ),
         ConsultantDiagnosisSection(
             id="strength_analysis",
             title="강점 분석",
-            subtitle="상위 강점 진단",
-            body_markdown=_bulleted(
-                [
-                    *(result.strengths[:3] or ["강점 진술이 제한적입니다."]),
-                    narratives.strengths_brief or "강점은 페이지 근거와 직접 연결되어야 합니다.",
-                    *(process_signals[:2] or []),
-                ]
-            ),
+            subtitle="검증된 강점과 유지 전략",
+            body_markdown=_bulleted(strength_lines),
             evidence_items=(
                 [item for item in pick_evidence(4) if item.support_status == "verified"][:3]
                 or pick_evidence(3)
             ),
         ),
         ConsultantDiagnosisSection(
-            id="risk_analysis",
-            title="리스크 분석",
-            subtitle="상위 리스크 진단",
-            body_markdown=_bulleted(
-                [
-                    *(result.gaps[:3] or ["리스크 진술이 제한적입니다."]),
-                    "핵심 리스크는 전공 부적합이 아니라 서사 분산입니다.",
-                    *(weak_sections[:3] or ["취약 섹션은 보완 후 재측정이 필요합니다."]),
-                ]
-            ),
+            id="weakness_risk_analysis",
+            title="약점 / 리스크 분석",
+            subtitle="약한 축과 과장 위험 경계",
+            body_markdown=_bulleted(risk_lines),
             evidence_items=pick_evidence(3),
             additional_verification_needed=uncertainty_notes[:3],
-            unsupported_claims=["검증되지 않은 합격 예측/보장 문구 금지"],
+            unsupported_claims=list(diagnosis_intelligence.get("high_overclaim_risk_claims") or [])[:3],
         ),
         ConsultantDiagnosisSection(
-            id="major_fit",
-            title="목표 전공 적합성 해석",
-            subtitle="서울대 건축 지망 기준 해석",
-            body_markdown=_bulleted(fit_lines),
+            id="section_by_section_diagnosis",
+            title="섹션별 학생부 진단",
+            subtitle="섹션 밀도 기반 보완 우선순위",
+            body_markdown=_bulleted(section_diagnosis_lines[:10] or ["섹션 분류 데이터가 제한적입니다."]),
             evidence_items=pick_evidence(3),
-            additional_verification_needed=["사용자·언어·경험 관련 근거 카드 보강"],
         ),
         ConsultantDiagnosisSection(
-            id="interview_questions",
-            title="면접 예상 질문",
-            subtitle="면접 예상 질문",
+            id="major_fit_interpretation",
+            title="전공 적합성 해석",
+            subtitle="확인된 강점과 일반화 주의점",
+            body_markdown=_bulleted(major_fit_lines),
+            evidence_items=pick_evidence(3),
+            additional_verification_needed=[
+                "전공 적합성은 확정 판정이 아닌 현재 기록 기반 해석입니다.",
+                *([_clean_line(item, max_len=90) for item in continuity_signals[:2]]),
+            ][:3],
+        ),
+        ConsultantDiagnosisSection(
+            id="recommended_report_directions",
+            title="추천 탐구보고서 방향",
+            subtitle="3~5개 안전한 추천 방향",
+            body_markdown=_bulleted(
+                recommended_direction_lines or ["추천 방향 데이터가 제한적이므로 기존 근거 재해석형 보고서를 우선 권장합니다."]
+            ),
+            evidence_items=pick_evidence(3),
+        ),
+        ConsultantDiagnosisSection(
+            id="avoid_repetition_topics",
+            title="피해야 할 반복형 주제",
+            subtitle="반복/과장 위험 회피 가이드",
+            body_markdown=_bulleted(
+                avoid_direction_lines or ["반복형 주제 회피 데이터가 제한적입니다."]
+            ),
+            evidence_items=pick_evidence(2),
+            unsupported_claims=list(diagnosis_intelligence.get("high_overclaim_risk_claims") or [])[:3],
+        ),
+        ConsultantDiagnosisSection(
+            id="evidence_cards",
+            title="근거 카드",
+            subtitle="검증 근거 카드",
+            body_markdown=_bulleted(evidence_card_lines or ["근거 카드 생성을 위한 앵커가 부족합니다."]),
+            evidence_items=pick_evidence(4),
+            additional_verification_needed=["근거 없는 추정 문장은 본문에서 분리해 주세요."],
+        ),
+        ConsultantDiagnosisSection(
+            id="interview_readiness",
+            title="면접/설명 준비도",
+            subtitle="설명 가능한 문장 훈련 질문",
             body_markdown=_bulleted(interview_questions),
             evidence_items=pick_evidence(2),
         ),
         ConsultantDiagnosisSection(
             id="roadmap",
             title="실행 로드맵",
-            subtitle="1개월 · 3개월 · 6개월 실행 계획",
+            subtitle="1개월 · 3개월 · 6개월",
             body_markdown=_bulleted(
                 [
-                    narratives.roadmap_bridge or "단계별 실행 계획은 근거 보강과 스토리 통합 순으로 진행합니다.",
+                    narratives.roadmap_bridge or "로드맵은 근거 보강 → 리스크 통제 → 전공 연결 완성 순서로 진행합니다.",
                     *roadmap_lines,
                 ]
             ),
             evidence_items=pick_evidence(2),
         ),
+        ConsultantDiagnosisSection(
+            id="uncertainty_verification_note",
+            title="불확실성 / 검증 메모",
+            subtitle="검증된 사실·추론·불확실성 분리",
+            body_markdown=_bulleted(uncertainty_lines),
+            evidence_items=pick_evidence(1),
+            additional_verification_needed=uncertainty_notes[:4],
+        ),
+        ConsultantDiagnosisSection(
+            id="citation_appendix",
+            title="근거·출처 요약",
+            subtitle="주요 인용 앵커",
+            body_markdown=_bulleted(citation_appendix_lines),
+            evidence_items=pick_evidence(2),
+        ),
+    ]
+
+    compact_sections = [
+        ConsultantDiagnosisSection(
+            id="executive_verdict",
+            title="핵심 판정",
+            subtitle="요약 결론",
+            body_markdown=_bulleted(
+                [
+                    one_line_verdict,
+                    f"최우선 보완 축: {result.recommended_focus}",
+                    "아래 제안은 합격 예측이 아닌 기록 보완 전략입니다.",
+                ]
+            ),
+            evidence_items=pick_evidence(2),
+            additional_verification_needed=uncertainty_notes[:2] if reanalysis_required else [],
+        ),
+        ConsultantDiagnosisSection(
+            id="record_baseline_dashboard",
+            title="베이스라인 대시보드",
+            subtitle="현재 상태 요약",
+            body_markdown=_bulleted(
+                [
+                    *baseline_lines,
+                    *(student_matrix_lines[:4] or ["학생 평가 매트릭스 요약 데이터가 제한적입니다."]),
+                ]
+            ),
+            evidence_items=pick_evidence(2),
+        ),
+        ConsultantDiagnosisSection(
+            id="strength_analysis",
+            title="상위 강점",
+            subtitle="유지/확장 포인트",
+            body_markdown=_bulleted(strength_lines[:6]),
+            evidence_items=pick_evidence(2),
+        ),
+        ConsultantDiagnosisSection(
+            id="risk_analysis",
+            title="상위 리스크",
+            subtitle="보수적 보완 필요 구간",
+            body_markdown=_bulleted(risk_lines[:7]),
+            evidence_items=pick_evidence(2),
+            additional_verification_needed=uncertainty_notes[:3],
+            unsupported_claims=list(diagnosis_intelligence.get("high_overclaim_risk_claims") or [])[:2],
+        ),
+        ConsultantDiagnosisSection(
+            id="recommended_report_direction",
+            title="추천 다음 보고서 방향",
+            subtitle="우선 적용 가능한 제안",
+            body_markdown=_bulleted(recommended_direction_lines[:12] or ["추천 방향 정보를 생성하지 못했습니다."]),
+            evidence_items=pick_evidence(2),
+        ),
+        ConsultantDiagnosisSection(
+            id="roadmap",
+            title="로드맵",
+            subtitle="단기·중기·장기 실행",
+            body_markdown=_bulleted(roadmap_lines[:10] or ["로드맵 데이터가 제한적입니다."]),
+            evidence_items=pick_evidence(1),
+        ),
+        ConsultantDiagnosisSection(
+            id="uncertainty_verification_note",
+            title="불확실성 메모",
+            subtitle="검증 필요 항목",
+            body_markdown=_bulleted(uncertainty_lines[:7]),
+            evidence_items=pick_evidence(1),
+        ),
+        ConsultantDiagnosisSection(
+            id="citation_appendix",
+            title="출처 요약",
+            subtitle="핵심 근거 라인",
+            body_markdown=_bulleted(citation_appendix_lines[:6]),
+            evidence_items=pick_evidence(1),
+        ),
     ]
 
     if report_mode == "compact":
-        return sections[:5]
-    return sections
+        return compact_sections
+    return premium_sections
 
 
 def _build_diverse_evidence_items(
@@ -1747,7 +2715,13 @@ def _build_diverse_evidence_items(
             support_status = "probable"
         else:
             support_status = "needs_verification"
-        source_base = f"?숈깮遺 ?듭빱 {anchor_id}" if anchor_id else f"?숈깮遺 p.{page_number}" if page_number else "?숈깮遺 ?듭빱"
+        source_base = (
+            f"학생부 앵커 {anchor_id}"
+            if anchor_id
+            else f"학생부 p.{page_number}"
+            if page_number
+            else "학생부 앵커"
+        )
         source_label = f"{section} | {source_base}" if section else source_base
         candidates.append(
             ConsultantDiagnosisEvidenceItem(

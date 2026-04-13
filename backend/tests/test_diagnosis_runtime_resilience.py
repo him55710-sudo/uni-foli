@@ -31,7 +31,7 @@ def test_runtime_marks_run_failed_when_unhandled_error_occurs(monkeypatch) -> No
     document = SimpleNamespace(
         id="doc-1",
         sha256="sha-doc-1",
-        content_text="?�생 기록 ?�시 ?�스??,
+        content_text="student record evidence text for runtime resilience",
         content_markdown="",
         stored_path=None,
         source_extension=".txt",
@@ -83,7 +83,7 @@ def test_runtime_marks_run_failed_when_unhandled_error_occurs(monkeypatch) -> No
         )
 
     assert run.status == "FAILED"
-    assert run.status_message == "진단 ?�행???�패?�습?�다."
+    assert run.status_message == "筌욊쑬????쎈뻬????쎈솭??됰뮸??덈뼄."
     assert run.error_message
     assert fake_db.commit_count >= 1
     assert fake_db.rollback_count >= 1

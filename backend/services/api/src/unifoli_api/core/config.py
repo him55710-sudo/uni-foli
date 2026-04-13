@@ -160,6 +160,7 @@ class Settings(BaseSettings):
     ollama_fast_timeout_seconds: float | None = None
     ollama_standard_timeout_seconds: float | None = None
     ollama_render_timeout_seconds: float | None = None
+    diagnosis_generation_timeout_seconds: float = 45.0
     pdf_analysis_llm_enabled: bool = True
     pdf_analysis_llm_provider: str = "ollama"
     pdf_analysis_gemini_api_key: str | None = None

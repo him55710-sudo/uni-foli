@@ -71,6 +71,25 @@ Notes:
 - In production mode, missing Gemini key is still treated as an error unless provider is explicitly configured.
 - In production with `LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL` must be a remote reachable endpoint (not localhost).
 
+## 3.2 Gemini free-tier deployment setup
+
+Backend env:
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=<SET_IN_BACKEND_ENV_ONLY>
+```
+
+Frontend env:
+
+```dotenv
+VITE_API_URL=<YOUR_BACKEND_URL>
+```
+
+- Keep `GEMINI_API_KEY` backend-only.
+- Do not put Gemini keys into `frontend/.env`.
+- `VITE_API_URL` must point to backend origin so chat stream gets `text/event-stream` responses.
+
 ## 4. Recommended first workflow
 
 1. Create a project.
@@ -83,12 +102,11 @@ Notes:
 ### Workshop guided-chat test flow
 
 1. Open `/app/workshop` (or `/app/workshop/:projectId`).
-2. First greeting must be exactly: `안녕하세요. 어떤 주제의 보고서를 써볼까요?`
+2. First guided prompt should ask for the subject (for example: `어떤 과목의 탐구보고서를 준비하고 계신가요?`).
 3. Enter a broad subject (example: `수학`).
-4. Verify exactly 3 topic suggestions are shown inside the same Foli chat.
-5. Click one suggestion and confirm:
-- page range options are shown
-- recommended outline is shown
+4. Verify the specific-topic check appears (`주제가 있어요` / `추천 3개 받아보기`).
+5. Request recommendations and confirm exactly 3 topic suggestion cards are shown.
+6. Click topic -> page range -> structure and confirm next-action chips appear.
 - right draft panel is filled with starter markdown
 
 ### PDF analysis model split

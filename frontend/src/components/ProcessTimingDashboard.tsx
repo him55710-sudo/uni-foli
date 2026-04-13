@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Clock3 } from 'lucide-react';
 import { cn } from '../lib/cn';
-import { SectionCard, StatusBadge, SurfaceCard } from './primitives';
+import { SectionCard, StatusBadge, SurfaceCard, WorkflowNotice } from './primitives';
 
 export type TimingPhaseStatus = 'idle' | 'running' | 'done' | 'failed';
 
@@ -20,9 +20,13 @@ interface ProcessTimingDashboardProps {
   title?: string;
   description?: string;
   className?: string;
+  preferStageMode?: boolean;
+  stageMessage?: string | null;
+  longRunningHintAfterSeconds?: number;
 }
 
 const DEFAULT_EXPECTED_SECONDS = 60;
+const RUNNING_PROGRESS_CAP = 0.78;
 
 function phaseStatusLabel(status: TimingPhaseStatus): string {
   if (status === 'running') return '진행 중';
@@ -54,28 +58,34 @@ function formatDuration(ms: number): string {
 
 function computePhaseProgress(phase: TimingPhase, nowMs: number): number {
   if (phase.status === 'done') return 1;
+  if (phase.status === 'failed') return 1;
   if (phase.status === 'idle') return 0;
 
   const expectedMs = toExpectedMs(phase);
-  if (!phase.startedAt) return phase.status === 'running' ? 0.05 : 0;
+  if (!phase.startedAt) return 0.05;
 
-  const endAt = phase.finishedAt ?? (phase.status === 'running' ? nowMs : null);
-  if (!endAt) return 0;
-
+  const endAt = phase.finishedAt ?? nowMs;
   const elapsedMs = Math.max(0, endAt - phase.startedAt);
-  const ratio = Math.min(elapsedMs / expectedMs, 1);
+  const ratio = elapsedMs / expectedMs;
 
-  if (phase.status === 'running') {
-    return Math.min(ratio, 0.98);
-  }
-  return ratio;
+  // Running phase intentionally avoids "almost done" illusion when backend completion isn't confirmed yet.
+  return Math.min(Math.max(0.08, ratio), RUNNING_PROGRESS_CAP);
+}
+
+function elapsedMsForPhase(phase: TimingPhase, nowMs: number): number {
+  if (!phase.startedAt) return 0;
+  const endAt = phase.finishedAt ?? nowMs;
+  return Math.max(0, endAt - phase.startedAt);
 }
 
 export function ProcessTimingDashboard({
   phases,
-  title = '예상 진행 타임테이블',
-  description = '예상 소요시간 대비 작업 완료 비율을 보여드려요.',
+  title = '예상 진행 타임라인',
+  description = '예상 소요시간 대비 작업 진행 단계를 안내합니다.',
   className,
+  preferStageMode = false,
+  stageMessage,
+  longRunningHintAfterSeconds = 120,
 }: ProcessTimingDashboardProps) {
   const [tick, setTick] = useState(() => Date.now());
 
@@ -86,6 +96,15 @@ export function ProcessTimingDashboard({
     const intervalId = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [hasRunningPhase]);
+
+  const runningPhase = useMemo(
+    () => phases.find((phase) => phase.status === 'running') ?? null,
+    [phases],
+  );
+
+  const runningElapsedMs = runningPhase ? elapsedMsForPhase(runningPhase, tick) : 0;
+  const longRunningThresholdMs = Math.max(30, longRunningHintAfterSeconds) * 1000;
+  const isLongRunning = Boolean(runningPhase) && runningElapsedMs >= longRunningThresholdMs;
 
   const phaseProgressMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -117,20 +136,37 @@ export function ProcessTimingDashboard({
       eyebrow="예상 진행률"
       className={cn('border-blue-100 bg-blue-50/50', className)}
       data-testid="process-timing-dashboard"
-      actions={
+      actions={(
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={hasRunningPhase ? 'active' : 'neutral'}>
             <Clock3 size={14} />
-            진행률 {overallPercent}%
+            {preferStageMode && hasRunningPhase
+              ? `단계 진행 중${runningPhase ? `: ${runningPhase.label}` : ''}`
+              : `진행률 ${overallPercent}%`}
           </StatusBadge>
-          <StatusBadge status="neutral">예상 남은 시간 {formatDuration(remainingMs)}</StatusBadge>
+          <StatusBadge status="neutral">예상 잔여 시간 {formatDuration(remainingMs)}</StatusBadge>
         </div>
-      }
+      )}
     >
+      {isLongRunning ? (
+        <WorkflowNotice
+          tone="warning"
+          title="예상보다 오래 걸리는 중입니다."
+          description="백엔드 상태를 계속 확인하고 있으며, 지연 시 자동 복구/재시도 상태가 우선 반영됩니다."
+          className="mb-3"
+        />
+      ) : null}
+
+      {preferStageMode && stageMessage ? (
+        <WorkflowNotice tone="loading" title="현재 단계 설명" description={stageMessage} className="mb-3" />
+      ) : null}
+
       <div className="grid gap-3 md:grid-cols-3">
         {phases.map((phase) => {
           const progress = phaseProgressMap.get(phase.id) ?? 0;
           const phasePercent = Math.round(progress * 100);
+          const phaseExpectedMs = toExpectedMs(phase);
+          const phaseElapsedMs = elapsedMsForPhase(phase, tick);
 
           return (
             <SurfaceCard key={phase.id} tone="muted" padding="sm" className="space-y-3 border border-white/70 bg-white/95">
@@ -154,8 +190,12 @@ export function ProcessTimingDashboard({
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-                  <span>진행률 {phasePercent}%</span>
-                  <span>예상 {formatDuration(toExpectedMs(phase))}</span>
+                  <span>
+                    {preferStageMode && phase.status === 'running'
+                      ? `진행 중 (${formatDuration(phaseElapsedMs)})`
+                      : `진행률 ${phasePercent}%`}
+                  </span>
+                  <span>예상 {formatDuration(phaseExpectedMs)}</span>
                 </div>
               </div>
 

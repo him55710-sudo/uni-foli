@@ -14,8 +14,9 @@ function sanitizeKoreanText(value: unknown, fallback = '내용을 정리 중입�
   const source = String(value ?? '').trim();
   if (!source) return fallback;
   const replaced = source.replace(NEEDS_SUPPORT_PATTERN, '보완 필요');
-  const withoutEnglish = replaced.replace(ENGLISH_CHAR_PATTERN, '').replace(/\s{2,}/g, ' ').trim();
-  return withoutEnglish || fallback;
+  // 영문자 삭제 로직 제거 (교육 맥락 보존)
+  const cleaned = replaced.replace(/\s{2,}/g, ' ').trim();
+  return cleaned || fallback;
 }
 
 function StatusBadge({ status }: { status: ClaimSupportStatus }) {

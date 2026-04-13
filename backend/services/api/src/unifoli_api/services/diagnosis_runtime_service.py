@@ -23,6 +23,7 @@ from unifoli_api.services.diagnosis_scoring_service import (
     build_diagnosis_scoring_sheet,
 )
 from unifoli_api.services.diagnosis_service import (
+    DiagnosisGenerationError,
     DiagnosisCitation,
     attach_policy_flags_to_run,
     build_grounded_diagnosis_result,
@@ -45,6 +46,16 @@ MAX_METADATA_SUMMARY_CHARS = 1_600
 MAX_DIAGNOSIS_LLM_INPUT_CHARS = 30_000
 MAX_SEMANTIC_INPUT_CHARS = 15_000
 SEMANTIC_EXTRACTION_TIMEOUT_SECONDS = 60.0
+DIAGNOSIS_GENERATION_TIMEOUT_SECONDS = 45.0
+
+DIAGNOSIS_FALLBACK_REASON_TIMEOUT = "diagnosis_generation_timeout"
+DIAGNOSIS_FALLBACK_REASON_PROVIDER_TIMEOUT = "diagnosis_generation_provider_timeout"
+DIAGNOSIS_FALLBACK_REASON_CONNECTION_ISSUE = "diagnosis_generation_connection_issue"
+DIAGNOSIS_FALLBACK_REASON_INVALID_JSON = "diagnosis_generation_invalid_json"
+DIAGNOSIS_FALLBACK_REASON_INVALID_REQUEST = "diagnosis_generation_invalid_request"
+DIAGNOSIS_FALLBACK_REASON_MODEL_NOT_FOUND = "diagnosis_generation_model_not_found"
+DIAGNOSIS_FALLBACK_REASON_PROVIDER_ERROR = "diagnosis_generation_provider_error"
+DIAGNOSIS_FALLBACK_REASON_UNEXPECTED = "diagnosis_generation_unexpected_error"
 
 logger = logging.getLogger("unifoli.api.diagnosis_runtime")
 
@@ -310,6 +321,50 @@ def _diagnosis_runtime_failure_message(exc: Exception) -> str:
     return normalized
 
 
+def _resolve_diagnosis_generation_timeout_seconds() -> float:
+    settings = get_settings()
+    raw = getattr(settings, "diagnosis_generation_timeout_seconds", DIAGNOSIS_GENERATION_TIMEOUT_SECONDS)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = DIAGNOSIS_GENERATION_TIMEOUT_SECONDS
+    if value <= 0:
+        return DIAGNOSIS_GENERATION_TIMEOUT_SECONDS
+    return value
+
+
+def _normalize_generation_fallback_reason(exc: Exception) -> str:
+    if isinstance(exc, asyncio.TimeoutError):
+        return DIAGNOSIS_FALLBACK_REASON_TIMEOUT
+
+    if isinstance(exc, DiagnosisGenerationError):
+        code = str(exc.reason_code or "").strip().lower()
+        if code == "provider_timeout":
+            return DIAGNOSIS_FALLBACK_REASON_PROVIDER_TIMEOUT
+        if code == "connection_issue":
+            return DIAGNOSIS_FALLBACK_REASON_CONNECTION_ISSUE
+        if code == "invalid_json":
+            return DIAGNOSIS_FALLBACK_REASON_INVALID_JSON
+        if code == "invalid_request":
+            return DIAGNOSIS_FALLBACK_REASON_INVALID_REQUEST
+        if code == "model_not_found":
+            return DIAGNOSIS_FALLBACK_REASON_MODEL_NOT_FOUND
+        if code == "provider_error":
+            return DIAGNOSIS_FALLBACK_REASON_PROVIDER_ERROR
+        return DIAGNOSIS_FALLBACK_REASON_UNEXPECTED
+
+    name = type(exc).__name__.strip().lower()
+    if "timeout" in name:
+        return DIAGNOSIS_FALLBACK_REASON_PROVIDER_TIMEOUT
+    if "notfound" in name or ("not" in name and "found" in name):
+        return DIAGNOSIS_FALLBACK_REASON_MODEL_NOT_FOUND
+    if "connection" in name or "connect" in name or "network" in name:
+        return DIAGNOSIS_FALLBACK_REASON_CONNECTION_ISSUE
+    if "json" in name or "decode" in name or "validation" in name:
+        return DIAGNOSIS_FALLBACK_REASON_INVALID_JSON
+    return DIAGNOSIS_FALLBACK_REASON_UNEXPECTED
+
+
 async def run_diagnosis_run(
     db: Session,
     *,
@@ -337,8 +392,9 @@ async def run_diagnosis_run(
         owner = db.get(User, resolved_owner_user_id) if resolved_owner_user_id else None
         if owner is None:
             raise ValueError("Project owner not found.")
+        owner_interest_universities = getattr(owner, "interest_universities", None)
         resolved_interest_universities = _normalize_interest_universities(
-            interest_universities if interest_universities is not None else owner.interest_universities
+            interest_universities if interest_universities is not None else owner_interest_universities
         )
 
         documents, full_text = combine_project_text(project_id, db)
@@ -362,6 +418,7 @@ async def run_diagnosis_run(
         llm_strategy = _diagnosis_llm_strategy()
         should_use_llm = bool(llm_strategy.get("should_use_llm"))
         model_name = str(llm_strategy.get("actual_llm_model") or "grounded-fallback")
+        generation_timeout_seconds = _resolve_diagnosis_generation_timeout_seconds()
 
         _update_run_status(
             db,
@@ -436,24 +493,54 @@ async def run_diagnosis_run(
                 status_message="정밀 진단 내용을 생성하고 근거 데이터를 매핑하고 있습니다...",
             )
             try:
-                result = await evaluate_student_record(
-                    user_major=user_major,
-                    masked_text=diagnosis_input_text,
-                    target_university=fallback_target_university,
-                    target_major=target_major,
-                    interest_universities=resolved_interest_universities,
-                    career_direction=owner.career,
-                    project_title=project.title,
-                    scope_key=f"project:{project.id}",
-                    evidence_keys=evidence_keys,
+                result = await asyncio.wait_for(
+                    evaluate_student_record(
+                        user_major=user_major,
+                        masked_text=diagnosis_input_text,
+                        target_university=fallback_target_university,
+                        target_major=target_major,
+                        interest_universities=resolved_interest_universities,
+                        career_direction=owner.career,
+                        project_title=project.title,
+                        scope_key=f"project:{project.id}",
+                        evidence_keys=evidence_keys,
+                        raise_on_llm_failure=True,
+                    ),
+                    timeout=generation_timeout_seconds,
                 )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("LLM diagnosis failed for run %s. Falling back: %s", run.id, exc)
+            except asyncio.TimeoutError as exc:
+                logger.warning(
+                    "LLM diagnosis generation timed out for run %s after %.1fs",
+                    run.id,
+                    generation_timeout_seconds,
+                )
                 model_name = "grounded-fallback"
                 llm_strategy["actual_llm_provider"] = "deterministic_fallback"
                 llm_strategy["actual_llm_model"] = "grounded-fallback"
                 llm_strategy["fallback_used"] = True
-                llm_strategy["fallback_reason"] = f"generation_failed:{type(exc).__name__}"
+                llm_strategy["fallback_reason"] = DIAGNOSIS_FALLBACK_REASON_TIMEOUT
+                result = build_grounded_diagnosis_result(
+                    project_title=project.title,
+                    target_major=target_major,
+                    target_university=fallback_target_university,
+                    interest_universities=resolved_interest_universities,
+                    career_direction=owner.career,
+                    document_count=len(documents),
+                    full_text=diagnosis_input_text or full_text,
+                )
+            except Exception as exc:  # noqa: BLE001
+                normalized_reason = _normalize_generation_fallback_reason(exc)
+                logger.warning(
+                    "LLM diagnosis failed for run %s. Falling back with reason=%s detail=%s",
+                    run.id,
+                    normalized_reason,
+                    exc,
+                )
+                model_name = "grounded-fallback"
+                llm_strategy["actual_llm_provider"] = "deterministic_fallback"
+                llm_strategy["actual_llm_model"] = "grounded-fallback"
+                llm_strategy["fallback_used"] = True
+                llm_strategy["fallback_reason"] = normalized_reason
                 result = build_grounded_diagnosis_result(
                     project_title=project.title,
                     target_major=target_major,
@@ -487,6 +574,11 @@ async def run_diagnosis_run(
         result.fallback_reason = str(llm_strategy.get("fallback_reason") or "").strip() or None
         result.processing_duration_ms = processing_duration_ms
 
+        _update_run_status(
+            db,
+            run,
+            status_message="진단 근거 추적과 인용 데이터를 저장하고 있습니다...",
+        )
         trace, citation_records = create_response_trace(
             db,
             run=run,

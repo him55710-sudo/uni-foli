@@ -532,6 +532,18 @@ export function Diagnosis() {
     { id: 'result', label: '결과 검토', description: '워크숍 진입', state: step === 'RESULT' ? 'active' : 'pending' },
   ] as any;
 
+  const onStepClick = (stepId: string) => {
+    const mapping: Record<string, DiagnosisStep> = {
+      profile: 'PROFILE',
+      goals: 'GOALS',
+      upload: 'UPLOAD',
+      analysis: 'ANALYSING',
+      result: 'RESULT',
+    };
+    const nextStep = mapping[stepId];
+    if (nextStep) setStep(nextStep);
+  };
+
   const headerTitle = useMemo(() => {
     switch (step) {
       case 'PROFILE': return '학생 프로필 설정';
@@ -570,7 +582,7 @@ export function Diagnosis() {
       </div>
 
       <div className="px-4">
-        <StepIndicator items={stepItems} />
+        <StepIndicator items={stepItems} onStepClick={onStepClick} />
       </div>
 
       {(step === 'ANALYSING' || (step === 'UPLOAD' && isUploading)) && (
@@ -584,6 +596,8 @@ export function Diagnosis() {
           }))}
           title="실시간 진단 현황"
           description="데이터 마스킹과 정밀 분석이 실시간으로 진행 중입니다"
+          preferStageMode
+          stageMessage={diagnosisRun?.status_message || diagnosisJob?.progress_message || null}
         />
       )}
 
@@ -608,7 +622,12 @@ export function Diagnosis() {
         {step === 'ANALYSING' && (
           <motion.div key="analysing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
             <WorkflowNotice tone="loading" title="분석 진행 중" description="잠시만 기다려 주세요..." />
-            <AsyncJobStatusCard job={diagnosisJob} runStatus={diagnosisRun?.status} errorMessage={diagnosisRun?.error_message} />
+            <AsyncJobStatusCard
+              job={diagnosisJob}
+              runStatus={diagnosisRun?.status}
+              runStatusMessage={diagnosisRun?.status_message || null}
+              errorMessage={diagnosisRun?.error_message}
+            />
           </motion.div>
         )}
 

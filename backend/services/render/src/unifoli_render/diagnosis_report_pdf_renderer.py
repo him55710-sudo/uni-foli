@@ -143,6 +143,18 @@ def render_consultant_diagnosis_pdf(
             section = section_by_id[section_id]
             heading = f"{section_number.get(section_id, 0)}. {str(section.get('title') or '진단 섹션')}"
             story.append(Paragraph(_escape(heading), style_tokens["h2"]))
+            semantic = _section_semantic_badge(section_id=section_id, color_tokens=color_tokens)
+            if semantic is not None:
+                story.append(
+                    _build_callout(
+                        text=semantic["label"],
+                        width=doc.width,
+                        style=style_tokens["meta_strong"],
+                        border_color=semantic["border_color"],
+                        fill_color=semantic["fill_color"],
+                        padding=max(5, style_tokens["spacing"]["card_padding"] - 2),
+                    )
+                )
             subtitle = str(section.get("subtitle") or "").strip()
             if subtitle:
                 story.append(Paragraph(_escape(subtitle), style_tokens["subtitle"]))
@@ -201,7 +213,15 @@ def render_consultant_diagnosis_pdf(
                         story.append(Paragraph(f"&#8226; {_escape(str(action))}", style_tokens["bullet"]))
 
             evidence_items = [item for item in section.get("evidence_items", []) if isinstance(item, dict)]
-            should_render_evidence = section_id in {"evidence_cards", "major_fit", "risk_analysis"}
+            should_render_evidence = section_id in {
+                "evidence_cards",
+                "major_fit",
+                "major_fit_interpretation",
+                "risk_analysis",
+                "weakness_risk_analysis",
+                "recommended_report_directions",
+                "recommended_report_direction",
+            }
             if evidence_items and should_render_evidence:
                 story.append(Spacer(1, style_tokens["spacing"]["paragraph_gap"]))
                 story.append(Paragraph("근거 앵커", style_tokens["h3"]))
@@ -593,8 +613,15 @@ def _render_section_body(
         return [Paragraph("내용이 아직 준비되지 않았습니다.", body_style)]
     line_caps = {
         "record_baseline_dashboard": 5,
+        "student_evaluation_matrix": 8,
+        "system_quality_reliability": 8,
+        "recommended_report_directions": 10,
+        "recommended_report_direction": 9,
+        "weakness_risk_analysis": 9,
+        "uncertainty_verification_note": 9,
         "evidence_cards": 7,
         "major_fit": 7,
+        "major_fit_interpretation": 8,
     }
     max_lines = line_caps.get(str(section_id or "").strip(), 8)
     if len(lines) > max_lines:
@@ -661,6 +688,37 @@ def _draw_page_chrome(
     canvas.drawString(doc.leftMargin, 18, "근거 중심 진단 리포트")
     canvas.drawRightString(width - doc.rightMargin, 18, f"{canvas.getPageNumber()} 페이지")
     canvas.restoreState()
+
+
+def _section_semantic_badge(*, section_id: str, color_tokens: dict[str, Any]) -> dict[str, Any] | None:
+    mapping = {
+        "cover_title_summary": ("메타 정보", "line_soft", "surface_panel"),
+        "record_baseline_dashboard": ("검증된 사실", "line_evidence", "surface_evidence"),
+        "student_evaluation_matrix": ("검증된 사실", "line_evidence", "surface_evidence"),
+        "system_quality_reliability": ("검증된 사실", "line_evidence", "surface_evidence"),
+        "strength_analysis": ("검증된 사실", "line_evidence", "surface_evidence"),
+        "section_by_section_diagnosis": ("검증된 사실", "line_evidence", "surface_evidence"),
+        "evidence_cards": ("검증된 사실", "line_evidence", "surface_evidence"),
+        "citation_appendix": ("검증된 사실", "line_evidence", "surface_evidence"),
+        "major_fit_interpretation": ("추론 기반 해석", "line_inferred", "surface_inferred"),
+        "interview_readiness": ("추론 기반 해석", "line_inferred", "surface_inferred"),
+        "risk_analysis": ("불확실성·리스크", "line_warning", "surface_warning"),
+        "weakness_risk_analysis": ("불확실성·리스크", "line_warning", "surface_warning"),
+        "uncertainty_verification_note": ("불확실성·리스크", "line_warning", "surface_warning"),
+        "executive_verdict": ("실행 지시", "line_action", "surface_action"),
+        "recommended_report_directions": ("실행 지시", "line_action", "surface_action"),
+        "recommended_report_direction": ("실행 지시", "line_action", "surface_action"),
+        "roadmap": ("실행 지시", "line_action", "surface_action"),
+    }
+    config = mapping.get(section_id)
+    if config is None:
+        return None
+    label, border_key, fill_key = config
+    return {
+        "label": label,
+        "border_color": _hex(color_tokens.get(border_key), "#D7DEE8"),
+        "fill_color": _hex(color_tokens.get(fill_key), "#F8FAFC"),
+    }
 
 
 def _support_status_label(value: str) -> str:

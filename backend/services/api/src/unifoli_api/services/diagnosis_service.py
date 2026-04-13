@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import asyncio
 from dataclasses import dataclass
 from typing import Literal
 
@@ -8,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from unifoli_api.core.llm import get_llm_client
+from unifoli_api.core.llm import LLMRequestError, get_llm_client
 from unifoli_api.db.models.citation import Citation
 from unifoli_api.db.models.diagnosis_run import DiagnosisRun
 from unifoli_api.db.models.document_chunk import DocumentChunk
@@ -251,8 +252,15 @@ class PolicyFlagMatch:
     match_count: int
 
 
+class DiagnosisGenerationError(RuntimeError):
+    def __init__(self, *, reason_code: str, detail: str | None = None) -> None:
+        self.reason_code = str(reason_code or "provider_error").strip() or "provider_error"
+        self.detail = str(detail or "").strip() or None
+        super().__init__(self.detail or self.reason_code)
+
+
 MASKING_PIPELINE = MaskingPipeline()
-TOKEN_PATTERN = re.compile(r"[A-Za-z?-?0-9]{2,}")
+TOKEN_PATTERN = re.compile(r"[가-힣A-Z?-?0-9]{2,}")
 OPEN_REVIEW_STATUSES = {"open", "pending"}
 AXIS_LABELS: dict[GapAxisKey, str] = dict(POSITIVE_AXIS_LABELS)
 POLICY_FLAG_RULES: tuple[tuple[str, str, str, re.Pattern[str]], ...] = (
@@ -327,9 +335,11 @@ def _trim_excerpt(text: str, *, limit: int = 240) -> str:
     return normalized[: limit - 3].rstrip() + "..."
 
 
-def _major_terms(target_major: str | None, career_direction: str | None) -> list[str]:
-    raw = f"{target_major or ''} {career_direction or ''}"
-    return [token.lower() for token in re.findall(r"[A-Za-z]{3,}", raw)]
+def _major_terms(target_major: str | None, career_direction: str | None, universities: list[str] | None = None) -> list[str]:
+    univ_str = " ".join(universities or [])
+    raw = f"{target_major or ''} {career_direction or ''} {univ_str}"
+    # Supports Korean (2+ chars) and English (2+ chars, like SNU, MIT)
+    return [token.lower() for token in re.findall(r"[가-힣]{2,}|[A-Za-z]{2,}", raw)]
 
 
 def _score_axis(
@@ -362,25 +372,29 @@ def _infer_gap_axes(
     word_count = len((full_text or "").split())
     numeric_hits = len(re.findall(r"\b\d+(?:\.\d+)?%?\b", full_text or ""))
 
-    conceptual_terms = ["principle", "concept", "theory", "model", "reason", "why", "mechanism"]
-    application_terms = ["application", "practical", "project", "using", "use", "solution", "service"]
-    inquiry_terms = ["compare", "difference", "trend", "before", "after", "follow-up", "iterate", "again"]
-    evidence_terms = ["data", "measure", "measured", "survey", "result", "observation", "evidence", "experiment"]
-    process_terms = ["method", "process", "step", "procedure", "limit", "limitation", "reflection", "feedback"]
+    # Korean educational context keywords
+    conceptual_terms = ["원리", "개념", "이론", "모델", "이유", "메커니즘", "왜", "principle", "mechanism", "concept"]
+    application_terms = ["적용", "실험", "프로젝트", "활용", "해결", "solution", "project", "application"]
+    inquiry_terms = ["비교", "차이", "경향", "분석", "후속", "심화", "comparison", "inquiry", "difference"]
+    evidence_hits_terms = ["데이터", "측정", "결과", "관찰", "증거", "실증", "data", "evidence", "result"]
+    process_terms = ["과정", "절차", "한계", "성찰", "피드백", "reflection", "process", "method"]
 
     concept_hits = sum(1 for term in conceptual_terms if term in lowered)
     application_hits = sum(1 for term in application_terms if term in lowered)
     inquiry_hits = sum(1 for term in inquiry_terms if term in lowered)
-    evidence_hits = sum(1 for term in evidence_terms if term in lowered)
+    evidence_hits = sum(1 for term in evidence_hits_terms if term in lowered)
     process_hits = sum(1 for term in process_terms if term in lowered)
-    overlap_hits = sum(1 for term in _major_terms(target_major, career_direction) if term in lowered)
+    
+    all_targets = []
+    if target_university: all_targets.append(target_university)
+    if interest_universities: all_targets.extend(interest_universities)
+    
+    overlap_hits = sum(1 for term in _major_terms(target_major, career_direction, all_targets) if term in lowered)
 
     conceptual_score = 45 + (concept_hits * 12) - max(0, application_hits - concept_hits) * 7
-    if "math" in lowered and application_hits > concept_hits:
-        conceptual_score -= 10
     continuity_score = 40 + (inquiry_hits * 12) + (10 if word_count >= 220 else 0)
     evidence_score = 35 + min(word_count // 12, 25) + min(evidence_hits * 8, 20) + min(numeric_hits * 3, 12)
-    process_score = 35 + (process_hits * 12) + (8 if "reflect" in lowered else 0)
+    process_score = 35 + (process_hits * 12) + (8 if "성찰" in lowered or "reflect" in lowered else 0)
     depth_score = (
         38
         + (concept_hits * 8)
@@ -395,82 +409,78 @@ def _infer_gap_axes(
     target_count = (1 if target_university else 0) + len(interest_universities or [])
     alignment_score = 40 + (overlap_hits * 15) + (min(target_count * 4, 12))
 
-    alignment_rationale = (
-        "The record already connects subject work to the target direction in a believable way."
-        if alignment_score >= 75
-        else "The next activity should make the major link clearer without pretending the student already did more."
-    )
-    if target_count > 1 and alignment_score < 75:
-        alignment_rationale = f"Multiple targets ({target_count}) are identified, but the record needs more explicit links to cover this broader scope."
-
     return [
         _score_axis(
             key="universal_rigor",
             score=conceptual_score,
             rationale=(
-                "The record already explains principles or reasons behind the activity."
+                "활동의 기저에 있는 원리나 메커니즘을 설명하려는 시도가 확인됩니다."
                 if conceptual_score >= 75
-                else "The record leans more on what was done than why the concept matters."
+                else "활동의 '내용'은 있으나, 구체적인 원리나 이론적 근거에 대한 서술이 보안되어야 합니다."
             ),
-            evidence_hint="Look for places where the record explains principles, reasons, or mechanisms.",
+            evidence_hint="학술용어나 원리 중심의 키워드(메커니즘, 원형 등)가 포함된 문장을 찾아보세요.",
         ),
         _score_axis(
             key="universal_specificity",
             score=evidence_score,
             rationale=(
-                "The record already contains enough concrete evidence anchors for grounded drafting."
+                "탐구의 신뢰성을 뒷받침할 만한 구체적인 데이터나 수치적 근거가 포함되어 있습니다."
                 if evidence_score >= 75
-                else "The next step should add clearer observations, data points, or explicit evidence markers."
+                else "관찰 결과나 데이터가 추상적입니다. 구체적인 수치나 명확한 팩트 위주의 서술이 필요합니다."
             ),
-            evidence_hint="Measured results, observed differences, or concrete source notes help here.",
+            evidence_hint="수치, 백분율, 데이터 소스, 구체적인 고유 명사 등의 포함 여부를 확인하세요.",
         ),
         _score_axis(
             key="relational_narrative",
             score=process_score,
             rationale=(
-                "The student record explains method, limits, or reflection with usable detail."
+                "탐구 과정에서의 시행착오와 그에 따른 성찰 과정이 구체적으로 나타나 있습니다."
                 if process_score >= 75
-                else "Method steps and limitation notes are still too thin to defend the inquiry process."
+                else "활동의 한계점이나 배운 점에 대한 성찰이 부족합니다. 과정 중심의 서술을 보강하세요."
             ),
-            evidence_hint="Method steps, limit notes, and reflections are the key signals.",
+            evidence_hint="'성찰', '느낀 점', '한계점' 또는 방법론적 고민이 담긴 구문을 확인하세요.",
         ),
         _score_axis(
             key="relational_continuity",
             score=continuity_score,
             rationale=(
-                "The current record shows a visible follow-up path or comparison thread."
+                "이전 활동과의 연결성이나 후속 탐구로 이어지는 흐름이 잘 보입니다."
                 if continuity_score >= 75
-                else "The record still needs a clearer next-step chain instead of isolated activity fragments."
+                else "단발성 활동으로 보일 수 있습니다. 활동 간의 인과관계나 심화 질문을 통한 연결이 필요합니다."
             ),
-            evidence_hint="Comparison, follow-up questions, or iteration traces make this axis stronger.",
+            evidence_hint="'후속', '비교', '확장' 등 활동의 흐름을 보여주는 표현이 있는지 보세요.",
         ),
         _score_axis(
             key="cluster_depth",
             score=depth_score,
             rationale=(
-                "The record already contains one or more major-linked deepening moves, not just broad topic mentions."
+                "전공과 연계된 깊이 있는 질문을 던지고 이를 학술적으로 파고든 흔적이 명확합니다."
                 if depth_score >= 75
-                else "The next step should deepen one major-linked question with clearer conceptual depth."
+                else "전공 관련 지식의 수준이 기초적인 단계에 머물러 있습니다. 더 좁고 깊은 탐구가 필요합니다."
             ),
-            evidence_hint="Show one deeper major-linked hypothesis, method, or comparison thread.",
+            evidence_hint="전공 핵심 개념(Major-Specific)이 얼마나 정교하게 사용되었는지 확인하세요.",
         ),
         _score_axis(
             key="cluster_suitability",
             score=alignment_score,
-            rationale=alignment_rationale,
-            evidence_hint="Keep the major link explicit but grounded in what the student really did.",
+            rationale=(
+                "희망 전공 및 대학의 인재상과 부합하는 탐구 방향성이 잘 정립되어 있습니다."
+                if alignment_score >= 75
+                else "희망 전공과의 연결 고리가 다소 작위적이거나 약합니다. 전공 역량을 더 자연스럽게 드러내야 합니다."
+            ),
+            evidence_hint="목표 대학/전공 키워드(SNU, 특정 학과명 등)와 활동의 정합성을 확인하세요.",
         ),
     ]
 
 
 def _strengths_from_axes(gap_axes: list[GapAxis]) -> list[str]:
     strengths = [axis.rationale for axis in gap_axes if axis.severity == "strong"]
-    return strengths or ["The record has a workable starting point, but it still needs a clearer evidence trail."]
+    return strengths or ["활용 가능한 기초 활동 기록이 존재하지만, 근거를 보강하고 탐구의 흐름을 더 명확히 할 필요가 있습니다."]
 
 
 def _gaps_from_axes(gap_axes: list[GapAxis]) -> list[str]:
     gaps = [axis.rationale for axis in gap_axes if axis.severity != "strong"]
-    return gaps or ["Turn the strongest topic into a deeper follow-up activity with clearer evidence and reflection."]
+    return gaps or ["가장 강점이 있는 주제를 선택하여 구체적인 증거와 성찰이 담긴 후속 활동으로 심화시키세요."]
 
 
 def _detailed_gaps_from_axes(gap_axes: list[GapAxis]) -> list[DiagnosisGap]:
@@ -500,44 +510,44 @@ def _page_count_options_for_complexity(complexity: DirectionComplexity) -> list[
         return [
             PageCountOption(
                 id="compact_5",
-                label="5 pages",
+                label="5페이지 구성",
                 page_count=5,
-                rationale="The minimum diagnosis export length keeps claim, evidence, and reflection auditable.",
+                rationale="최소 필수 요소를 중심으로 주장의 핵심과 근거를 간결하게 정리합니다.",
             ),
             PageCountOption(
                 id="focused_6",
-                label="6 pages",
+                label="6페이지 구성",
                 page_count=6,
-                rationale="Adds one extra page for clearer evidence and next-step framing.",
+                rationale="핵심 탐구 기록에 한 페이지를 추가하여 증거의 구체성을 높입니다.",
             ),
         ]
     if complexity == "deeper":
         return [
             PageCountOption(
                 id="full_6",
-                label="6 pages",
+                label="6페이지 구성",
                 page_count=6,
-                rationale="Fits a deeper method-analysis-reflection arc with room for limitations.",
+                rationale="심화 탐구의 방법론과 분석, 성찰 과정을 충분히 담아낼 수 있는 표준 구성입니다.",
             ),
             PageCountOption(
                 id="extended_7",
-                label="7 pages",
+                label="7페이지 구성",
                 page_count=7,
-                rationale="Useful when comparison or timeline detail needs dedicated sections.",
+                rationale="비교 분석이나 시계열적인 변화 등 복잡한 탐구 맥락을 상세히 기술할 때 적합합니다.",
             ),
         ]
     return [
         PageCountOption(
             id="balanced_5",
-            label="5 pages",
+            label="5페이지 구성",
             page_count=5,
-            rationale="Balanced baseline for question, evidence, method, and reflection.",
+            rationale="질문, 근거, 방법론, 성찰이 균형 있게 담긴 표준 분석 리포트 형식입니다.",
         ),
         PageCountOption(
             id="balanced_6",
-            label="6 pages",
+            label="6페이지 구성",
             page_count=6,
-            rationale="Adds one section for comparison, limitation, or next-step depth.",
+            rationale="심화된 비교 분석이나 한계점 분석을 위한 추가 섹션을 포함합니다.",
         ),
     ]
 
@@ -554,9 +564,9 @@ def _normalize_direction_page_count_options(direction: RecommendedDirection) -> 
         normalized.append(
             PageCountOption(
                 id=option.id or f"{direction.id}_{option.page_count}",
-                label=option.label or f"{option.page_count} pages",
+                label=option.label or f"{option.page_count}페이지 구성",
                 page_count=option.page_count,
-                rationale=option.rationale or "Diagnosis exports require at least five pages.",
+                rationale=option.rationale or "진단 리포트는 최소 5페이지 이상의 신뢰도 높은 구성을 권장합니다.",
             )
         )
 
@@ -607,36 +617,37 @@ def _normalize_guided_choice_constraints(result: DiagnosisResult) -> None:
 def _format_recommendations_for_axis(axis_key: GapAxisKey, complexity: DirectionComplexity) -> list[FormatRecommendation]:
     recommendations: dict[GapAxisKey, list[FormatRecommendation]] = {
         "universal_rigor": [
-            FormatRecommendation(format="pdf", label="PDF report", rationale="Best for concept-first explanation and clean section flow.", recommended=True),
-            FormatRecommendation(format="hwpx", label="HWPX submission", rationale="Works well when the output needs to stay school-friendly."),
-            FormatRecommendation(format="pptx", label="Presentation deck", rationale="Use only if the concept can be shown with very short slides.", caution="Slides can oversimplify nuanced explanations."),
+            FormatRecommendation(format="pdf", label="PDF 리포트", rationale="원리 중심의 설명과 논리적 섹션 구성에 가장 적합합니다.", recommended=True),
+            FormatRecommendation(format="hwpx", label="HWPX 제출용", rationale="학교 제출 양식에 맞춘 보수적인 구성에 유리합니다."),
+            FormatRecommendation(format="pptx", label="발표용 덱", rationale="핵심 원리를 시각적으로 빠르게 전달해야 할 때 활용합니다.", caution="복잡한 개념이 지나치게 단순화될 위험이 있습니다."),
         ],
         "universal_specificity": [
-            FormatRecommendation(format="pdf", label="PDF report", rationale="Best for fitting evidence, method, and reflection in one place.", recommended=True),
-            FormatRecommendation(format="hwpx", label="HWPX submission", rationale="Useful when the teacher-facing export must stay conservative."),
-            FormatRecommendation(format="pptx", label="Presentation deck", rationale="Use if the evidence can be shown in a few focused visuals.", caution="Dense evidence can feel too thin on slides."),
+            FormatRecommendation(format="pdf", label="PDF 리포트", rationale="풍부한 증거 자료와 수치, 출처를 한눈에 정리하기 좋습니다.", recommended=True),
+            FormatRecommendation(format="hwpx", label="HWPX 제출용", rationale="선생님께 제출할 근거 중심의 보고서 형식으로 적합합니다."),
+            FormatRecommendation(format="pptx", label="발표용 덱", rationale="핵심 데이터 시각화가 필요한 경우에 유용합니다.", caution="방대한 근거가 슬라이드에 다 담기지 않을 수 있습니다."),
         ],
         "relational_narrative": [
-            FormatRecommendation(format="pdf", label="PDF report", rationale="Best for method steps, limits, and reflection paragraphs.", recommended=True),
-            FormatRecommendation(format="hwpx", label="HWPX submission", rationale="Safe when the final format should resemble a school document."),
-            FormatRecommendation(format="pptx", label="Presentation deck", rationale="Works only if the process can be broken into very clear steps."),
+            FormatRecommendation(format="pdf", label="PDF 리포트", rationale="활동의 과정, 한계점, 성찰을 서술형으로 담기에 최적입니다.", recommended=True),
+            FormatRecommendation(format="hwpx", label="HWPX 제출용", rationale="생활기록부 서술 문체와 유사한 정형화된 보고서에 좋습니다."),
+            FormatRecommendation(format="pptx", label="발표용 덱", rationale="과정 중심의 스토리를 명확한 단계로 보여주고 싶을 때 사용합니다."),
         ],
         "relational_continuity": [
-            FormatRecommendation(format="pptx", label="Presentation deck", rationale="Good for showing progression, comparison, or a step-by-step story.", recommended=True),
-            FormatRecommendation(format="pdf", label="PDF report", rationale="Good when the continuity needs more paragraph-based explanation."),
-            FormatRecommendation(format="hwpx", label="HWPX submission", rationale="Safe for school submission, but keep the timeline concise."),
+            FormatRecommendation(format="pptx", label="발표용 덱", rationale="탐구의 발전 단계나 전후 비교를 시각적인 흐름으로 보여주기 좋습니다.", recommended=True),
+            FormatRecommendation(format="pdf", label="PDF 리포트", rationale="연속적인 탐구 맥락을 텍스트로 상세히 설명해야 할 때 사용합니다."),
+            FormatRecommendation(format="hwpx", label="HWPX 제출용", rationale="학교의 연속 탐구 과제 제출 양식으로 활용 가능합니다."),
         ],
         "cluster_depth": [
-            FormatRecommendation(format="pdf", label="PDF report", rationale="Best for a deeper major-linked argument with method and limits.", recommended=True),
-            FormatRecommendation(format="pptx", label="Presentation deck", rationale="Use when one deep question can be defended in a concise progression."),
-            FormatRecommendation(format="hwpx", label="HWPX submission", rationale="Acceptable for school workflows, but keep depth claims conservative."),
+            FormatRecommendation(format="pdf", label="PDF 리포트", rationale="전공 심화 탐구의 논리적 깊이와 전문성을 보여주기에 가장 좋습니다.", recommended=True),
+            FormatRecommendation(format="pptx", label="발표용 덱", rationale="하나의 깊은 질문에 대한 탐구 과정을 시각적으로 증명할 때 사용합니다."),
+            FormatRecommendation(format="hwpx", label="HWPX 제출용", rationale="전공 관련 과목의 심화 수행평가 보고서 양식으로 적합합니다."),
         ],
         "cluster_suitability": [
-            FormatRecommendation(format="hwpx", label="HWPX submission", rationale="Best for a conservative, record-friendly articulation of major fit.", recommended=True),
-            FormatRecommendation(format="pdf", label="PDF report", rationale="Good when the alignment needs slightly more explanation."),
-            FormatRecommendation(format="pptx", label="Presentation deck", rationale="Use when the major link is easier to show than to narrate."),
+            FormatRecommendation(format="hwpx", label="HWPX 제출용", rationale="진로 희망과 연계된 활동을 정제된 학교 양식으로 담기에 가장 적합합니다.", recommended=True),
+            FormatRecommendation(format="pdf", label="PDF 리포트", rationale="전공 적합성 논거를 조금 더 상세히 설명해야 할 때 유리합니다."),
+            FormatRecommendation(format="pptx", label="발표용 덱", rationale="전공에 대한 관심도를 시각적 단서로 효과적으로 노출할 수 있습니다."),
         ],
     }
+
     selected = [item.model_copy() for item in recommendations[axis_key]]
     if complexity == "deeper":
         for item in selected:
@@ -685,7 +696,7 @@ def _template_candidates_for_axis(
                 preview_sections=list(template.preview.preview_sections),
                 thumbnail_hint=template.preview.thumbnail_hint,
             ),
-            why_it_fits=f"Recommended because it fits the {AXIS_LABELS[axis_key].lower()} repair focus.",
+            why_it_fits=f"이 주제는 '{AXIS_LABELS[axis_key]}' 측면을 보완하는 데 가장 적합한 레이아웃을 제공합니다.",
             recommended=index == 0,
         )
         for index, template in enumerate(ranked_templates)
@@ -700,28 +711,28 @@ def _topic_candidates_for_axis(
 ) -> list[TopicCandidate]:
     topics: dict[GapAxisKey, list[tuple[str, str, str]]] = {
         "universal_rigor": [
-            ("core_principle_reset", f"{major_label} core principle behind the current activity", "Reframe the activity around one principle, not just the applied result."),
-            ("why_this_works", f"Why the observed result happens in {project_title or major_label}", "Turn a practical activity into a principle-driven explanation."),
+            ("core_principle_reset", f"{major_label} 관련 핵심 원리 탐구", "단순 적용을 넘어 현상의 기저에 있는 원리에 집중하는 재구성"),
+            ("why_this_works", f"{project_title or major_label} 내 메커니즘 분석", "실용적 활동을 원리 중심의 학술적 분석으로 전환"),
         ],
         "universal_specificity": [
-            ("measure_more_clearly", f"Add one clearer evidence set to {project_title or 'the current topic'}", "Keep the topic but strengthen it with a more explicit dataset or observation."),
-            ("evidence_matrix", f"Evidence matrix for {major_label} inquiry", "Organize what is already observed and what still needs to be collected."),
+            ("measure_more_clearly", f"{project_title or '현재 주제'}의 객관적 데이터 보강", "기존 주제를 유지하되 더 명확한 측정치나 관찰 기록을 추가"),
+            ("evidence_matrix", f"{major_label} 탐구를 위한 증거 매트릭스", "이미 관찰된 사실과 추가 확보가 필요한 데이터를 체계적으로 정리"),
         ],
         "relational_narrative": [
-            ("method_limit_map", f"Method and limitation map for {project_title or 'the inquiry'}", "Explain exactly how the activity was done and what its limits were."),
-            ("reflection_upgrade", f"Reflection-first rewrite for {major_label}", "Center the draft on what changed in the student's thinking and why."),
+            ("method_limit_map", f"{project_title or '탐구'}의 방법론 및 한계 분석", "탐구가 수행된 구체적 방법과 한계점을 명확히 기술하여 신뢰도 확보"),
+            ("reflection_upgrade", f"{major_label} 성찰 중심의 기록 재작성", "학생의 생각 변화와 배운 점을 중심으로 서술 구조를 개편"),
         ],
         "relational_continuity": [
-            ("followup_comparison", f"One follow-up comparison extending {project_title or 'the current record'}", "Build a visible second step so the inquiry no longer feels isolated."),
-            ("semester_thread", f"Semester progression question for {major_label}", "Create a narrative link from the first activity to the next evidence move."),
+            ("followup_comparison", f"{project_title or '현재 기록'}을 확장하는 후속 비교 분석", "단발성 활동에서 벗어나 두 번째 단계의 질문을 던져 연속성 확보"),
+            ("semester_thread", f"{major_label} 관련 학기별 탐구 로드맵", "첫 활동에서 다음 증거 확보로 이어지는 서사적 연결 고리 생성"),
         ],
         "cluster_depth": [
-            ("major_depth_probe", f"One deeper {major_label} question grounded in current evidence", "Move from broad relevance to one defensible major-depth probe."),
-            ("major_method_upgrade", f"Method deepening for {major_label} pathway", "Keep the current topic but deepen the method or comparison around major-specific terms."),
+            ("major_depth_probe", f"{major_label} 심화 질문에 대한 실증적 탐구", "넓은 주제에서 벗어나 전공 핵심 질문 하나에 집중하는 탐구"),
+            ("major_method_upgrade", f"{major_label} 경로를 위한 방법론 심화", "현재 주제를 유지하면서 전공 특화 키워드를 활용한 방법론적 고도화"),
         ],
         "cluster_suitability": [
-            ("major_link_frame", f"Grounded connection between current subject work and {major_label}", "Make the major link clearer without pretending the record is already specialized."),
-            ("major_question_shift", f"{major_label} question shift based on the current record", "Keep the current evidence but change the inquiry question so it aligns better."),
+            ("major_link_frame", f"현재 활동과 {major_label}의 접점 구체화", "전문적이고 억지스럽지 않은 방식으로 전공과의 연결 고리를 명징하게 제시"),
+            ("major_question_shift", f"기존 근거를 활용한 {major_label} 중심 질문 전환", "확보된 증거는 유지하되 탐구 질문을 전공 방향으로 틀어서 정합성 강화"),
         ],
     }
     return [
@@ -731,8 +742,8 @@ def _topic_candidates_for_axis(
             summary=summary,
             why_it_fits=summary,
             evidence_hooks=[
-                "Reuse one grounded detail from the uploaded record.",
-                "Add one comparison, observation, or reflection the student can actually defend.",
+                "학생부에 이미 기록된 구체적인 디테일 한 가지를 재사용하세요.",
+                "학생이 실제로 방어 가능한 수준의 비교, 관찰 또는 성찰을 한 가지 추가하세요.",
             ],
         )
         for topic_id, title, summary in topics[axis_key]
@@ -742,12 +753,12 @@ def _topic_candidates_for_axis(
 def _direction_from_axis(*, axis: GapAxis, major_label: str, project_title: str) -> RecommendedDirection:
     complexity: DirectionComplexity = "deeper" if axis.severity == "weak" else "lighter" if axis.key == "cluster_suitability" else "balanced"
     copy: dict[GapAxisKey, tuple[str, str]] = {
-        "universal_rigor": ("Concept-driven reset", "Move the next output away from pure application and toward core principles or mechanisms."),
-        "universal_specificity": ("Evidence densification sprint", "Keep the topic narrow and add clearer observations, data, or citations before polishing claims."),
-        "relational_narrative": ("Method-and-reflection clarification", "Use the next output to explain how the work happened and what its limits were."),
-        "relational_continuity": ("Follow-up continuity path", "Build a second-step question so the record shows progression instead of one isolated activity."),
-        "cluster_depth": ("Major-depth deepening", "Push one major-linked thread deeper with a tighter question and explicit method."),
-        "cluster_suitability": ("Major-alignment reframing", "Retune the topic so it sounds more like a believable bridge to the target direction."),
+        "universal_rigor": ("원리 중심 재구성", "단순 적용에서 벗어나 핵심 기저 원리와 메커니즘을 탐구하는 방향으로 전환합니다."),
+        "universal_specificity": ("증거 구체화 스프린트", "주제를 좁히고 구체적인 데이터, 관찰 기록, 인용 근거를 보강하여 주장의 밀도를 높입니다."),
+        "relational_narrative": ("방법 및 성찰 강화", "활동 결과보다 과정의 구체적 방법론과 그 과정에서의 성찰을 정밀하게 기술합니다."),
+        "relational_continuity": ("후속 탐구 연결", "단절된 활동들을 하나의 흐름으로 묶고, 후속 질문을 통해 탐구의 연속성을 보여줍니다."),
+        "cluster_depth": ("전공 심화 탐구", "목표 전공과 관련된 좁고 깊은 질문을 설정하고 전문적인 방법론을 적용해 깊이를 만듭니다."),
+        "cluster_suitability": ("전공 정합성 최적화", "기존 활동들을 목표 전공의 인재상이나 핵심 역량과 더 자연스럽게 연결되도록 재정렬합니다."),
     }
     label, summary = copy[axis.key]
     format_recommendations = _format_recommendations_for_axis(axis.key, complexity)
@@ -812,8 +823,8 @@ def _recommended_default_action_from_directions(
         export_format=format_choice.format,
         template_id=template_choice.id,
         rationale=(
-            f"Start with {direction.label.lower()} because it addresses the most immediate weak axis "
-            f"and stays finishable with a {page_count.label.lower()} {format_choice.format.upper()} output."
+            f"가장 시급한 보완이 필요한 '{direction.label}' 축을 해결하기 위해 이 방향을 추천합니다. "
+            f"{page_count.page_count}페이지 분량의 {format_choice.format.upper()} 리포트로 바로 시작할 수 있습니다."
         ),
     )
 
@@ -828,24 +839,23 @@ def _diagnosis_summary(
 ) -> DiagnosisSummary:
     weak_axes = [axis.label for axis in gap_axes if axis.severity != "strong"]
     strong_axes = [axis.label for axis in gap_axes if axis.severity == "strong"]
-    extra_targets = f" / Other interest universities: {', '.join(interest_universities)}" if interest_universities else ""
+    extra_targets = f" / 관심 대학교: {', '.join(interest_universities)}" if interest_universities else ""
     return DiagnosisSummary(
         overview=(
-            "The current record is strongest where "
-            f"{', '.join(strong_axes[:2]).lower() if strong_axes else 'there is at least one grounded starting point'}, "
-            "and it needs the next move to stay focused on evidence rather than polish."
+            "현재 학생부 기록은 "
+            f"{', '.join(strong_axes[:2]) if strong_axes else '기초적인 활동 근거'} 면에서 가장 강점이 있으며, "
+            "단순한 결과 나열보다는 구체적인 증거와 원리 중심의 서술로 전환이 필요한 단계입니다."
         ),
         target_context=(
-            f"Target university: {target_university or 'Not set'} / "
-            f"Target major: {target_major or 'Not set'} / "
-            f"Career direction: {career_direction or 'Not set'}"
+            f"목표 대학교: {target_university or '설정 안 됨'} / "
+            f"목표 전공: {target_major or '설정 안 됨'} / "
+            f"진로 방향: {career_direction or '설정 안 됨'}"
             f"{extra_targets}"
         ),
         reasoning=(
-            "The guided directions below were ranked around "
-            f"{', '.join(weak_axes[:3]).lower() if weak_axes else 'the next grounded improvement step'}."
+            f"이후의 가이드는 주로 {', '.join(weak_axes[:3]) if weak_axes else '근거 기반의 심화 단계'}를 보강하는 방향으로 구성되었습니다."
         ),
-        authenticity_note="Use the student record as the base truth. The next draft should deepen evidence, not invent accomplishments.",
+        authenticity_note="학생부 원본의 사실만을 근간으로 하세요. 다음 리포트는 없는 성취를 꾸며내는 것이 아니라, 이미 있는 근거를 깊게 파고드는 작업이어야 합니다.",
     )
 
 
@@ -865,11 +875,11 @@ def _build_guided_diagnosis(
     if interest_universities:
         targets.extend(interest_universities)
     
-    target_context_label = " and ".join(targets[:2]) + (f" and {len(targets)-2} more" if len(targets) > 2 else "")
+    target_context_label = " 및 ".join(targets[:2]) + (f" 외 {len(targets)-2}개" if len(targets) > 2 else "")
     if not target_context_label:
-        target_context_label = target_major or "the selected major"
+        target_context_label = target_major or "희망 전공"
 
-    major_label = target_major or "the selected major"
+    major_label = target_major or "희망 전공"
     gap_axes = _infer_gap_axes(
         full_text=full_text,
         target_major=target_major,
@@ -881,16 +891,16 @@ def _build_guided_diagnosis(
     risk_level = _risk_level_from_axes(gap_axes)
     result = DiagnosisResult(
         headline=(
-            f"For {target_context_label}, the record is {'grounded enough to move carefully' if risk_level == 'safe' else 'still missing a few defendable pieces'}; "
-            "the next action should tighten evidence and direction rather than increase polish."
+            f"{target_context_label} 입시 관점에서, 현재 기록은 {'조심스럽게 심화를 진행할 수 있는 기반이 마련되어 있습니다' if risk_level == 'safe' else '방어 가능한 근거가 일부 부족한 상태입니다'}; "
+            "다음 활동은 양적인 확장보다 증거의 밀도와 방향성을 정교화하는 데 집중해야 합니다."
         ),
         strengths=_strengths_from_axes(gap_axes),
         gaps=_gaps_from_axes(gap_axes),
         detailed_gaps=_detailed_gaps_from_axes(gap_axes),
         recommended_focus=(
-            f"For {target_context_label}, the safest next step is to choose one direction that strengthens "
-            f"{next((axis.label for axis in gap_axes if axis.severity != 'strong'), 'the current evidence base').lower()} "
-            "without making broader claims than the record can support."
+            f"{target_context_label} 합격을 목표로 할 때, 현재 가장 필요한 단계는 "
+            f"{next((axis.label for axis in gap_axes if axis.severity != 'strong'), '기존 근거 기반의 심화')} 측면을 강화하는 것입니다. "
+            "포장된 수식어보다 실제 수행 가능한 활동에 집중하세요."
         ),
         action_plan=[DiagnosisQuest(title=direction.label, description=direction.summary, priority="high" if index == 0 else "medium") for index, direction in enumerate(directions)],
         risk_level=risk_level,
@@ -1000,10 +1010,10 @@ async def evaluate_student_record(
     scope_key: str = "global",
     evidence_keys: list[str] | None = None,
     bypass_cache: bool = False,
+    raise_on_llm_failure: bool = False,
 ) -> DiagnosisResult:
     from unifoli_api.core.config import get_settings
 
-    system_instruction = _build_diagnosis_system_instruction()
     extra_targets = ""
     if interest_universities:
         targets_str = ", ".join(interest_universities)
@@ -1015,7 +1025,13 @@ async def evaluate_student_record(
         f"Career Direction: {career_direction or 'Not set'}"
         f"{extra_targets}"
     )
-    prompt = _build_diagnosis_prompt(target_context=target_context, user_major=user_major, masked_text=masked_text)
+
+    system_instruction = _build_diagnosis_system_instruction(
+        target_context=target_context,
+        user_major=user_major,
+        masked_text=masked_text,
+    )
+    prompt = _build_diagnosis_prompt()
 
     settings = get_settings()
     llm = get_llm_client()
@@ -1039,6 +1055,10 @@ async def evaluate_student_record(
         },
     )
 
+    # Retry logic for robustness
+    max_retries = 2
+    last_exc = None
+
     try:
         from unifoli_api.core.database import SessionLocal
 
@@ -1048,7 +1068,7 @@ async def evaluate_student_record(
             cached_result = DiagnosisResult.model_validate_json(cached)
             return _hydrate_guided_fields(
                 result=cached_result,
-                project_title=project_title or "Student record",
+                project_title=project_title or "학생 기록부",
                 target_major=target_major or user_major,
                 target_university=target_university,
                 interest_universities=interest_universities,
@@ -1056,27 +1076,43 @@ async def evaluate_student_record(
                 full_text=masked_text,
             )
 
-        result = await llm.generate_json(
-            prompt=prompt,
-            response_model=DiagnosisResult,
-            system_instruction=system_instruction,
-            temperature=0.2,
-        )
-        result = _hydrate_guided_fields(
-            result=result,
-            project_title=project_title or "Student record",
-            target_major=target_major or user_major,
-            target_university=target_university,
-            interest_universities=interest_universities,
-            career_direction=career_direction,
-            full_text=masked_text,
-        )
-        with SessionLocal() as cache_db:
-            store_cached_response(cache_db, cache_request, response_payload=result.model_dump_json())
-        return result
+        for attempt in range(max_retries + 1):
+            try:
+                result = await llm.generate_json(
+                    prompt=prompt,
+                    response_model=DiagnosisResult,
+                    system_instruction=system_instruction,
+                    temperature=0.2,
+                )
+                result = _hydrate_guided_fields(
+                    result=result,
+                    project_title=project_title or "학생 기록부",
+                    target_major=target_major or user_major,
+                    target_university=target_university,
+                    interest_universities=interest_universities,
+                    career_direction=career_direction,
+                    full_text=masked_text,
+                )
+                with SessionLocal() as cache_db:
+                    store_cached_response(cache_db, cache_request, response_payload=result.model_dump_json())
+                return result
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt < max_retries:
+                    await asyncio.sleep(1 * (attempt + 1))
+                    continue
+                break
+        
+        if last_exc: raise last_exc
+
     except Exception as exc:  # noqa: BLE001
+        if raise_on_llm_failure:
+            raise DiagnosisGenerationError(
+                reason_code=_classify_diagnosis_generation_failure(exc),
+                detail=str(exc),
+            ) from exc
         fallback = build_grounded_diagnosis_result(
-            project_title=project_title or "Student record",
+            project_title=project_title or "학생 기록부",
             target_major=target_major or user_major,
             target_university=target_university,
             interest_universities=interest_universities,
@@ -1084,8 +1120,38 @@ async def evaluate_student_record(
             document_count=1,
             full_text=masked_text,
         )
-        fallback.headline = f"{fallback.headline} AI diagnosis fallback applied after: {exc}"
+        fallback.headline = f"{fallback.headline} AI 진단 지연으로 인한 자동 분석 결과가 적용되었습니다."
         return fallback
+
+
+def _classify_diagnosis_generation_failure(exc: Exception) -> str:
+    if isinstance(exc, DiagnosisGenerationError):
+        return exc.reason_code
+
+    if isinstance(exc, LLMRequestError):
+        reason = str(getattr(exc, "limited_reason", "") or "").strip().lower()
+        if "timeout" in reason:
+            return "provider_timeout"
+        if "unreachable" in reason or "connection" in reason:
+            return "connection_issue"
+        if "model_not_found" in reason:
+            return "model_not_found"
+        if "invalid_json" in reason:
+            return "invalid_json"
+        if "invalid_request" in reason:
+            return "invalid_request"
+        if "provider_error" in reason:
+            return "provider_error"
+        return "provider_error"
+
+    name = type(exc).__name__.strip().lower()
+    if "timeout" in name:
+        return "provider_timeout"
+    if "connection" in name or "connect" in name or "network" in name:
+        return "connection_issue"
+    if "json" in name or "decode" in name or "validation" in name:
+        return "invalid_json"
+    return "provider_error"
 
 
 def detect_policy_flags(text: str) -> list[PolicyFlagMatch]:
@@ -1210,7 +1276,7 @@ def build_diagnosis_citations(
                 document_id=chunk.document_id,
                 document_chunk_id=chunk.id,
                 provenance_type=EvidenceProvenance.STUDENT_RECORD.value,
-                source_label=source_label or f"Document chunk {chunk.chunk_index + 1}",
+                source_label=source_label or f"문서 조각 {chunk.chunk_index + 1}",
                 page_number=chunk.page_number,
                 excerpt=_trim_excerpt(chunk.content_text),
                 relevance_score=round(max(score, 0.1), 3),
@@ -1272,45 +1338,79 @@ def create_response_trace(
 
 
 def _humanize_section_key(key: str) -> str:
-    return key.replace("_", " ").title()
+    mapping = {
+        "title": "주제명",
+        "context": "인식 및 동기",
+        "analysis": "탐구 분석",
+        "reflection": "성찰 및 학습",
+        "next_steps": "향후 보완 계획",
+        "research_question": "탐구 질문",
+        "evidence_review": "근거 분석",
+        "method": "탐구 방법",
+        "limitations": "한계점 인식",
+        "comparison_frame": "비교 분석 프레임",
+        "case_a": "사례 A 분석",
+        "case_b": "사례 B 분석",
+        "implications": "시사점",
+        "problem": "문제 인식",
+        "proposal": "대안 제시",
+        "expected_impact": "기대 효과",
+        "feasibility": "실현 가능성 점검",
+        "starting_point": "탐구의 시작",
+        "turning_points": "결정적 변화",
+        "growth": "성장 포인트",
+        "current_position": "현재의 위치",
+        "next_move": "다음 스텝",
+        "agenda": "리포트 개요",
+        "evidence": "핵심 근거",
+        "hook": "핵심 요약(Hook)",
+        "visual_evidence": "시각적 근거(도표)",
+        "interpretation": "결과 해석",
+        "takeaway": "핵심 결론",
+        "activity_scope": "활동 범위",
+        "what_i_did": "수행 내용",
+        "what_i_learned": "배운 점",
+        "record_note": "기록 요약",
+    }
+    return mapping.get(key, key.replace("_", " ").title())
 
 
 def _section_purpose(section_key: str, topic: TopicCandidate, direction: RecommendedDirection) -> str:
     purposes = {
-        "title": f"Frame the selected topic '{topic.title}' in one grounded line.",
-        "context": "Explain the context and why the topic matters now.",
-        "analysis": "Interpret what the existing record already supports.",
-        "reflection": "Show what the student learned, noticed, or would improve next.",
-        "next_steps": "Keep the next move truthful and finishable.",
-        "research_question": "State one narrow, answerable inquiry question.",
-        "evidence_review": "List the strongest evidence already present in the record.",
-        "method": "Describe how the student gathered or interpreted evidence.",
-        "limitations": "Name the limit of the current evidence without overstating.",
-        "comparison_frame": "Set up the two things that will be compared.",
-        "case_a": "Summarize the first side of the comparison.",
-        "case_b": "Summarize the second side of the comparison.",
-        "implications": "Explain what the comparison changes in the student's understanding.",
-        "problem": "State the problem or tension that the proposal addresses.",
-        "proposal": "State the realistic proposal or next action.",
-        "expected_impact": "Explain what improvement the proposal would create.",
-        "feasibility": "Keep the proposal tied to what the student could actually do.",
-        "starting_point": "Anchor the story in where the activity started.",
-        "turning_points": "Mark the key changes or discoveries along the way.",
-        "growth": "Explain what grew in the student's inquiry or understanding.",
-        "current_position": "Summarize where the current record stands today.",
-        "next_move": "Turn the story into one defensible next move.",
-        "agenda": "State the presentation flow in one sentence per slide cluster.",
-        "evidence": "Show only the strongest evidence the student can defend.",
-        "hook": "Start with one concise, evidence-backed hook.",
-        "visual_evidence": "Choose the one visual or table that matters most.",
-        "interpretation": "Explain what the evidence means without overselling it.",
-        "takeaway": "End with the one conclusion the record can support.",
-        "activity_scope": "Clarify what the student actually did and within what boundary.",
-        "what_i_did": "List the concrete actions already grounded in the record.",
-        "what_i_learned": "Turn the activity into a credible learning takeaway.",
-        "record_note": "Write the most submission-friendly summary note.",
+        "title": f"선택된 주제 '{topic.title}'를 학생부의 실제 근거와 연결하여 한 문장으로 제시합니다.",
+        "context": "추상적인 동기가 아닌, 학생부 내 구체적인 상황이나 의문점에서 탐구가 시작된 배경을 설명합니다.",
+        "analysis": "기존 학생부 기록이 이미 증명하고 있는 역량과 탐구의 수준을 객관적으로 분석합니다.",
+        "reflection": "활동을 통해 학생의 생각이나 관점이 어떻게 변화했는지, 새롭게 깨달은 점은 무엇인지 기술합니다.",
+        "next_steps": "허황된 계획이 아닌, 학생의 현재 수준에서 실제로 수행 가능한 논리적인 다음 단계를 제시합니다.",
+        "research_question": "답변 가능하고(Answerable), 구체적인(Specific) 하나의 탐구 질문을 설정합니다.",
+        "evidence_review": "학생부 내에서 이 탐구를 뒷받침하는 가장 강력한 증거 키워드들을 나열합니다.",
+        "method": "어떤 자료를 참고했는지, 실험이나 관찰을 어떻게 수행했는지 구체적인 방법론을 기술합니다.",
+        "limitations": "탐구의 부족했던 점이나 데이터의 한계를 솔직하게 인정하여 진실성을 확보합니다.",
+        "comparison_frame": "비교 분석을 위해 설정한 두 가지 대조군 또는 관점의 기준을 설명합니다.",
+        "case_a": "첫 번째 사례나 관점에서 도출된 핵심 데이터를 요약합니다.",
+        "case_b": "두 번째 사례나 관점에서 도출된 핵심 데이터를 요약합니다.",
+        "implications": "위의 비교를 통해 목표 전공(Major)과 관련된 어떤 새로운 통찰을 얻었는지 설명합니다.",
+        "problem": "기존 기록에서 보완이 필요한 지점이나 탐구가 필요한 논리적 공백을 명시합니다.",
+        "proposal": "학생이 실제로 수행하여 기록을 보강할 수 있는 현실적인 보완책을 제안합니다.",
+        "expected_impact": "이 보완책을 통해 학생부의 어떤 역량(전공 적합성 등)이 강화될지 기술합니다.",
+        "feasibility": "제안된 활동이 학교 환경이나 학생의 현재 역량 내에서 가능한지 확인합니다.",
+        "starting_point": "탐구의 시발점이 된 학생부 내의 특정 수업 활동이나 교사 코멘트를 인용합니다.",
+        "turning_points": "탐구 과정 중 어려움을 극복하거나 질문의 방향이 바뀐 결정적 순간을 기술합니다.",
+        "growth": "탐구 전후로 학생의 학술적 태도나 심화 지식이 어떻게 성장했는지 요약합니다.",
+        "current_position": "기존 학생부에서 이 주제와 관련된 현재까지의 성취 수준을 진단합니다.",
+        "next_move": "입시 관점에서 가장 높은 평가를 받을 수 있는 단 하나의 방어 가능한 후속 조치를 제시합니다.",
+        "agenda": "발표 리포트의 전체적인 흐름을 슬라이드별 핵심 문구로 요약합니다.",
+        "evidence": "학생이 직접 설명하거나 증명할 수 있는 가장 확실한 결과물 위주로 제시합니다.",
+        "hook": "청중(입학사정관 등)의 관심을 끌 수 있는, 근거에 기반한 강렬한 요약 문구를 제시합니다.",
+        "visual_evidence": "복잡한 데이터나 관계도를 한눈에 보여줄 수 있는 핵심 시각 자료 구성을 제안합니다.",
+        "interpretation": "수치나 팩트가 전공 입장에서 어떤 가치를 지니는지 과도한 수식 없이 해석합니다.",
+        "takeaway": "기록을 통해 최종적으로 증명하고자 하는 학생의 핵심 역량을 단문으로 결론짓습니다.",
+        "activity_scope": "학생이 실제로 관여한 영역과 탐구의 경계를 명확히 하여 신뢰도를 확보합니다.",
+        "what_i_did": "학생부에 기록되어 있거나 학생이 실제로 수행한 구체적 행위들을 리스트업합니다.",
+        "what_i_learned": "활동을 통해 내재화된 전공 관련 학술적 원리나 태도를 정리합니다.",
+        "record_note": "생활기록부의 '세부능력 및 특기사항' 등에 기재되기 가장 적합한 정제된 요약문을 작성합니다.",
     }
-    return purposes.get(section_key, f"Advance the {direction.label.lower()} path in a grounded way.")
+    return purposes.get(section_key, f"'{direction.label}' 방향성에 맞춰 학생부의 근거를 학술적으로 강화합니다.")
 
 
 def build_guided_outline_plan(
@@ -1326,16 +1426,16 @@ def build_guided_outline_plan(
 ) -> tuple[RecommendedDirection, TopicCandidate, GuidedDraftOutline]:
     direction = next((item for item in result.recommended_directions if item.id == direction_id), None)
     if direction is None:
-        raise ValueError("Selected direction is not available for this diagnosis.")
+        raise ValueError("해당 진단에서 선택한 방향(Direction)을 찾을 수 없습니다.")
     topic = next((item for item in direction.topic_candidates if item.id == topic_id), None)
     if topic is None:
-        raise ValueError("Selected topic is not available for this direction.")
+        raise ValueError("선택한 주제(Topic)가 해당 방향에 존재하지 않습니다.")
     if page_count not in {item.page_count for item in direction.page_count_options}:
-        raise ValueError("Selected page count is not available for this direction.")
+        raise ValueError("선택한 페이지 수 옵션이 유효하지 않습니다.")
     if page_count < 5:
-        raise ValueError("Diagnosis exports require at least 5 pages.")
+        raise ValueError("진단 리포트 생성에는 최소 5페이지가 필요합니다.")
     if export_format not in {item.format for item in direction.format_recommendations}:
-        raise ValueError("Selected export format is not available for this direction.")
+        raise ValueError("선택한 내보내기 형식이 해당 방향에서 지원되지 않습니다.")
 
     template = get_template(template_id, render_format=RenderFormat(export_format))
     section_limit = min(len(template.section_schema), max(5, page_count + 1))
@@ -1347,24 +1447,24 @@ def build_guided_outline_plan(
             title=_humanize_section_key(section_key),
             purpose=_section_purpose(section_key, topic, direction),
             evidence_plan=[*topic.evidence_hooks[:2], *citation_hooks][:3],
-            authenticity_guardrail="Do not add claims that are not already grounded in the student record or planned as future work.",
+            authenticity_guardrail="학생 학생부 기록에 아직 없거나 향후 수행 계획이 아닌 허위 주장은 절대 포함하지 마세요.",
         )
         for section_key in section_keys
     ]
     outline_markdown = "\n\n".join(
         [
             f"# {topic.title}",
-            f"## Summary\n{topic.summary}",
+            f"## 요약\n{topic.summary}",
             *[
                 "\n".join(
                     [
                         f"## {section.title}",
                         section.purpose,
                         "",
-                        "Evidence plan:",
+                        "근거 확보 계획:",
                         *[f"- {item}" for item in section.evidence_plan],
                         "",
-                        f"Authenticity guardrail: {section.authenticity_guardrail}",
+                        f"진실성 가이드라인: {section.authenticity_guardrail}",
                     ]
                 )
                 for section in sections
@@ -1427,23 +1527,6 @@ def _current_model_name() -> str:
     return "gemini-1.5-pro"
 
 
-def _guided_choice_contract_block() -> str:
-    return "\n".join(
-        [
-            "[Structured Response Contract]",
-            "- diagnosis_summary: overview, target_context, reasoning, authenticity_note",
-            "- gap_axes: use only universal_rigor, universal_specificity, relational_narrative, relational_continuity, cluster_depth, cluster_suitability",
-            "- recommended_directions: adaptive count from 2 to 5 based on actual diagnosis complexity",
-            "- topic_candidates: 2 to 4 realistic, evidence-aware options per direction",
-            "- page_count_options: every option must be between 5 and 20 pages",
-            "- format_recommendations: use only pdf, pptx, hwpx",
-            "- template_candidates: use only runtime-provided template ids",
-            "- recommended_default_action: pick one coherent default that references ids already present inside recommended_directions",
-            "- open-ended user input is optional and should not be treated as the primary interaction path",
-        ]
-    )
-
-
 def _template_catalog_prompt_block() -> str:
     lines = ["[Allowed Template Registry]"]
     for template in list_templates():
@@ -1458,23 +1541,25 @@ def _template_catalog_prompt_block() -> str:
     return "\n".join(lines)
 
 
-def _build_diagnosis_system_instruction() -> str:
-    return get_prompt_registry().compose_prompt("diagnosis.grounded-analysis")
-
-
-def _build_diagnosis_prompt(
+def _build_diagnosis_system_instruction(
     *,
     target_context: str,
     user_major: str,
     masked_text: str,
 ) -> str:
+    template_catalog = _template_catalog_prompt_block()
+    base_instruction = get_prompt_registry().compose_prompt("diagnosis.grounded-analysis")
+    
     return (
-        f"[Target Context]\n{target_context}\n\n"
-        f"[Primary Major Context]\n{user_major}\n\n"
-        "[Grounding Rules]\n"
-        "- Never invent strengths, activities, awards, or outcomes that are not explicitly supported by the masked student record.\n"
-        "- If the evidence is weak or missing, explicitly state the limitation and keep conclusions conservative.\n\n"
-        f"{_guided_choice_contract_block()}\n\n"
-        f"{_template_catalog_prompt_block()}\n\n"
-        f"[Masked Student Record]\n{masked_text}"
+        base_instruction.replace("{{target_context}}", target_context)
+        .replace("{{user_major}}", user_major)
+        .replace("{{template_catalog}}", template_catalog)
+        .replace("{{masked_text}}", masked_text)
+    )
+
+
+def _build_diagnosis_prompt() -> str:
+    return (
+        "제시된 생활기록부 전문과 입시 목표를 바탕으로 종합 진단을 수행하십시오. "
+        "반드시 부여된 Structured Response Contract를 엄격히 준수하여 JSON 형태로 출력하십시오."
     )

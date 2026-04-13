@@ -1,6 +1,9 @@
 import axios, { AxiosHeaders, type AxiosRequestConfig } from 'axios';
 import { auth } from './firebase';
-import { readAppAccessToken } from './appAccessToken';
+import { getAuthorizationHeader, type AuthorizationHeaderOptions } from './requestAuth';
+
+const viteEnv = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ??
+  {}) as Record<string, string | undefined>;
 
 function normalizeBaseUrl(value: string) {
   return value.replace(/\/+$/, '');
@@ -13,7 +16,7 @@ function isApiRequestUrl(requestUrl: string): boolean {
 let hasWarnedMissingApiUrl = false;
 
 export function resolveApiBaseUrl() {
-  const configured = import.meta.env.VITE_API_URL;
+  const configured = viteEnv.VITE_API_URL;
   if (configured && configured.trim()) {
     return normalizeBaseUrl(configured.trim());
   }
@@ -36,7 +39,7 @@ export function resolveApiBaseUrl() {
 }
 
 export function shouldUseSynchronousApiJobs() {
-  const explicit = import.meta.env.VITE_SYNC_API_JOBS;
+  const explicit = viteEnv.VITE_SYNC_API_JOBS;
   if (explicit === 'true') return true;
   if (explicit === 'false') return false;
 
@@ -54,6 +57,18 @@ const client = axios.create({
   baseURL: resolveApiBaseUrl(),
 });
 
+export async function applyAuthorizationHeader(
+  headers: AxiosHeaders,
+  options: AuthorizationHeaderOptions = {},
+): Promise<void> {
+  const { value } = await getAuthorizationHeader(options);
+  if (value) {
+    headers.set('Authorization', value);
+  } else {
+    headers.delete('Authorization');
+  }
+}
+
 client.interceptors.request.use(
   async (config) => {
     const headers = AxiosHeaders.from(config.headers);
@@ -61,16 +76,7 @@ client.interceptors.request.use(
       // Let the browser set multipart boundaries automatically.
       headers.delete('Content-Type');
     }
-
-    if (auth?.currentUser) {
-      const token = await auth.currentUser.getIdToken();
-      headers.set('Authorization', `Bearer ${token}`);
-    } else {
-      const appToken = readAppAccessToken();
-      if (appToken) {
-        headers.set('Authorization', `Bearer ${appToken}`);
-      }
-    }
+    await applyAuthorizationHeader(headers, { firebaseUser: auth?.currentUser });
     config.headers = headers;
     return config;
   },

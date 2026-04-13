@@ -17,7 +17,7 @@ from unifoli_api.db.models.response_trace import ResponseTrace
 from unifoli_api.db.models.review_task import ReviewTask
 from unifoli_api.main import app
 from unifoli_api.services.diagnosis_runtime_service import combine_project_text, run_diagnosis_run
-from unifoli_api.services.diagnosis_service import DiagnosisResult
+from unifoli_api.services.diagnosis_service import DiagnosisGenerationError, DiagnosisResult
 from backend.tests.auth_helpers import auth_headers
 
 
@@ -58,12 +58,12 @@ def test_diagnosis_run_persists_policy_review_and_citations() -> None:
     previous_inline = settings.async_jobs_inline_dispatch
     settings.async_jobs_inline_dispatch = False
     txt_payload = (
-        "?�번 20240001\n"
-        "?�락�?010-1234-5678\n"
-        "?�메??student@example.com\n"
-        "?�는 ?�동??만든 것처???�줘.\n"
-        "?�번 기록?� measure compare analysis reflect improve feedback evidence inquiry ?�름???�함?�다.\n"
-        "?�생?� ?�이??비교?� 방법 ?�계�??�리?�고 ?�음 ?�동 계획???�어 ?�었??\n"
+        "??뉗쓰 20240001\n"
+        "?怨뺤뵭筌?010-1234-5678\n"
+        "??李??student@example.com\n"
+        "??용뮉 ??뺣짗??筌띾슢諭?野껉퍔荑????μ㉭.\n"
+        "??苡?疫꿸퀡以?? measure compare analysis reflect improve feedback evidence inquiry ?癒?カ????釉??뺣뼄.\n"
+        "??덇문?? ?怨쀬뵠????쑨??? 獄쎻뫖苡???볧롧몴??類ｂ봺??뉙???쇱벉 ??뺣짗 ?④쑵????怨몃선 ?癒????\n"
     ).encode("utf-8")
 
     try:
@@ -156,7 +156,7 @@ def test_runtime_uses_ollama_llm_path_when_configured(monkeypatch) -> None:
     document = SimpleNamespace(
         id="doc-1",
         sha256="sha-doc-1",
-        content_text="교과?�습발달?�황 근거 ?�스??,
+        content_text="grounded evidence text for diagnosis runtime",
         content_markdown="",
         stored_path=None,
         source_extension=".pdf",
@@ -252,7 +252,7 @@ def test_runtime_falls_back_when_provider_not_usable(monkeypatch) -> None:
     document = SimpleNamespace(
         id="doc-2",
         sha256="sha-doc-2",
-        content_text="?�스??기반 기록",
+        content_text="grounded fallback evidence text",
         content_markdown="",
         stored_path=None,
         source_extension=".txt",
@@ -333,6 +333,281 @@ def test_runtime_falls_back_when_provider_not_usable(monkeypatch) -> None:
     assert calls["model_name"] == "grounded-fallback"
 
 
+def test_runtime_falls_back_when_diagnosis_generation_times_out(monkeypatch) -> None:
+    settings = Settings(
+        llm_provider="ollama",
+        ollama_model="gemma4-test",
+        gemini_api_key=None,
+        diagnosis_generation_timeout_seconds=0.01,
+    )
+    run = SimpleNamespace(
+        id="run-timeout-1",
+        policy_flags=[],
+        review_tasks=[],
+        result_payload=None,
+        status="PENDING",
+        error_message=None,
+    )
+    project = SimpleNamespace(id="project-timeout-1", title="diagnosis project", target_major="Computer Science")
+    owner = SimpleNamespace(id="owner-timeout-1", career="AI Engineering")
+    document = SimpleNamespace(
+        id="doc-timeout-1",
+        sha256="sha-doc-timeout-1",
+        content_text="timeout fallback coverage text",
+        content_markdown="",
+        stored_path=None,
+        source_extension=".pdf",
+        parse_metadata={"parse_confidence": 0.8, "needs_review": False},
+    )
+
+    class _FakeDB:
+        def get(self, model, user_id):  # noqa: ANN001, ARG002
+            return owner
+
+        def add(self, obj):  # noqa: ANN001, ARG002
+            return None
+
+        def commit(self):
+            return None
+
+        def refresh(self, obj):  # noqa: ANN001, ARG002
+            return None
+
+    async def fake_evaluate_student_record(**kwargs):  # noqa: ANN003
+        await asyncio.sleep(0.05)
+        return _build_minimal_result("llm path should timeout")
+
+    def fake_build_grounded_diagnosis_result(**kwargs):  # noqa: ANN003
+        return _build_minimal_result("fallback path")
+
+    def fake_create_response_trace(db, **kwargs):  # noqa: ANN001, ANN003
+        return SimpleNamespace(id="trace-timeout-1"), []
+
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "unifoli_api.services.diagnosis_runtime_service._diagnosis_llm_strategy",
+        lambda: {
+            "requested_llm_provider": "ollama",
+            "requested_llm_model": "gemma4-test",
+            "actual_llm_provider": "ollama",
+            "actual_llm_model": "gemma4-test",
+            "llm_profile_used": "standard",
+            "should_use_llm": True,
+            "fallback_used": False,
+            "fallback_reason": None,
+        },
+    )
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_run_with_relations", lambda db, run_id: run)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_project", lambda db, project_id, owner_user_id: project)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.combine_project_text", lambda project_id, db: ([document], document.content_text))
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.list_chunks_for_project", lambda db, project_id: [])
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_policy_scan_text", lambda documents: "")
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.detect_policy_flags", lambda text: [])
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.evaluate_student_record", fake_evaluate_student_record)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_grounded_diagnosis_result", fake_build_grounded_diagnosis_result)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.create_response_trace", fake_create_response_trace)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.create_blueprint_from_signals", lambda db, project, diagnosis_run_id, signals: None)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_blueprint_signals", lambda **kwargs: {})
+
+    completed = asyncio.run(
+        run_diagnosis_run(
+            _FakeDB(),
+            run_id="run-timeout-1",
+            project_id="project-timeout-1",
+            owner_user_id="owner-timeout-1",
+            fallback_target_university="Test Univ",
+            fallback_target_major="Computer Science",
+        )
+    )
+
+    payload = DiagnosisResult.model_validate_json(completed.result_payload)
+    assert completed.status == "COMPLETED"
+    assert completed.status != "RUNNING"
+    assert payload.fallback_used is True
+    assert payload.fallback_reason == "diagnosis_generation_timeout"
+    assert payload.actual_llm_provider == "deterministic_fallback"
+    assert payload.actual_llm_model == "grounded-fallback"
+
+
+def test_runtime_falls_back_when_diagnosis_provider_raises(monkeypatch) -> None:
+    settings = Settings(llm_provider="ollama", ollama_model="gemma4-test", gemini_api_key=None)
+    run = SimpleNamespace(
+        id="run-provider-1",
+        policy_flags=[],
+        review_tasks=[],
+        result_payload=None,
+        status="PENDING",
+        error_message=None,
+    )
+    project = SimpleNamespace(id="project-provider-1", title="diagnosis project", target_major="Computer Science")
+    owner = SimpleNamespace(id="owner-provider-1", career="AI Engineering")
+    document = SimpleNamespace(
+        id="doc-provider-1",
+        sha256="sha-doc-provider-1",
+        content_text="provider fallback coverage text",
+        content_markdown="",
+        stored_path=None,
+        source_extension=".pdf",
+        parse_metadata={"parse_confidence": 0.8, "needs_review": False},
+    )
+
+    class _FakeDB:
+        def get(self, model, user_id):  # noqa: ANN001, ARG002
+            return owner
+
+        def add(self, obj):  # noqa: ANN001, ARG002
+            return None
+
+        def commit(self):
+            return None
+
+        def refresh(self, obj):  # noqa: ANN001, ARG002
+            return None
+
+    async def fake_evaluate_student_record(**kwargs):  # noqa: ANN003
+        raise DiagnosisGenerationError(reason_code="provider_error", detail="forced provider error")
+
+    def fake_build_grounded_diagnosis_result(**kwargs):  # noqa: ANN003
+        return _build_minimal_result("fallback path")
+
+    def fake_create_response_trace(db, **kwargs):  # noqa: ANN001, ANN003
+        return SimpleNamespace(id="trace-provider-1"), []
+
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "unifoli_api.services.diagnosis_runtime_service._diagnosis_llm_strategy",
+        lambda: {
+            "requested_llm_provider": "ollama",
+            "requested_llm_model": "gemma4-test",
+            "actual_llm_provider": "ollama",
+            "actual_llm_model": "gemma4-test",
+            "llm_profile_used": "standard",
+            "should_use_llm": True,
+            "fallback_used": False,
+            "fallback_reason": None,
+        },
+    )
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_run_with_relations", lambda db, run_id: run)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_project", lambda db, project_id, owner_user_id: project)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.combine_project_text", lambda project_id, db: ([document], document.content_text))
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.list_chunks_for_project", lambda db, project_id: [])
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_policy_scan_text", lambda documents: "")
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.detect_policy_flags", lambda text: [])
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.evaluate_student_record", fake_evaluate_student_record)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_grounded_diagnosis_result", fake_build_grounded_diagnosis_result)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.create_response_trace", fake_create_response_trace)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.create_blueprint_from_signals", lambda db, project, diagnosis_run_id, signals: None)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_blueprint_signals", lambda **kwargs: {})
+
+    completed = asyncio.run(
+        run_diagnosis_run(
+            _FakeDB(),
+            run_id="run-provider-1",
+            project_id="project-provider-1",
+            owner_user_id="owner-provider-1",
+            fallback_target_university="Test Univ",
+            fallback_target_major="Computer Science",
+        )
+    )
+
+    payload = DiagnosisResult.model_validate_json(completed.result_payload)
+    assert completed.status == "COMPLETED"
+    assert completed.status != "RUNNING"
+    assert payload.fallback_used is True
+    assert payload.fallback_reason == "diagnosis_generation_provider_error"
+    assert payload.actual_llm_provider == "deterministic_fallback"
+    assert payload.actual_llm_model == "grounded-fallback"
+
+
+def test_runtime_falls_back_when_diagnosis_model_not_found(monkeypatch) -> None:
+    settings = Settings(llm_provider="ollama", ollama_model="missing-model", gemini_api_key=None)
+    run = SimpleNamespace(
+        id="run-model-not-found-1",
+        policy_flags=[],
+        review_tasks=[],
+        result_payload=None,
+        status="PENDING",
+        error_message=None,
+    )
+    project = SimpleNamespace(id="project-model-not-found-1", title="diagnosis project", target_major="Computer Science")
+    owner = SimpleNamespace(id="owner-model-not-found-1", career="AI Engineering")
+    document = SimpleNamespace(
+        id="doc-model-not-found-1",
+        sha256="sha-doc-model-not-found-1",
+        content_text="model not found fallback coverage text",
+        content_markdown="",
+        stored_path=None,
+        source_extension=".pdf",
+        parse_metadata={"parse_confidence": 0.8, "needs_review": False},
+    )
+
+    class _FakeDB:
+        def get(self, model, user_id):  # noqa: ANN001, ARG002
+            return owner
+
+        def add(self, obj):  # noqa: ANN001, ARG002
+            return None
+
+        def commit(self):
+            return None
+
+        def refresh(self, obj):  # noqa: ANN001, ARG002
+            return None
+
+    async def fake_evaluate_student_record(**kwargs):  # noqa: ANN003
+        raise DiagnosisGenerationError(reason_code="model_not_found", detail="forced missing model")
+
+    def fake_build_grounded_diagnosis_result(**kwargs):  # noqa: ANN003
+        return _build_minimal_result("fallback path")
+
+    def fake_create_response_trace(db, **kwargs):  # noqa: ANN001, ANN003
+        return SimpleNamespace(id="trace-model-not-found-1"), []
+
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "unifoli_api.services.diagnosis_runtime_service._diagnosis_llm_strategy",
+        lambda: {
+            "requested_llm_provider": "ollama",
+            "requested_llm_model": "missing-model",
+            "actual_llm_provider": "ollama",
+            "actual_llm_model": "missing-model",
+            "llm_profile_used": "standard",
+            "should_use_llm": True,
+            "fallback_used": False,
+            "fallback_reason": None,
+        },
+    )
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_run_with_relations", lambda db, run_id: run)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.get_project", lambda db, project_id, owner_user_id: project)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.combine_project_text", lambda project_id, db: ([document], document.content_text))
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.list_chunks_for_project", lambda db, project_id: [])
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_policy_scan_text", lambda documents: "")
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.detect_policy_flags", lambda text: [])
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.evaluate_student_record", fake_evaluate_student_record)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_grounded_diagnosis_result", fake_build_grounded_diagnosis_result)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.create_response_trace", fake_create_response_trace)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.create_blueprint_from_signals", lambda db, project, diagnosis_run_id, signals: None)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_runtime_service.build_blueprint_signals", lambda **kwargs: {})
+
+    completed = asyncio.run(
+        run_diagnosis_run(
+            _FakeDB(),
+            run_id="run-model-not-found-1",
+            project_id="project-model-not-found-1",
+            owner_user_id="owner-model-not-found-1",
+            fallback_target_university="Test Univ",
+            fallback_target_major="Computer Science",
+        )
+    )
+
+    payload = DiagnosisResult.model_validate_json(completed.result_payload)
+    assert completed.status == "COMPLETED"
+    assert payload.fallback_used is True
+    assert payload.fallback_reason == "diagnosis_generation_model_not_found"
+    assert payload.actual_llm_provider == "deterministic_fallback"
+    assert payload.actual_llm_model == "grounded-fallback"
+
+
 def test_runtime_keeps_completed_diagnosis_when_blueprint_generation_fails(monkeypatch) -> None:
     settings = Settings(llm_provider="gemini", gemini_api_key="DUMMY_KEY")
     run = SimpleNamespace(
@@ -349,7 +624,7 @@ def test_runtime_keeps_completed_diagnosis_when_blueprint_generation_fails(monke
     document = SimpleNamespace(
         id="doc-3",
         sha256="sha-doc-3",
-        content_text="?�스??기반 기록",
+        content_text="grounded fallback evidence text",
         content_markdown="",
         stored_path=None,
         source_extension=".txt",
@@ -444,7 +719,7 @@ def test_runtime_handles_sqlite_disk_full_during_chunk_hydration(monkeypatch) ->
     document = SimpleNamespace(
         id="doc-disk-full",
         sha256="sha-doc-disk-full",
-        content_text="기반 ?�스??,
+        content_text="disk pressure fallback evidence text",
         content_markdown="",
         stored_path=None,
         source_extension=".txt",
@@ -528,8 +803,8 @@ def test_combine_project_text_uses_pdf_analysis_fallback(monkeypatch) -> None:
         content_markdown="",
         parse_metadata={
             "pdf_analysis": {
-                "summary": "?�약 기반 ?�스??,
-                "key_points": ["?�심 ?�인??A", "?�심 ?�인??B"],
+                "summary": "summary based fallback text",
+                "key_points": ["???뼎 ?????A", "???뼎 ?????B"],
             }
         },
     )
@@ -541,6 +816,6 @@ def test_combine_project_text_uses_pdf_analysis_fallback(monkeypatch) -> None:
     documents, full_text = combine_project_text("project-1", db=SimpleNamespace())
 
     assert len(documents) == 1
-    assert "?�약 기반 ?�스?? in full_text
-    assert "?�심 ?�인??A" in full_text
+    assert "summary based fallback text" in full_text
+    assert "???뼎 ?????A" in full_text
 

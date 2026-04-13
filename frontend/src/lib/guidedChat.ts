@@ -8,6 +8,30 @@ export interface GuidedTopicSuggestion {
   caution_note: string | null;
 }
 
+export type GuidedConversationPhase =
+  | 'subject_input'
+  | 'specific_topic_check'
+  | 'topic_recommendation'
+  | 'topic_selection'
+  | 'page_range_selection'
+  | 'structure_selection'
+  | 'drafting_next_step'
+  | 'freeform_coauthoring';
+
+export interface GuidedChoiceOption {
+  id: string;
+  label: string;
+  description?: string | null;
+  value?: string | null;
+}
+
+export interface GuidedChoiceGroup {
+  id: string;
+  title: string;
+  style: 'cards' | 'chips' | 'buttons';
+  options: GuidedChoiceOption[];
+}
+
 export interface GuidedPageRangeOption {
   label: string;
   min_pages: number;
@@ -15,18 +39,25 @@ export interface GuidedPageRangeOption {
   why_this_length: string;
 }
 
+export interface GuidedStructureOption extends GuidedChoiceOption {}
+
 export interface GuidedOutlineSection {
   title: string;
   purpose: string;
 }
 
 export interface GuidedTopicSelectionResponse {
+  phase?: GuidedConversationPhase;
+  assistant_message?: string | null;
   selected_topic_id: string;
   selected_title: string;
   recommended_page_ranges: GuidedPageRangeOption[];
   recommended_outline: GuidedOutlineSection[];
   starter_draft_markdown: string;
   guidance_message: string;
+  structure_options?: GuidedStructureOption[];
+  next_action_options?: GuidedChoiceOption[];
+  choice_groups?: GuidedChoiceGroup[];
   limited_mode?: boolean | null;
   limited_reason?: string | null;
   state_summary?: Record<string, unknown> | null;
@@ -34,9 +65,36 @@ export interface GuidedTopicSelectionResponse {
 
 export interface GuidedTopicSuggestionResponse {
   greeting: string;
+  assistant_message?: string | null;
+  phase?: GuidedConversationPhase;
   subject: string;
   suggestions: GuidedTopicSuggestion[];
   evidence_gap_note: string | null;
+  choice_groups?: GuidedChoiceGroup[];
+  limited_mode?: boolean | null;
+  limited_reason?: string | null;
+  state_summary?: Record<string, unknown> | null;
+}
+
+export interface GuidedPageRangeSelectionResponse {
+  phase?: GuidedConversationPhase;
+  assistant_message: string;
+  selected_page_range_label: string;
+  selected_page_range_note?: string | null;
+  structure_options: GuidedStructureOption[];
+  choice_groups?: GuidedChoiceGroup[];
+  limited_mode?: boolean | null;
+  limited_reason?: string | null;
+  state_summary?: Record<string, unknown> | null;
+}
+
+export interface GuidedStructureSelectionResponse {
+  phase?: GuidedConversationPhase;
+  assistant_message: string;
+  selected_structure_id: string;
+  selected_structure_label: string;
+  next_action_options: GuidedChoiceOption[];
+  choice_groups?: GuidedChoiceGroup[];
   limited_mode?: boolean | null;
   limited_reason?: string | null;
   state_summary?: Record<string, unknown> | null;

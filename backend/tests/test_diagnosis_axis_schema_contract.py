@@ -42,6 +42,46 @@ def test_build_grounded_diagnosis_result_returns_canonical_gap_axes_without_vali
     _assert_default_action_references_existing_payload_ids(result)
 
 
+def test_evaluate_student_record_success_path_returns_guided_contract(monkeypatch) -> None:
+    class _SuccessfulDiagnosisLLM:
+        async def generate_json(self, **kwargs):  # noqa: ANN003
+            response_model = kwargs["response_model"]
+            grounded = build_grounded_diagnosis_result(
+                project_title="Success contract check",
+                target_major="Computer Science",
+                target_university="Example University",
+                career_direction="AI engineering",
+                document_count=1,
+                full_text=kwargs.get("prompt", ""),
+            )
+            return response_model.model_validate(grounded.model_dump())
+
+    monkeypatch.setattr("unifoli_api.services.diagnosis_service.get_llm_client", lambda: _SuccessfulDiagnosisLLM())
+    monkeypatch.setattr("unifoli_api.services.diagnosis_service.fetch_cached_response", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("unifoli_api.services.diagnosis_service.store_cached_response", lambda *_args, **_kwargs: None)
+
+    result = asyncio.run(
+        evaluate_student_record(
+            user_major="Computer Science",
+            masked_text=(
+                "Built a robotics notebook and measured drift before and after calibration. "
+                "Compared outcomes and documented method limits."
+            ),
+            target_university="Example University",
+            target_major="Computer Science",
+            career_direction="AI engineering",
+            project_title="Success contract check",
+            scope_key=f"axis-success:{uuid4()}",
+            evidence_keys=["doc:axis-success"],
+        )
+    )
+
+    assert result.headline
+    assert len(result.gap_axes) == len(POSITIVE_AXIS_KEYS)
+    assert {axis.key for axis in result.gap_axes} == set(POSITIVE_AXIS_KEYS)
+    _assert_default_action_references_existing_payload_ids(result)
+
+
 def test_evaluate_student_record_fallback_path_returns_guided_contract(monkeypatch) -> None:
     class _FailingDiagnosisLLM:
         async def generate_json(self, **kwargs):  # noqa: ANN003
@@ -153,4 +193,3 @@ def test_diagnosis_route_response_serializes_grounded_payload(monkeypatch) -> No
     assert len(response.result_payload.gap_axes) == len(POSITIVE_AXIS_KEYS)
     assert {axis.key for axis in response.result_payload.gap_axes} == set(POSITIVE_AXIS_KEYS)
     _assert_default_action_references_existing_payload_ids(response.result_payload)
-

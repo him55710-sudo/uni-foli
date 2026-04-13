@@ -181,13 +181,14 @@ export function resolveDiagnosisDeliveryState(
 export function formatAsyncJobStatus(status: string | null | undefined): string {
   const normalized = (status || '').trim().toLowerCase();
   if (!normalized) return '대기 중';
-  if (normalized === 'queued') return '분석 예약됨';
+  if (normalized === 'queued' || normalized === 'pending') return '대기 중';
   if (normalized === 'running') return '진단 진행 중';
   if (normalized === 'retrying') return '다시 시도 중';
-  if (normalized === 'succeeded') return '완료됨';
-  if (normalized === 'failed') return '점검 필요';
+  if (normalized === 'stale') return '지연 복구 중';
+  if (normalized === 'succeeded' || normalized === 'completed' || normalized === 'success') return '완료됨';
+  if (normalized === 'failed') return '실패';
 
-  return '상태 확인 필요';
+  return '상태 확인 중';
 }
 
 export function formatRiskLevel(level: DiagnosisRiskLevel): string {

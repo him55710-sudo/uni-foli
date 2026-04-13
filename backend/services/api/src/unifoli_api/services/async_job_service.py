@@ -35,6 +35,73 @@ _ASYNC_BRIDGE_LOOP: asyncio.AbstractEventLoop | None = None
 _ASYNC_BRIDGE_THREAD: Thread | None = None
 _ASYNC_BRIDGE_READY = Event()
 _ASYNC_BRIDGE_LOCK = Lock()
+_PROGRESS_HISTORY_LIMIT = 20
+
+
+def _progress_defaults_for_job(job_type: str) -> tuple[str, str]:
+    if job_type == AsyncJobType.DIAGNOSIS.value:
+        return "queued", "진단 작업이 대기열에 등록되었습니다."
+    if job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        return "queued", "진단 보고서 생성 작업이 대기열에 등록되었습니다."
+    if job_type == AsyncJobType.DOCUMENT_PARSE.value:
+        return "queued", "문서 파싱 작업이 대기열에 등록되었습니다."
+    if job_type == AsyncJobType.RENDER.value:
+        return "queued", "렌더 작업이 대기열에 등록되었습니다."
+    if job_type == AsyncJobType.RESEARCH_INGEST.value:
+        return "queued", "리서치 문서 수집 작업이 대기열에 등록되었습니다."
+    if job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        return "queued", "문의 메일 발송 작업이 대기열에 등록되었습니다."
+    return "queued", "작업이 대기열에 등록되었습니다."
+
+
+def _append_progress_history(job: AsyncJob, *, stage: str, message: str, completed_at_iso: str) -> None:
+    payload = dict(job.payload or {})
+    history_raw = payload.get("progress_history")
+    history: list[dict[str, object]] = [item for item in history_raw if isinstance(item, dict)] if isinstance(history_raw, list) else []
+
+    normalized_stage = str(stage or "").strip() or "stage"
+    normalized_message = str(message or "").strip()
+    should_append = True
+    if history:
+        last = history[-1]
+        if (
+            str(last.get("stage") or "").strip() == normalized_stage
+            and str(last.get("message") or "").strip() == normalized_message
+        ):
+            should_append = False
+
+    if should_append:
+        history.append(
+            {
+                "stage": normalized_stage,
+                "message": normalized_message,
+                "completed_at": completed_at_iso,
+            }
+        )
+    payload["progress_history"] = history[-_PROGRESS_HISTORY_LIMIT:]
+    job.payload = payload
+
+
+def _set_job_progress(
+    job: AsyncJob,
+    *,
+    stage: str,
+    message: str,
+    progress_percent: float | None = None,
+) -> None:
+    now_iso = utc_now().isoformat()
+    normalized_stage = str(stage or "").strip() or "stage"
+    normalized_message = str(message or "").strip()
+    job.progress_stage = normalized_stage
+    job.progress_message = normalized_message or None
+    _append_progress_history(job, stage=normalized_stage, message=normalized_message, completed_at_iso=now_iso)
+
+    payload = dict(job.payload or {})
+    if progress_percent is None:
+        payload.pop("progress_percent", None)
+    else:
+        payload["progress_percent"] = max(0.0, min(float(progress_percent), 100.0))
+    job.payload = payload
 
 
 
@@ -50,6 +117,7 @@ def create_async_job(
     max_retries: int | None = None,
 ) -> AsyncJob:
     settings = get_settings()
+    stage, message = _progress_defaults_for_job(job_type)
     job = AsyncJob(
         job_type=job_type,
         resource_type=resource_type,
@@ -58,6 +126,7 @@ def create_async_job(
         payload=payload or {},
         max_retries=max_retries if max_retries is not None else settings.async_job_max_retries,
     )
+    _set_job_progress(job, stage=stage, message=message, progress_percent=0.0)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -168,6 +237,7 @@ def process_async_job(db: Session, job_id: str) -> AsyncJob | None:
         job.status = AsyncJobStatus.SUCCEEDED.value
         job.failure_reason = None
         job.completed_at = utc_now()
+        _set_job_progress(job, stage="succeeded", message="작업이 완료되었습니다.", progress_percent=100.0)
         db.add(job)
         db.commit()
         db.refresh(job)
@@ -200,6 +270,7 @@ def process_next_async_job(db: Session) -> AsyncJob | None:
         job.status = AsyncJobStatus.SUCCEEDED.value
         job.failure_reason = None
         job.completed_at = utc_now()
+        _set_job_progress(job, stage="succeeded", message="작업이 완료되었습니다.", progress_percent=100.0)
         db.add(job)
         db.commit()
         db.refresh(job)
@@ -233,6 +304,7 @@ def retry_async_job(db: Session, job_id: str) -> AsyncJob | None:
     job.completed_at = None
     job.dead_lettered_at = None
     job.next_attempt_at = utc_now()
+    _set_job_progress(job, stage="queued", message="재시도 작업이 대기열에 등록되었습니다.", progress_percent=0.0)
     db.add(job)
     _reset_resource_for_retry(db, job)
     db.commit()
@@ -306,9 +378,19 @@ def _requeue_stale_jobs(db: Session) -> None:
             job.failure_reason = reason
             job.dead_lettered_at = utc_now()
             job.completed_at = utc_now()
+            _set_job_progress(
+                job,
+                stage="stale_failed",
+                message="작업이 장시간 갱신되지 않아 실패로 처리되었습니다.",
+            )
             _mark_resource_failed(db, job, reason)
         else:
             job.schedule_retry(delay_seconds=settings.async_job_retry_delay_seconds, reason=reason)
+            _set_job_progress(
+                job,
+                stage="stale_recovering",
+                message="작업이 지연되어 자동 복구를 시도합니다.",
+            )
             _mark_resource_retrying(db, job, reason)
         db.add(job)
     db.commit()
@@ -572,29 +654,34 @@ def _queue_auto_diagnosis_report_job(
 
 def _mark_resource_running(db: Session, job: AsyncJob) -> None:
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
+        _set_job_progress(job, stage="running", message="진단 근거 분석을 진행 중입니다.")
         run = db.get(DiagnosisRun, job.resource_id)
         if run is not None:
             run.status = "RUNNING"
             run.error_message = None
             db.add(run)
     elif job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
+        _set_job_progress(job, stage="running", message="진단 보고서를 생성 중입니다.")
         run = db.get(DiagnosisRun, job.resource_id)
         if run is not None:
             run.status_message = "Generating consultant diagnosis report..."
             db.add(run)
     elif job.job_type == AsyncJobType.RENDER.value:
+        _set_job_progress(job, stage="running", message="렌더 작업을 진행 중입니다.")
         render_job = db.get(RenderJob, job.resource_id)
         if render_job is not None:
             render_job.status = RenderStatus.PROCESSING.value
             render_job.result_message = None
             db.add(render_job)
     elif job.job_type == AsyncJobType.RESEARCH_INGEST.value:
+        _set_job_progress(job, stage="running", message="리서치 문서를 수집 중입니다.")
         document = db.get(ResearchDocument, job.resource_id)
         if document is not None:
             document.status = "ingesting"
             document.last_error = None
             db.add(document)
     elif job.job_type == AsyncJobType.DOCUMENT_PARSE.value:
+        _set_job_progress(job, stage="running", message="문서 파싱을 진행 중입니다.")
         document = db.get(ParsedDocument, job.resource_id)
         if document is not None:
             metadata = dict(document.parse_metadata or {})
@@ -603,6 +690,7 @@ def _mark_resource_running(db: Session, job: AsyncJob) -> None:
             document.parse_metadata = metadata
             db.add(document)
     elif job.job_type == AsyncJobType.INQUIRY_EMAIL.value:
+        _set_job_progress(job, stage="running", message="문의 메일을 발송 중입니다.")
         from unifoli_api.services.inquiry_service import sync_inquiry_delivery_state_from_job
 
         sync_inquiry_delivery_state_from_job(
@@ -617,6 +705,12 @@ def _mark_resource_running(db: Session, job: AsyncJob) -> None:
 
 
 def _mark_resource_retrying(db: Session, job: AsyncJob, reason: str) -> None:
+    lowered_reason = (reason or "").lower()
+    is_stale_recovery = "stale" in lowered_reason
+    retry_stage = "stale_recovering" if is_stale_recovery else "retrying"
+    retry_message = "작업이 지연되어 자동 복구를 시도합니다." if is_stale_recovery else "작업을 다시 시도하고 있습니다."
+    _set_job_progress(job, stage=retry_stage, message=retry_message)
+
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
         run = db.get(DiagnosisRun, job.resource_id)
         if run is not None:
@@ -665,6 +759,10 @@ def _mark_resource_retrying(db: Session, job: AsyncJob, reason: str) -> None:
 
 
 def _mark_resource_failed(db: Session, job: AsyncJob, reason: str) -> None:
+    existing_stage = str(job.progress_stage or "").strip().lower()
+    if not existing_stage.startswith("stale_"):
+        _set_job_progress(job, stage="failed", message="작업이 실패했습니다.")
+
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
         run = db.get(DiagnosisRun, job.resource_id)
         if run is not None:
@@ -713,6 +811,8 @@ def _mark_resource_failed(db: Session, job: AsyncJob, reason: str) -> None:
 
 
 def _reset_resource_for_retry(db: Session, job: AsyncJob) -> None:
+    _set_job_progress(job, stage="queued", message="재시도 작업이 대기열에 등록되었습니다.", progress_percent=0.0)
+
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
         run = db.get(DiagnosisRun, job.resource_id)
         if run is not None:

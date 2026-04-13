@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from unifoli_api.core.config import Settings
-from unifoli_api.core.llm import OllamaClient, get_llm_client
+from unifoli_api.core.llm import OllamaClient, _select_ollama_fallback_model, get_llm_client
 
 
 def test_ollama_profile_model_fallbacks(monkeypatch) -> None:
@@ -66,4 +66,20 @@ def test_gemini_missing_key_falls_back_to_remote_ollama(monkeypatch) -> None:
     client = get_llm_client(profile="standard")
     assert isinstance(client, OllamaClient)
     assert client.model == "gemma4-main"
+
+
+def test_select_ollama_fallback_model_prefers_same_family_and_nearest_size() -> None:
+    chosen = _select_ollama_fallback_model(
+        "qwen2.5:7b",
+        ["gemma:latest", "qwen2.5:14b", "qwen2.5:32b"],
+    )
+    assert chosen == "qwen2.5:14b"
+
+
+def test_select_ollama_fallback_model_prefers_latest_when_family_missing() -> None:
+    chosen = _select_ollama_fallback_model(
+        "nonexistent:7b",
+        ["gemma3:4b", "gemma:latest", "qwen2.5:14b"],
+    )
+    assert chosen == "gemma:latest"
 

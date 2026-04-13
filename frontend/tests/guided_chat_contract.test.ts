@@ -7,28 +7,30 @@ import {
   type GuidedTopicSelectionResponse,
 } from '../src/lib/guidedChat';
 
-test('clicking a topic updates the right-side draft panel with starter draft markdown', () => {
+test('clicking a topic updates draft-side guided state', () => {
   const initialState = createInitialGuidedChatUiState('# 기존 초안');
 
   const selectionResponse: GuidedTopicSelectionResponse = {
+    phase: 'page_range_selection',
+    assistant_message: '분량을 선택해 주세요.',
     selected_topic_id: 'topic-2',
-    selected_title: '수학 개념을 기존 활동에 재연결하는 탐구 보고서',
+    selected_title: '미분 개념을 실험 데이터와 연결한 탐구 보고서',
     recommended_page_ranges: [
       {
-        label: '균형형',
+        label: '3~5쪽',
         min_pages: 3,
-        max_pages: 4,
-        why_this_length: '주제 배경, 근거, 성찰을 균형 있게 담기 좋습니다.',
+        max_pages: 5,
+        why_this_length: '근거와 해석을 균형 있게 담기 좋습니다.',
       },
     ],
     recommended_outline: [
       {
-        title: '1. 주제와 문제의식',
-        purpose: '선택한 주제의 필요성과 현재 질문을 간결히 제시합니다.',
+        title: '1. 탐구 배경',
+        purpose: '주제의 필요성과 문제의식을 설명합니다.',
       },
     ],
-    starter_draft_markdown: '# 새 스타터 초안\n\n## 1. 주제와 문제의식\n...',
-    guidance_message: "선택하신 주제는 '수학 개념을 기존 활동에 재연결하는 탐구 보고서'입니다.",
+    starter_draft_markdown: '# 시작 초안\n\n## 1. 탐구 배경\n...',
+    guidance_message: '선택한 주제 기준으로 분량과 구조를 정해보세요.',
   };
 
   const nextState = applyTopicSelectionToUiState(initialState, selectionResponse);

@@ -57,6 +57,7 @@ class DiagnosisRunResponse(BaseModel):
     id: str
     project_id: str
     status: str
+    status_message: str | None = None
     result_payload: DiagnosisResultPayload | None = None
     error_message: str | None = None
     review_required: bool = False
@@ -91,6 +92,9 @@ class ConsultantDiagnosisScoreBlock(BaseModel):
     band: str
     interpretation: str
     uncertainty_note: str | None = None
+    evidence_summary: str | None = None
+    missing_evidence: str | None = None
+    next_best_action: str | None = None
 
 
 class ConsultantDiagnosisScoreGroup(BaseModel):
@@ -136,6 +140,7 @@ class ConsultantDiagnosisReport(BaseModel):
     uncertainty_notes: list[str] = Field(default_factory=list)
     final_consultant_memo: str
     appendix_notes: list[str] = Field(default_factory=list)
+    diagnosis_intelligence: dict[str, Any] = Field(default_factory=dict)
     render_hints: dict[str, Any] = Field(default_factory=dict)
 
 

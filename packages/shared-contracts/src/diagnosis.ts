@@ -322,6 +322,7 @@ export interface DiagnosisRunResponse {
   id: string;
   project_id: string;
   status: string;
+  status_message?: string | null;
   result_payload: DiagnosisResultPayload | null;
   error_message: string | null;
   review_required: boolean;
@@ -443,6 +444,7 @@ export interface AsyncJobRead {
   failure_history: Array<Record<string, unknown>>;
   progress_stage?: string | null;
   progress_message?: string | null;
+  progress_percent?: number | null;
   progress_history?: Array<{ stage: string; message: string; completed_at: string }>;
   next_attempt_at: string;
   started_at: string | null;

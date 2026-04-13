@@ -42,6 +42,7 @@ interface OnboardingState {
   activeDocumentId: string | null;
   isLoading: boolean;
   error: string | null;
+  hasInitialized: boolean;
 
   setDiagnosisStep: (step: DiagnosisStep) => void;
   setProfile: (data: Partial<ProfileData>) => void;
@@ -71,7 +72,7 @@ const initialGoals: GoalsData = {
 };
 
 export const useOnboardingStore = create<OnboardingState>((set, get) => ({
-  diagnosisStep: 'GOALS',
+  diagnosisStep: 'PROFILE',
   profile: initialProfile,
   goals: initialGoals,
   goalList: [],
@@ -80,6 +81,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   activeDocumentId: null,
   isLoading: false,
   error: null,
+  hasInitialized: false,
 
   setDiagnosisStep: (diagnosisStep) => set({ diagnosisStep }),
 
@@ -116,14 +118,14 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
 
       const updatedUser = await api.post<OnboardingProfileUpdateResponse>('/api/v1/users/onboarding/profile', payload);
       useAuthStore.getState().setUser(updatedUser);
-      set({ diagnosisStep: 'GOALS', isLoading: false });
+      set({ diagnosisStep: 'GOALS', isLoading: false, hasInitialized: true });
       return true;
     } catch (err: any) {
       if (isGuestSessionActive()) {
         const { profile } = get();
         const updatedUser = updateGuestProfile(profile, useAuthStore.getState().user);
         useAuthStore.getState().setUser(updatedUser);
-        set({ diagnosisStep: 'GOALS', isLoading: false });
+        set({ diagnosisStep: 'GOALS', isLoading: false, hasInitialized: true });
         return true;
       }
       const currentAuthUser = auth?.currentUser;
@@ -131,7 +133,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
         const { profile } = get();
         const updatedUser = updateLocalAuthProfile(profile, currentAuthUser, useAuthStore.getState().user);
         useAuthStore.getState().setUser(updatedUser);
-        set({ diagnosisStep: 'GOALS', isLoading: false });
+        set({ diagnosisStep: 'GOALS', isLoading: false, hasInitialized: true });
         return true;
       }
       set({ error: err.response?.data?.detail || '프로필 저장에 실패했습니다. 다시 시도해주세요.', isLoading: false });
@@ -184,7 +186,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       if (currentAuthUser) {
         const updatedUser = updateLocalAuthTargets(goals, currentAuthUser, useAuthStore.getState().user);
         useAuthStore.getState().setUser(updatedUser);
-        set({ diagnosisStep: 'UPLOAD', isLoading: false });
+        set({ diagnosisStep: 'UPLOAD', isLoading: false, hasInitialized: true });
         return true;
       }
       set({ error: err.response?.data?.detail || '목표 저장에 실패했습니다. 다시 시도해주세요.', isLoading: false });
@@ -203,6 +205,8 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
     const [primaryGoal, ...otherGoals] = goalList;
     const hasPrimaryGoal = Boolean(primaryGoal?.university && primaryGoal?.major);
     
+    const { hasInitialized, diagnosisStep } = get();
+
     set({ 
       profile: {
         grade: user.grade || '',
@@ -218,13 +222,15 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       }
     });
 
-    // Unified step logic
-    if (!user.grade || !user.track) {
-      set({ diagnosisStep: 'PROFILE' });
-    } else if (!hasPrimaryGoal) {
-      set({ diagnosisStep: 'GOALS' });
-    } else {
-      set({ diagnosisStep: 'UPLOAD' });
+    // Only auto-advance if we haven't manually interacted or if we are at the very beginning
+    if (!hasInitialized) {
+      if (!user.grade || !user.track) {
+        set({ diagnosisStep: 'PROFILE', hasInitialized: true });
+      } else if (!hasPrimaryGoal) {
+        set({ diagnosisStep: 'GOALS', hasInitialized: true });
+      } else {
+        set({ diagnosisStep: 'UPLOAD', hasInitialized: true });
+      }
     }
   },
 

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from unifoli_api.api.deps import get_current_user, get_db
 from unifoli_api.core.rate_limit import rate_limit
 from unifoli_api.db.models.user import User
-from unifoli_api.schemas.async_job import AsyncJobRead
+from unifoli_api.schemas.async_job import AsyncJobRead, as_async_job_read
 from unifoli_api.schemas.research import (
     ResearchChunkRead,
     ResearchDocumentRead,
@@ -78,7 +78,7 @@ def ingest_research_sources(
         )
         dispatch_job_if_enabled(job.id)
         documents.append(ResearchDocumentRead.model_validate(document))
-        jobs.append(AsyncJobRead.model_validate(job))
+        jobs.append(as_async_job_read(job))
 
     return ResearchIngestResponse(documents=documents, jobs=jobs)
 

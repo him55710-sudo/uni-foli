@@ -1,4 +1,4 @@
-# Uni Foli Monorepo
+﻿# Uni Foli Monorepo
 
 Uni Foli is an execution-oriented AI platform for students.
 
@@ -78,21 +78,21 @@ If social login is enabled, production redirect URIs must not point at localhost
 
 ### Inquiry Email Setup (Naver)
 
-문의 작성 시 운영자 메일로 알림을 받으려면 아래 환경 변수를 반드시 설정하세요.
+臾몄쓽 ?묒꽦 ???댁쁺??硫붿씪濡??뚮┝??諛쏆쑝?ㅻ㈃ ?꾨옒 ?섍꼍 蹂?섎? 諛섎뱶???ㅼ젙?섏꽭??
 
 ```dotenv
 SMTP_ENABLED=true
 SMTP_SERVER=smtp.naver.com
 SMTP_PORT=587
-SMTP_USERNAME=<발신 Naver 메일 주소>
-SMTP_PASSWORD=<앱 비밀번호 또는 SMTP 비밀번호>
+SMTP_USERNAME=<諛쒖떊 Naver 硫붿씪 二쇱냼>
+SMTP_PASSWORD=<??鍮꾨?踰덊샇 ?먮뒗 SMTP 鍮꾨?踰덊샇>
 SMTP_RECEIVER_EMAIL=mongben@naver.com
 ```
 
-동작 체크:
-- 문의 API는 DB 저장 후 비동기로 메일을 전송합니다.
-- SMTP 설정이 비어 있으면 메일 전송을 건너뛰고 서버 로그에 이유를 남깁니다.
-- 수신자(`SMTP_RECEIVER_EMAIL`)가 비어 있으면 `SMTP_USERNAME`을 수신자로 fallback 합니다.
+?숈옉 泥댄겕:
+- 臾몄쓽 API??DB ?????鍮꾨룞湲곕줈 硫붿씪???꾩넚?⑸땲??
+- SMTP ?ㅼ젙??鍮꾩뼱 ?덉쑝硫?硫붿씪 ?꾩넚??嫄대꼫?곌퀬 ?쒕쾭 濡쒓렇???댁쑀瑜??④퉩?덈떎.
+- ?섏떊??`SMTP_RECEIVER_EMAIL`)媛 鍮꾩뼱 ?덉쑝硫?`SMTP_USERNAME`???섏떊?먮줈 fallback ?⑸땲??
 
 ### Local Ollama/Gemma Guided-Chat Test
 
@@ -136,17 +136,37 @@ PDF_ANALYSIS_TIMEOUT_SECONDS=60
 - Production does not auto-force Ollama.
 - In production with `LLM_PROVIDER=ollama`, set `OLLAMA_BASE_URL` to a remote reachable endpoint (not localhost).
 
+### Gemini Free-Tier Deployment Env
+
+Backend env (`.env` or deployment secret manager):
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=<SET_IN_BACKEND_ENV_ONLY>
+```
+
+Frontend env (`frontend/.env`):
+
+```dotenv
+VITE_API_URL=<YOUR_BACKEND_URL>
+```
+
+- Keep `GEMINI_API_KEY` backend-only. Never expose it in frontend env or browser code.
+- `VITE_API_URL` must be the backend origin. If it points to the frontend origin, workshop chat stream returns HTML instead of SSE.
+
 5. Guided chat API flow:
 - `POST /api/v1/guided-chat/start`
 - `POST /api/v1/guided-chat/topic-suggestions`
 - `POST /api/v1/guided-chat/topic-selection`
+- `POST /api/v1/guided-chat/page-range-selection`
+- `POST /api/v1/guided-chat/structure-selection`
 
 6. Workshop integrated flow:
 - `/app/workshop` or `/app/workshop/:projectId`
-- First message should be: `안녕하세요. 어떤 주제의 보고서를 써볼까요?`
-- Enter a broad subject (예: `수학`) and verify 3 topic cards appear in the same Foli chat.
-- Select one card and confirm the right draft panel is filled automatically.
-
+- First guided message should ask for the subject in Korean (for example, `어떤 과목의 탐구보고서를 준비하고 계신가요?`).
+- Enter a broad subject (for example, `수2`) and verify the specific-topic check appears.
+- Request recommendations and verify 3 topic cards appear in the same Foli chat.
+- Select topic -> page range -> structure through cards/chips, then continue freeform coauthoring.
 If Ollama is unavailable, the guided chat route returns conservative fallback suggestions with a limited-context note instead of crashing.
 If PDF analysis Ollama is unavailable, upload parsing still succeeds and falls back to a conservative local summary.
 
@@ -208,3 +228,4 @@ npm run build
 - `docs/09-drafting-provenance/README.md`
 - `docs/shared-contracts-v1.md`
 - `docs/prompt-registry-v1.md`
+

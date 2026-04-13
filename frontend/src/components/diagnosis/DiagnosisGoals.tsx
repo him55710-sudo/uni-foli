@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trash2, Plus, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Trash2, Plus, CheckCircle2, ArrowRight, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import { SectionCard, SecondaryButton, SurfaceCard, PrimaryButton, EmptyState } from '../primitives';
 import { UniversityLogo } from '../UniversityLogo';
 import { CatalogAutocompleteInput } from '../CatalogAutocompleteInput';
@@ -46,6 +46,35 @@ export const DiagnosisGoals: React.FC = () => {
     setCurrentUniv('');
     setCurrentMajor('');
     setUnivInput('');
+  };
+
+  const [draggingGoalId, setDraggingGoalId] = React.useState<string | null>(null);
+  const [dragOverGoalId, setDragOverGoalId] = React.useState<string | null>(null);
+
+  const moveGoal = (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= goalList.length) return;
+
+    const newList = [...goalList];
+    [newList[index], newList[newIndex]] = [newList[newIndex], newList[index]];
+    setGoalList(newList);
+  };
+
+  const moveGoalByDrag = (sourceId: string, targetId: string) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const sourceIndex = goalList.findIndex(item => item.id === sourceId);
+    const targetIndex = goalList.findIndex(item => item.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+
+    const newList = [...goalList];
+    const [moved] = newList.splice(sourceIndex, 1);
+    newList.splice(targetIndex, 0, moved);
+    setGoalList(newList);
+  };
+
+  const onGoalDragEnd = () => {
+    setDraggingGoalId(null);
+    setDragOverGoalId(null);
   };
 
   const saveAndContinue = async () => {
@@ -191,25 +220,67 @@ export const DiagnosisGoals: React.FC = () => {
                 {goalList.map((goal, index) => (
                   <motion.div
                     key={goal.id}
+                    layout
+                    draggable
+                    onDragStart={() => setDraggingGoalId(goal.id)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverGoalId(goal.id);
+                    }}
+                    onDrop={() => {
+                      if (draggingGoalId) moveGoalByDrag(draggingGoalId, goal.id);
+                      onGoalDragEnd();
+                    }}
+                    onDragEnd={onGoalDragEnd}
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
+                    className={`${dragOverGoalId === goal.id ? 'ring-2 ring-blue-500 rounded-3xl' : ''} ${draggingGoalId === goal.id ? 'opacity-40' : ''}`}
                   >
                     <SurfaceCard
                       padding="sm"
                       className="flex items-center justify-between gap-4 border-slate-100 shadow-sm transition-all hover:border-[#004aad]/20"
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <UniversityLogo
-                          universityName={goal.university}
-                          className="h-10 w-10 rounded-xl bg-slate-50 object-contain p-1.5"
-                        />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-black text-slate-900">{goal.university}</p>
-                          <p className="truncate text-xs font-bold text-slate-500">{goal.major}</p>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex cursor-grab items-center text-slate-300 hover:text-slate-400">
+                          <GripVertical size={18} />
+                        </div>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <UniversityLogo
+                            universityName={goal.university}
+                            className="h-10 w-10 rounded-xl bg-slate-50 object-contain p-1.5"
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-slate-900">{goal.university}</p>
+                            <p className="truncate text-xs font-bold text-slate-500">{goal.major}</p>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        {goalList.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => moveGoal(index, 'up')}
+                              disabled={index === 0}
+                              className={`rounded-lg p-1.5 transition-colors ${
+                                index === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:bg-slate-100 hover:text-[#004aad]'
+                              }`}
+                            >
+                              <ChevronUp size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveGoal(index, 'down')}
+                              disabled={index === goalList.length - 1}
+                              className={`rounded-lg p-1.5 transition-colors ${
+                                index === goalList.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:bg-slate-100 hover:text-[#004aad]'
+                              }`}
+                            >
+                              <ChevronDown size={16} />
+                            </button>
+                          </>
+                        )}
                         {index === 0 ? (
                           <div className="rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-black text-[#004aad]">
                             대표

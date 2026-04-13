@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Flag, PlayCircle, School, Settings2, Target, TrendingUp, Zap } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Flag, PlayCircle, School, Settings2, Sparkles, Target, TrendingUp, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   type BlueprintQuest,
@@ -431,35 +431,101 @@ export default function Dashboard() {
       <div className="grid gap-6 sm:gap-8 lg:grid-cols-3">
         {/* Target Card */}
         <SurfaceCard className="relative overflow-hidden border-[#d4e3ff] bg-white/88 p-5 shadow-[0_18px_36px_rgba(24,66,170,0.14)] sm:p-8 lg:col-span-2">
-          <div className="relative z-10 space-y-8">
+          {/* Subtle background decoration for empty state */}
+          {!hasPrimaryGoal && (
+            <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-blue-50/50 blur-3xl" />
+          )}
+          
+          <div className="relative z-10">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-4 sm:gap-6">
-                <UniversityLogo
-                  universityName={primaryGoal?.university}
-                  className="h-16 w-16 rounded-2xl border border-[#d8e6ff] bg-white object-contain p-2.5 shadow-[0_14px_28px_rgba(24,66,170,0.12)] sm:h-20 sm:w-20 sm:rounded-3xl sm:p-3"
-                />
+                <div className="relative">
+                  <UniversityLogo
+                    universityName={primaryGoal?.university}
+                    className="h-16 w-16 rounded-2xl border border-[#d8e6ff] bg-white object-contain p-2.5 shadow-[0_14px_28px_rgba(24,66,170,0.12)] sm:h-20 sm:w-20 sm:rounded-3xl sm:p-3"
+                  />
+                  {!hasPrimaryGoal && (
+                    <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm ring-2 ring-white">
+                      <Zap size={12} fill="currentColor" />
+                    </div>
+                  )}
+                </div>
                 <div className="min-w-0">
                   <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-[#eaf2ff] px-3 py-1 text-[11px] font-black tracking-widest text-[#2150b8] ring-1 ring-inset ring-[#2150b8]/12 uppercase">
                     <Flag size={10} />
-                    핵심 목표
+                    {hasPrimaryGoal ? '핵심 목표' : '첫 걸음'}
                   </div>
-                  <h2 className="truncate text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{primaryGoal?.university || '목표 설정 필요'}</h2>
-                  <p className="mt-1 truncate text-base font-bold text-slate-500 sm:text-lg">{primaryGoal?.major || '학과를 설정해주세요'}</p>
+                  <h2 className="truncate text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                    {primaryGoal?.university || '목표 설정이 필요합니다'}
+                  </h2>
+                  <p className="mt-1 truncate text-base font-bold text-slate-500 sm:text-lg">
+                    {primaryGoal?.major || '어떤 대학에서 당신의 꿈을 펼치고 싶나요?'}
+                  </p>
+                  {!hasPrimaryGoal && (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button 
+                        onClick={() => navigate('/app/diagnosis')}
+                        className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#1d4fff] px-4 text-xs font-black text-white transition-all hover:bg-[#0039cb] active:scale-95"
+                      >
+                        지금 바로 설정하기
+                        <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
+              {/* Secondary Goals or Placeholders to fill space */}
               <div className="flex flex-wrap gap-2 lg:justify-end">
-                {allGoals.slice(1, 4).map((goal, index) => (
-                  <div key={index} className="flex items-center gap-3 rounded-2xl border border-[#dce8ff] bg-white/95 p-3 shadow-[0_10px_22px_rgba(24,66,170,0.09)]">
-                    <UniversityLogo universityName={goal.university} className="h-10 w-10 rounded-xl bg-slate-50 p-1" />
-                    <div className="min-w-[120px]">
-                      <p className="text-[10px] font-black text-slate-400 uppercase">차순위 {index + 1}</p>
-                      <p className="truncate text-sm font-black text-slate-900">{goal.university}</p>
+                {allGoals.length > 1 ? (
+                  allGoals.slice(1, 4).map((goal, index) => (
+                    <div key={index} className="flex items-center gap-3 rounded-2xl border border-[#dce8ff] bg-white/95 p-3 shadow-[0_10px_22px_rgba(24,66,170,0.09)]">
+                      <UniversityLogo universityName={goal.university} className="h-10 w-10 rounded-xl bg-slate-50 p-1" />
+                      <div className="min-w-[120px]">
+                        <p className="text-[10px] font-black text-slate-400 uppercase">차순위 {index + 1}</p>
+                        <p className="truncate text-sm font-black text-slate-900">{goal.university}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  // Empty placeholders to fill the grid and provide guidance
+                  <>
+                    <div className="flex items-center gap-3 rounded-2xl border border-dashed border-[#dce8ff] bg-slate-50/40 p-3 opacity-60 transition-colors hover:bg-slate-50">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100/80">
+                        <Target size={16} className="text-slate-300" />
+                      </div>
+                      <div className="min-w-[120px]">
+                        <p className="text-[10px] font-black text-slate-400 uppercase">차순위 목표 1</p>
+                        <p className="text-xs font-bold text-slate-400">데이터가 없습니다</p>
+                      </div>
+                    </div>
+                    {/* Hide second placeholder on small screens to avoid clutter, but keep for desktop to fill space */}
+                    <div className="hidden items-center gap-3 rounded-2xl border border-dashed border-[#dce8ff] bg-slate-50/40 p-3 opacity-40 sm:flex">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100/80">
+                        <Target size={16} className="text-slate-300" />
+                      </div>
+                      <div className="min-w-[120px]">
+                        <p className="text-[10px] font-black text-slate-400 uppercase">차순위 목표 2</p>
+                        <p className="text-xs font-bold text-slate-400">데이터가 없습니다</p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
+            
+            {/* If no diagnosis but goal exists, add a hint to fill more space */}
+            {hasPrimaryGoal && !hasDiagnosis && (
+              <div className="mt-8 flex items-center gap-4 rounded-2xl bg-[#f8faff] p-4 text-sm font-medium text-slate-600 ring-1 ring-inset ring-blue-100/50">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                  <Sparkles size={18} />
+                </div>
+                <p>
+                  목표 설정이 완료되었습니다! 이제 <span className="font-black text-[#1d4fff]">학생부 PDF</span>를 업로드하여 <br className="hidden sm:block" />
+                  {primaryGoal?.university} 합격 가능성 상세 진단을 받아보세요.
+                </p>
+              </div>
+            )}
           </div>
         </SurfaceCard>
 
