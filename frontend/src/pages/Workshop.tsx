@@ -103,111 +103,6 @@ const MemoizedMarkdown = memo(function MemoizedMarkdown({
         isUserMessage ? "prose-invert text-white" : "text-slate-900"
       )}
     >
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import {
-  Bot,
-  ChevronDown,
-  ChevronUp,
-  Download,
-  Loader2,
-  PenSquare,
-  Presentation,
-  Save,
-  Send,
-  ToggleLeft,
-  ToggleRight,
-  User,
-} from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import toast from 'react-hot-toast';
-import confetti from 'canvas-confetti';
-import { auth } from '../lib/firebase';
-import { api, resolveApiBaseUrl } from '../lib/api';
-import {
-  ChatStreamError,
-  consumeChatEventStream,
-  openChatEventStream,
-  resolveChatStreamFallbackHint,
-  resolveChatStreamToastMessage,
-  type ChatStreamMetaPayload,
-} from '../lib/chatStream';
-import { cn } from '../lib/cn';
-import { saveArchiveItem } from '../lib/archiveStore';
-import { readQuestStart } from '../lib/questStart';
-import type { AuthTokenSource } from '../lib/requestAuth';
-import { AdvancedPreview } from '../components/AdvancedPreview';
-import { EvidenceDrawer } from '../components/EvidenceDrawer';
-import {
-  PageHeader,
-  PrimaryButton,
-  SecondaryButton,
-  SectionCard,
-  StatusBadge,
-  SurfaceCard,
-  WorkflowNotice,
-} from '../components/primitives';
-import { WorkshopProgress } from '../components/WorkshopProgress';
-import {
-  ensureThreeSuggestions,
-  type GuidedChoiceGroup,
-  type GuidedChoiceOption,
-  type GuidedConversationPhase,
-  type GuidedPageRangeSelectionResponse,
-  type GuidedStructureOption,
-  type GuidedStructureSelectionResponse,
-  type GuidedTopicSelectionResponse,
-  type GuidedTopicSuggestion,
-  type GuidedTopicSuggestionResponse,
-} from '../lib/guidedChat';
-import {
-  buildSpecificTopicCheckGroup,
-  buildSubjectQuickPickGroup,
-  inferGuidedPhase,
-  isRecommendationAffirmative,
-  isSpecificTopicAffirmative,
-  isGuidedSetupComplete,
-  looksLikeBroadSubject,
-  resolvePageRangeLabel,
-  resolveStructureOptionId,
-} from '../lib/guidedConversation';
-import {
-  BLOCK_DEFINITIONS,
-  WORKSHOP_MODE_OPTIONS,
-  applyDraftPatch,
-  createEmptyStructuredDraft,
-  isPatchAcceptanceMessage,
-  isSectionDraftIntent,
-  markdownToStructuredDraft,
-  normalizeStructuredDraft,
-  structuredDraftToMarkdown,
-  type WorkshopDraftAttribution,
-  type WorkshopDraftPatchProposal,
-
-  type WorkshopMode,
-  type WorkshopStructuredDraftState,
-} from '../lib/workshopCoauthoring';
-
-const MemoizedMarkdown = memo(function MemoizedMarkdown({
-  content,
-  role = 'foli',
-}: {
-  content: string;
-  role?: MessageRole | 'document';
-}) {
-  const isUserMessage = role === 'user';
-
-  return (
-    <div
-      className={cn(
-        "prose prose-slate max-w-none text-sm leading-relaxed",
-        isUserMessage ? "prose-invert text-white" : "text-slate-900"
-      )}
-    >
       <ReactMarkdown
         remarkPlugins={[remarkMath]}
         rehypePlugins={[rehypeKatex]}
@@ -583,95 +478,231 @@ function buildFoliFallback(message: string) {
     '',
     '아래 순서대로 보내 주시면 초안 작성 흐름을 계속 이어갈 수 있어요.',
     '1. 이번 글에서 다루려는 주제를 한 문장으로 적어 주세요.',
-          id: topic.id,
-          label: topic.title,
-          description: topic.why_fit_student,
-          value: topic.id,
-        })),
-      });
+    '2. 그 주제를 선정한 이유를 간단히 알려 주세요.',
+    '3. 마지막으로 보고서에 꼭 포함하고 싶은 키워드 3가지만 말씀해 주세요.',
+  ].join('\n');
+}
+
+interface StreamFoliReplyResult {
+  text: string;
+  authSource: AuthTokenSource;
+}
+
+function normalizeStructuredDraftPatch(patch: unknown): WorkshopDraftPatchProposal | null {
+  if (!patch || typeof patch !== 'object') return null;
+  const p = patch as any;
+  if (!p.content_markdown) return null;
+  return {
+    mode: p.mode || 'planning',
+    block_id: p.block_id || 'body_section_1',
+    heading: p.heading || null,
+    content_markdown: String(p.content_markdown || ''),
+    rationale: p.rationale || null,
+    evidence_boundary_note: p.evidence_boundary_note || null,
+    requires_approval: p.requires_approval ?? true,
+  };
+}
+
+function extractPatchTagFromRaw(raw: string): { cleaned: string; patch: WorkshopDraftPatchProposal | null } {
+  const markerStart = '<workshop-patch>';
+  const markerEnd = '</workshop-patch>';
+  const startIdx = raw.indexOf(markerStart);
+  const endIdx = raw.indexOf(markerEnd);
+
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+    return { cleaned: raw, patch: null };
+  }
+
+  const jsonStr = raw.slice(startIdx + markerStart.length, endIdx).trim();
+  const cleaned = (raw.slice(0, startIdx) + raw.slice(endIdx + markerEnd.length)).trim();
+
+  try {
+    const rawPatch = JSON.parse(jsonStr);
+    return { cleaned, patch: normalizeStructuredDraftPatch(rawPatch) };
+  } catch (e) {
+    console.error('Failed to parse patch JSON from stream:', e);
+    return { cleaned: raw, patch: null };
+  }
+}
+
+async function streamFoliReply(
+  projectId: string | undefined,
+  workshopId: string | undefined,
+  text: string,
+  documentContent: string,
+  mode: WorkshopMode,
+  structuredDraft: WorkshopStructuredDraftState,
+  onToken: (token: string) => void,
+  onMeta: (meta: ChatStreamMetaPayload) => void,
+  onPatch: (patch: any) => void,
+): Promise<StreamFoliReplyResult> {
+  const endpoint = `${resolveApiBaseUrl()}/api/v1/workshop/chat/stream`;
+  try {
+    const { response, authSource } = await openChatEventStream({
+      endpoint,
+      payload: {
+        project_id: projectId,
+        workshop_id: workshopId,
+        message: text,
+        document_content: documentContent,
+        mode,
+        structured_draft: structuredDraft,
+      },
+    });
+
+    const fullText = await consumeChatEventStream({
+      endpoint,
+      response,
+      authSource,
+      onDelta: onToken,
+      onMeta: (meta) => {
+        onMeta(meta);
+        if ((meta as any).patch) {
+          onPatch((meta as any).patch);
+        }
+      },
+      onDraftPatch: onPatch,
+    });
+
+    return { text: fullText, authSource };
+  } catch (err) {
+    if (err instanceof ChatStreamError) {
+      throw err;
+    }
+    throw err;
+  }
+}
+
+interface ChatBubbleProps {
+  message: Message;
+  onApplyDraftPatch: (patch: WorkshopDraftPatchProposal) => void;
+  onGuidedChoiceSelect: (groupId: string, option: GuidedChoiceOption, message: Message) => void;
+  isGuidedActionLoading?: boolean;
+  selectingTopicId?: string | null;
+}
+
+const ChatBubble = memo(function ChatBubble({
+  message,
+  onApplyDraftPatch,
+  onGuidedChoiceSelect,
+  isGuidedActionLoading,
+  selectingTopicId,
+}: ChatBubbleProps) {
+  const isUser = message.role === 'user';
+  const isStreaming = !!(message as any).isStreaming;
+  const topicSuggestions = message.topicSuggestions || [];
+
+  const interactiveGroups = useMemo(() => {
+    let groups = message.choiceGroups || [];
+    if (message.phase === 'topic_selection' && topicSuggestions.length > 0 && groups.length === 0) {
+      groups = [
+        {
+          id: 'topic-selection',
+          title: '이 중에서 가장 마음에 드는 주제를 골라주세요.',
+          style: 'cards',
+          options: topicSuggestions.map((topic) => ({
+            id: topic.id,
+            label: topic.title,
+            description: topic.why_fit_student,
+            value: topic.id,
+          })),
+        },
+      ];
     }
     return groups;
-  }, [message.choiceGroups, topicSuggestions]);
+  }, [message.choiceGroups, message.phase, topicSuggestions]);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn('flex', isUser ? 'justify-end' : 'justify-start')}
+      className={cn('flex w-full px-2', isUser ? 'justify-end' : 'justify-start')}
     >
       <div
         className={cn(
           'max-w-[92%] rounded-2xl border px-4 py-3 shadow-sm',
           isUser
-            ? 'border-[#004aad] bg-[#004aad] text-white'
-            : 'border-slate-200 bg-white text-slate-900',
+            ? 'border-indigo-600 bg-indigo-600 text-white shadow-indigo-200/40'
+            : 'border-slate-100 bg-white text-slate-900',
         )}
       >
-        <div className="mb-2 flex items-center gap-2 text-xs font-black">
-          {isUser ? <User size={14} /> : <Bot size={14} />}
-          <span>{isUser ? '나' : '유니폴리'}</span>
+        <div className={cn("mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider", isUser ? "text-indigo-100" : "text-indigo-600")}>
+          {isUser ? <User size={12} /> : <Bot size={12} />}
+          <span>{isUser ? 'ME' : 'UNIFOLI'}</span>
         </div>
 
         {isStreaming ? (
-          <div className="flex items-center gap-2 text-sm font-medium">
+          <div className="flex items-center gap-2 text-sm font-medium py-1">
             <Loader2 size={14} className="animate-spin" />
-            답변을 작성하고 있어요...
+            <span>분석하고 있어요...</span>
           </div>
         ) : message.content ? (
           <MemoizedMarkdown content={message.content} role={message.role} />
         ) : null}
 
         {message.draftPatch ? (
-          <div className="mt-3 rounded-xl border border-[#004aad]/20 bg-[#004aad]/5 p-3">
-            <p className="text-xs font-semibold text-slate-600">
-              AI가 구조 초안을 제안했어요. 버튼을 누르면 문서에 반영됩니다.
+          <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 shadow-inner">
+            <p className="text-xs font-bold text-slate-600 mb-3 flex items-center gap-2">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-indigo-600 text-[10px] text-white shadow-sm">AI</span>
+              보고서 구성 제안이 도착했어요.
             </p>
-            <div className="mt-2">
-              <PrimaryButton
-                size="sm"
-                onClick={() => onApplyDraftPatch(message.draftPatch!)}
-              >
-                제안 반영
-              </PrimaryButton>
-            </div>
+            <PrimaryButton
+              size="sm"
+              className="w-full text-xs py-2 h-auto rounded-lg"
+              onClick={() => onApplyDraftPatch(message.draftPatch!)}
+            >
+              제안 내용을 문서에 반영하기
+            </PrimaryButton>
           </div>
         ) : null}
 
-        {interactiveGroups.length > 0 ? (
+        {interactiveGroups.length > 0 && (
           <div className="mt-4 space-y-3">
             {interactiveGroups.map((group) => (
-              <div key={group.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-black text-slate-600">{group.title}</p>
+              <div key={group.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                <p className="text-[11px] font-black text-indigo-600/70 mb-2">{group.title}</p>
                 <div
                   className={cn(
-                    'mt-2',
-                    group.style === 'chips' ? 'flex flex-wrap gap-2' : 'space-y-2',
-                    group.style === 'buttons' ? 'grid gap-2 sm:grid-cols-2' : null,
+                    'grid gap-2',
+                    group.style === 'chips' ? 'flex flex-wrap gap-2' : 'grid-cols-1',
+                    group.style === 'buttons' ? 'sm:grid-cols-2' : null,
                   )}
                 >
                   {group.options.map((option) => {
                     const optionValue = String(option.value || option.id);
                     const isBusyTopic = group.id === 'topic-selection' && selectingTopicId === optionValue;
                     const disabled = isGuidedActionLoading || isBusyTopic;
+                    
+                    if (group.style === 'chips') {
+                      return (
+                        <button
+                          key={`${group.id}:${option.id}`}
+                          type="button"
+                          onClick={() => onGuidedChoiceSelect(group.id, option, message)}
+                          disabled={disabled}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-all hover:border-indigo-400 hover:text-indigo-600 hover:bg-white disabled:opacity-50"
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    }
+
                     return (
                       <button
                         key={`${group.id}:${option.id}`}
                         type="button"
                         onClick={() => onGuidedChoiceSelect(group.id, option, message)}
                         disabled={disabled}
-                        className={cn(
-                          'text-left transition-all disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[#004aad]/50',
-                          group.style === 'chips'
-                            ? 'rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-[#004aad] hover:text-[#004aad]'
-                            : 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 hover:border-[#004aad] hover:shadow-sm',
-                        )}
+                        className="w-full rounded-xl border border-slate-100 bg-white p-3 text-left transition-all hover:border-indigo-400 hover:shadow-md disabled:opacity-50 group/opt"
                       >
-                        <p className={cn(group.style === 'chips' ? 'text-xs font-bold' : 'text-sm font-bold text-slate-900')}>
-                          {option.label}
-                        </p>
-                        {group.style !== 'chips' && option.description ? (
-                          <p className="mt-1 text-xs text-slate-500">{option.description}</p>
-                        ) : null}
+                        <div className="flex justify-between items-start gap-2">
+                          <p className="text-sm font-black text-slate-800 group-hover/opt:text-indigo-600">
+                            {option.label}
+                          </p>
+                        </div>
+                        {option.description && (
+                          <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">{option.description}</p>
+                        )}
                       </button>
                     );
                   })}
@@ -679,7 +710,7 @@ function buildFoliFallback(message: string) {
               </div>
             ))}
           </div>
-        ) : null}
+        )}
       </div>
     </motion.div>
   );
@@ -720,7 +751,7 @@ export function Workshop() {
   const [isGuidedTopicSelected, setIsGuidedTopicSelected] = useState(false);
   const [isSelectingGuidedTopicId, setIsSelectingGuidedTopicId] = useState<string | null>(null);
   const [isGuidedActionLoading, setIsGuidedActionLoading] = useState(false);
-  const [chatMeta, setChatMeta] = useState<StreamMetaPayload | null>(null);
+  const [chatMeta, setChatMeta] = useState<ChatStreamMetaPayload | null>(null);
   const [mobileView, setMobileView] = useState<'chat' | 'draft'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
