@@ -66,4 +66,28 @@ export interface DiagnosisSummary {
   gaps: string[];
   risk_level: 'safe' | 'warning' | 'danger';
   recommended_focus: string;
+  total_score?: number;
+  category_scores?: Record<string, number>;
+  score_labels?: Record<string, string>;
+  score_explanations?: Record<string, string>;
+  major_direction_candidates_top3?: Array<{
+    label: string;
+    summary: string;
+  }>;
+  record_completion_state?: 'ongoing' | 'finalized' | 'unknown';
+  stage_aware_recommendation_mode?: string;
+  stage_aware_recommendation_note?: string;
+}
+
+/**
+ * 입시 지표 대시보드 데이터 전용 인터페이스
+ */
+export interface AdmissionsDashboardData {
+  total_score: number | null;
+  category_scores: Array<{ name: string; score: number }>;
+  score_labels: Record<string, string>;
+  major_directions: Array<{ label: string; summary: string }>;
+  completion_state?: string | null;
+  recommendation_mode?: string | null;
+  recommendation_note?: string | null;
 }
