@@ -108,11 +108,9 @@ export function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_6%_0%,rgba(45,163,255,0.18),transparent_30%),radial-gradient(circle_at_92%_2%,rgba(82,129,255,0.16),transparent_24%),linear-gradient(180deg,#f7faff_0%,#edf4ff_100%)]">
+    <div className="min-h-screen bg-[#f8fafc]">
       <div className="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[1.08fr_0.92fr]">
         <section className="order-2 relative overflow-hidden px-4 py-6 sm:px-8 sm:py-8 lg:order-1 lg:px-12 lg:py-10">
-          <div className="pointer-events-none absolute -left-16 -top-20 h-64 w-64 rounded-full bg-[#45b9ff]/25 blur-3xl" />
-          <div className="pointer-events-none absolute -right-20 top-10 h-72 w-72 rounded-full bg-[#6a8bff]/20 blur-3xl animate-shine-pulse" />
 
           <div className="relative flex flex-wrap items-center justify-between gap-3">
             <Link to="/" onClick={scrollToTop} className="flex items-center gap-3">

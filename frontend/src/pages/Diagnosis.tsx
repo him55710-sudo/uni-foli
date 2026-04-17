@@ -981,7 +981,18 @@ export function Diagnosis() {
               >
                 진단 새로 시작
               </SecondaryButton>
-              <PrimaryButton onClick={() => navigate(`/app/workshop/${projectId}`)}>
+              <PrimaryButton
+                onClick={() =>
+                  navigate(`/app/workshop/${projectId}`, {
+                    state: {
+                      major: goalList[0]?.major,
+                      chatbotMode: 'diagnosis',
+                      fromDiagnosis: true,
+                      diagnosisRunId: diagnosisRun?.id ?? null,
+                    },
+                  })
+                }
+              >
                 워크숍 시작하기 <ArrowRight size={16} />
               </PrimaryButton>
             </div>

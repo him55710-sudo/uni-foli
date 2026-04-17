@@ -32,6 +32,7 @@ import {
   type ChatStreamMetaPayload,
 } from '../lib/chatStream';
 import { cn } from '../lib/cn';
+import type { DiagnosisRunResponse } from '../lib/diagnosis';
 import { saveArchiveItem } from '../lib/archiveStore';
 import { readQuestStart } from '../lib/questStart';
 import type { AuthTokenSource } from '../lib/requestAuth';
@@ -86,6 +87,11 @@ import {
   type WorkshopMode,
   type WorkshopStructuredDraftState,
 } from '../lib/workshopCoauthoring';
+import {
+  buildDiagnosisChatStarter,
+  resolveChatbotModeFromRouteContext,
+  type ChatbotMode,
+} from '../lib/chatbotMode';
 
 const MemoizedMarkdown = memo(function MemoizedMarkdown({
   content,
@@ -719,10 +725,27 @@ const ChatBubble = memo(function ChatBubble({
     </motion.div>
   );
 });
+
+interface WorkshopLocationState {
+  major?: string;
+  chatbotMode?: ChatbotMode;
+  fromDiagnosis?: boolean;
+  diagnosisRunId?: string | null;
+}
+
 export function Workshop() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
   const location = useLocation();
+  const workshopLocationState = (location.state as WorkshopLocationState | null) ?? null;
+  const requestedChatbotMode = useMemo(
+    () =>
+      resolveChatbotModeFromRouteContext({
+        pathname: location.pathname,
+        routeState: location.state,
+      }),
+    [location.pathname, location.state],
+  );
 
   const [workshopState, setWorkshopState] = useState<WorkshopStateResponse | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -755,15 +778,15 @@ export function Workshop() {
   const [isGuidedTopicSelected, setIsGuidedTopicSelected] = useState(false);
   const [isSelectingGuidedTopicId, setIsSelectingGuidedTopicId] = useState<string | null>(null);
   const [isGuidedActionLoading, setIsGuidedActionLoading] = useState(false);
+  const [chatbotMode, setChatbotMode] = useState<ChatbotMode>(requestedChatbotMode);
   const [chatMeta, setChatMeta] = useState<ChatStreamMetaPayload | null>(null);
   const [mobileView, setMobileView] = useState<'chat' | 'draft'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const questStart = useMemo(() => readQuestStart(), []);
-  const initialMajor = useMemo(
-    () => ((location.state as { major?: string } | null)?.major || '미정'),
-    [location.state],
-  );
+  const initialMajor = useMemo(() => workshopLocationState?.major || '미정', [workshopLocationState]);
+  const preferredDiagnosisRunId = workshopLocationState?.diagnosisRunId ?? null;
+  const openedFromDiagnosis = workshopLocationState?.fromDiagnosis === true;
   const isProjectBacked = Boolean(projectId && projectId !== 'demo');
   const guidedProjectId = isProjectBacked ? projectId ?? null : null;
   const fileName = useMemo(() => `${(questStart?.title || 'draft').replace(/\s+/g, '_')}.hwpx`, [questStart]);
@@ -786,7 +809,10 @@ export function Workshop() {
     setShowDraftControls(false);
     setShowAdvancedTools(false);
     setWorkshopMode('planning');
+    setChatbotMode(requestedChatbotMode);
     setStructuredDraft(createEmptyStructuredDraft('planning'));
+    setDiagnosisReport(null);
+    setShowDiagnosis(false);
     try {
       const sessions = await api.get<WorkshopSessionResponse[]>(`/api/v1/workshops?project_id=${projectId}`);
       const active = sessions.find(session => session.status !== 'completed');
@@ -801,6 +827,32 @@ export function Workshop() {
 
       setWorkshopState(state);
       setQualityLevel(state.session.quality_level);
+
+      let latestDiagnosisRun: DiagnosisRunResponse | null = null;
+      if (isProjectBacked && preferredDiagnosisRunId) {
+        try {
+          const run = await api.get<DiagnosisRunResponse>(`/api/v1/diagnosis/${preferredDiagnosisRunId}`);
+          if (!projectId || run.project_id === projectId) {
+            latestDiagnosisRun = run;
+          }
+        } catch {
+          latestDiagnosisRun = null;
+        }
+      }
+      if (!latestDiagnosisRun && isProjectBacked && projectId) {
+        try {
+          latestDiagnosisRun = await api.get<DiagnosisRunResponse>(`/api/v1/diagnosis/project/${projectId}/latest`);
+        } catch {
+          latestDiagnosisRun = null;
+        }
+      }
+      if (latestDiagnosisRun?.result_payload) {
+        setDiagnosisReport(latestDiagnosisRun.result_payload as Record<string, unknown>);
+        setShowDiagnosis(true);
+      }
+
+      const diagnosisStarter = buildDiagnosisChatStarter(latestDiagnosisRun?.result_payload);
+      setChatbotMode(diagnosisStarter ? 'diagnosis' : requestedChatbotMode);
 
       if (state.latest_artifact) {
         setRenderArtifact(state.latest_artifact);
@@ -835,9 +887,30 @@ export function Workshop() {
       });
 
       if (loadedMessages.length) {
+        if (openedFromDiagnosis && diagnosisStarter) {
+          loadedMessages.push({
+            id: `diagnosis-starter-${latestDiagnosisRun?.id ?? 'latest'}`,
+            role: 'foli',
+            content: diagnosisStarter.briefing,
+            phase: 'freeform_coauthoring',
+            choiceGroups: [diagnosisStarter.quickActionGroup],
+          });
+        }
         setMessages(loadedMessages);
         setGuidedPhase('freeform_coauthoring');
         setIsGuidedTopicSelected(true);
+      } else if (diagnosisStarter) {
+        setGuidedPhase('freeform_coauthoring');
+        setIsGuidedTopicSelected(true);
+        setMessages([
+          {
+            id: 'diagnosis-starter',
+            role: 'foli',
+            content: diagnosisStarter.briefing,
+            phase: 'freeform_coauthoring',
+            choiceGroups: [diagnosisStarter.quickActionGroup],
+          },
+        ]);
       } else {
         try {
           const guidedStart = await api.post<GuidedChatStartResponse>('/api/v1/guided-chat/start', {
@@ -946,14 +1019,6 @@ export function Workshop() {
           ]);
         }
       }
-      api.get<{ result_payload?: Record<string, unknown> }>(`/api/v1/diagnosis/project/${projectId}/latest`)
-        .then(res => {
-          if (res?.result_payload) {
-            setDiagnosisReport(res.result_payload);
-            setShowDiagnosis(true);
-          }
-        })
-        .catch(() => {});
     } catch (error) {
       console.error('Workshop init failed:', error);
       toast.error('워크숍을 불러오지 못했습니다. 로컬 모드로 전환합니다.');
@@ -963,7 +1028,7 @@ export function Workshop() {
     } finally {
       setIsSessionLoading(false);
     }
-  }, [projectId]);
+  }, [isProjectBacked, openedFromDiagnosis, preferredDiagnosisRunId, projectId, requestedChatbotMode]);
 
   useEffect(() => {
     const savedLevel = localStorage.getItem('uni_foli_quality_level');
@@ -1392,8 +1457,9 @@ export function Workshop() {
     }));
   }, []);
 
-  const handleSend = async (overriddenText?: string) => {
+  const handleSend = async (overriddenText?: string, options?: { displayText?: string }) => {
     const text = (overriddenText ?? input ?? '').trim();
+    const displayText = (options?.displayText || text).trim();
     if (!text || isTyping || isSelectingGuidedTopicId || isGuidedActionLoading) return;
     if (!overriddenText) setInput('');
 
@@ -1401,7 +1467,7 @@ export function Workshop() {
       applyPatchToDraft(pendingDraftPatch, true, false);
     }
 
-    setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }]);
+    setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: displayText || text }]);
 
     if (isProjectBacked && !isGuidedSetupComplete(guidedPhase)) {
       setIsTyping(true);
@@ -1664,6 +1730,14 @@ export function Workshop() {
         return;
       }
 
+      if (groupId === 'diagnosis-quick-actions') {
+        setChatbotMode('diagnosis');
+        setGuidedPhase('freeform_coauthoring');
+        setIsGuidedTopicSelected(true);
+        await handleSend(rawValue, { displayText: option.label || rawValue });
+        return;
+      }
+
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content: option.label || rawValue }]);
 
       if (groupId === 'subject-quick-picks') {
@@ -1793,17 +1867,23 @@ export function Workshop() {
   };
 
   const qualityMeta = QUALITY_META_MAP[qualityLevel];
-  const diagnosisSummary = (diagnosisReport?.summary ?? {}) as {
-    headline?: string;
-    risk_level?: string;
-    gaps?: unknown[];
-  };
-  const diagnosisHeadline = diagnosisSummary.headline;
-  const diagnosisRisk = diagnosisSummary.risk_level;
+  const diagnosisSummary = ((diagnosisReport?.diagnosis_summary_json ??
+    diagnosisReport?.summary ??
+    {}) as Record<string, unknown>) ?? {};
+  const diagnosisChatbotContext = (diagnosisReport?.chatbot_context_json ?? {}) as Record<string, unknown>;
+  const diagnosisHeadline =
+    typeof diagnosisSummary.headline === 'string' && diagnosisSummary.headline.trim()
+      ? diagnosisSummary.headline
+      : undefined;
+  const diagnosisRisk = typeof diagnosisSummary.risk_level === 'string' ? diagnosisSummary.risk_level : undefined;
   const diagnosisRiskKey = typeof diagnosisRisk === 'string' ? diagnosisRisk.toLowerCase() : '';
   const diagnosisRiskLabel = formatDiagnosisRiskLabel(typeof diagnosisRisk === 'string' ? diagnosisRisk : undefined);
   const diagnosisRiskStatus = diagnosisRiskKey === 'safe' ? 'success' : diagnosisRiskKey === 'danger' ? 'danger' : 'warning';
-  const diagnosisGapCount = diagnosisSummary.gaps?.length || 0;
+  const summaryGaps = Array.isArray(diagnosisSummary.gaps) ? diagnosisSummary.gaps : [];
+  const contextWeaknesses = Array.isArray(diagnosisChatbotContext.key_weaknesses)
+    ? diagnosisChatbotContext.key_weaknesses
+    : [];
+  const diagnosisGapCount = summaryGaps.length || contextWeaknesses.length;
   const limitedReason = chatMeta?.limited_reason || null;
   const limitedModeNotice = useMemo(() => {
     if (!chatMeta?.limited_mode) return null;
@@ -1851,6 +1931,7 @@ export function Workshop() {
       ? '과목 카드부터 고르면 바로 시작됩니다.'
       : '예: 내 약점 3가지를 근거와 함께 정리해줘';
   const quickPromptOptions = useMemo(() => {
+    if (chatbotMode === 'diagnosis') return [];
     if (isProjectBacked && !guidedSetupComplete) return [];
 
     const prefix = diagnosisHeadline
@@ -1875,7 +1956,7 @@ export function Workshop() {
         prompt: `${prefix}다음 한 달 행동 계획을 주차별로 정리해줘.`,
       },
     ];
-  }, [diagnosisHeadline, guidedSetupComplete, isProjectBacked]);
+  }, [chatbotMode, diagnosisHeadline, guidedSetupComplete, isProjectBacked]);
 
   return (
     <div className={cn("mx-auto max-w-[1800px] space-y-4 px-2.5 py-3 transition-all duration-700 sm:space-y-6 sm:px-4 sm:py-6", advancedMode && "rounded-[32px] bg-[#004aad]/5 shadow-[inset_0_0_100px_rgba(0,74,173,0.02)] sm:rounded-[48px]")}>

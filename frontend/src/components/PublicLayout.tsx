@@ -57,7 +57,7 @@ export function PublicLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.14),transparent_24%),radial-gradient(circle_at_92%_2%,rgba(99,102,241,0.12),transparent_24%),radial-gradient(circle_at_55%_100%,rgba(251,113,133,0.08),transparent_20%),linear-gradient(180deg,#fbfcff_0%,#f3f6ff_50%,#faf6ff_100%)] text-slate-900">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900">
       <header className="sticky top-0 z-40 border-b border-white/70 bg-white/72 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
           <Link to="/" onClick={handleDesktopNavClick}>

@@ -7,10 +7,8 @@ import {
   FileSearch,
   Rocket,
   ShieldCheck,
-  Sparkles,
   Target,
 } from 'lucide-react';
-import { buttonClassName } from '../components/ui';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/cn';
 
@@ -20,21 +18,21 @@ const workflowPanels = [
     title: '목표 대학과 학과 기준 맞추기',
     description: '대학과 학과에 따라 같은 학생부라도 읽는 기준이 달라집니다.',
     icon: Target,
-    tone: 'sky',
+    color: 'blue',
   },
   {
     eyebrow: 'Evidence',
     title: '학생부 PDF에서 근거만 추출하기',
     description: '텍스트를 먼저 정리한 뒤 실제 기록이 남아 있는 문장만 증거로 씁니다.',
     icon: FileSearch,
-    tone: 'violet',
+    color: 'slate',
   },
   {
     eyebrow: 'Direction',
     title: '약점과 다음 행동까지 바로 연결하기',
     description: '진단이 끝나면 바로 워크숍으로 이어서 초안과 활동 방향을 잡을 수 있습니다.',
     icon: Compass,
-    tone: 'emerald',
+    color: 'indigo',
   },
 ];
 
@@ -68,121 +66,102 @@ export function Landing() {
   };
 
   return (
-    <div className="bg-[#f8fafc] text-slate-900 selection:bg-indigo-100">
+    <div className="bg-white text-slate-900 selection:bg-blue-100">
       <section className="relative overflow-hidden py-16 lg:py-24">
-        {/* Dynamic Background Elements */}
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.1),transparent_40%),radial-gradient(circle_at_80%_80%,rgba(168,85,247,0.1),transparent_40%)]" />
-        <div className="pointer-events-none absolute top-[-10%] left-[10%] h-[500px] w-[500px] rounded-full bg-indigo-500/5 blur-[120px] animate-pulse-soft" />
-        <div className="pointer-events-none absolute bottom-[-10%] right-[10%] h-[500px] w-[500px] rounded-full bg-purple-500/5 blur-[120px] animate-pulse-soft" />
-
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid items-center gap-16 lg:grid-cols-[1fr_1.1fr]">
+          <div className="grid items-center gap-16 lg:grid-cols-[1.1fr_1fr]">
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 0.5 }}
               className="max-w-2xl text-center lg:text-left"
             >
-              <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-white/60 px-4 py-2 text-[12px] font-bold uppercase tracking-[0.2em] text-indigo-600 backdrop-blur-sm shadow-sm animate-rise-in">
-                <Sparkles size={14} className="animate-pulse" />
-                <span>Next-Gen Diagnosis</span>
+              <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                <span className="h-2 w-2 rounded-full bg-blue-600" />
+                <span>Admission Decision Support</span>
               </div>
 
-              <h1 className="mt-8 text-5xl font-extrabold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
-                학생부 기록의
-                <span className="mt-2 block text-gradient">숨은 가치를 증명으로</span>
+              <h1 className="mt-8 text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+                학생부 기록의 가치를<br />
+                <span className="text-blue-700">데이터와 증명으로</span> 확인하세요
               </h1>
 
-              <p className="mt-8 text-lg font-medium leading-relaxed text-slate-600 sm:text-xl">
+              <p className="mt-6 text-lg font-medium leading-relaxed text-slate-500 sm:text-xl">
                 단순 분석을 넘어, 목표 대학 기준에 맞춘 정밀 진단과<br className="hidden sm:block" />
                 실행 가능한 워크숍 초안까지 한 번에 연결합니다.
               </p>
 
-              <div className="mt-12 flex flex-wrap justify-center lg:justify-start gap-5">
+              <div className="mt-10 flex flex-wrap justify-center lg:justify-start gap-4">
                 <Link
                   to={startHref}
                   onClick={scrollToTop}
-                  className="clay-btn-primary group flex items-center gap-3 rounded-2xl px-10 py-5 text-lg shadow-xl"
+                  className="btn-primary group flex items-center gap-2"
                 >
-                  <Rocket size={22} />
+                  <Rocket size={18} />
                   <span>진단 시작하기</span>
-                  <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                  <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
                 </Link>
                 <Link
                   to="/faq"
                   onClick={scrollToTop}
-                  className="clay-btn-secondary flex items-center gap-3 rounded-2xl px-10 py-5 text-lg font-bold border border-slate-200 bg-white shadow-sm"
+                  className="btn-secondary flex items-center gap-2"
                 >
-                  시스템 둘러보기
+                  시스템 소개서
                 </Link>
               </div>
 
-              <div className="mt-16 grid grid-cols-3 gap-6 text-center">
+              <div className="mt-16 grid grid-cols-3 gap-8">
                 {[
                   { label: "신뢰도 파싱", val: "99%" },
                   { label: "분석 핵심 축", val: "6개" },
-                  { label: "맞춤형 피드백", val: "즉시" }
+                  { label: "분석 속도", val: "즉시" }
                 ].map((stat, i) => (
-                  <div key={i} className="animate-rise-in" style={{ animationDelay: `${0.4 + i*0.1}s` }}>
-                    <p className="stat-value text-indigo-600/90">{stat.val}</p>
-                    <p className="mt-2 text-xs font-bold text-slate-400 uppercase tracking-widest">{stat.label}</p>
+                  <div key={i}>
+                    <p className="text-3xl font-bold text-slate-900">{stat.val}</p>
+                    <p className="mt-1 text-xs font-bold text-slate-400 uppercase tracking-widest">{stat.label}</p>
                   </div>
                 ))}
               </div>
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="relative hidden lg:block"
             >
-              <div className="glass-card p-1">
-                <div className="overflow-hidden rounded-[1.6rem] bg-white">
-                  <div className="bg-slate-50 border-b border-slate-100 px-8 py-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex gap-2">
-                        <div className="h-3 w-3 rounded-full bg-red-400/80" />
-                        <div className="h-3 w-3 rounded-full bg-amber-400/80" />
-                        <div className="h-3 w-3 rounded-full bg-emerald-400/80" />
-                      </div>
-                      <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Analysis Engine v3.0</span>
+              <div className="document-card p-1">
+                <div className="overflow-hidden rounded-lg bg-white p-8">
+                  <div className="mb-8 flex items-center justify-between border-b border-slate-100 pb-4">
+                    <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Diagnosis Pipeline</span>
+                    <div className="flex gap-1.5">
+                      <div className="h-2 w-2 rounded-full bg-slate-200" />
+                      <div className="h-2 w-2 rounded-full bg-slate-200" />
+                      <div className="h-2 w-2 rounded-full bg-slate-200" />
                     </div>
                   </div>
 
-                  <div className="p-8 space-y-6">
-                    {workflowPanels.map((panel, index) => (
-                      <motion.div
+                  <div className="space-y-6">
+                    {workflowPanels.map((panel) => (
+                      <div
                         key={panel.title}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.4 + index * 0.1 }}
-                        className="group flex items-start gap-6 rounded-3xl p-6 transition-colors hover:bg-slate-50"
+                        className="flex items-start gap-4 rounded-xl p-4 transition-colors hover:bg-slate-50"
                       >
                         <div className={cn(
-                          "flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.25rem] transition-transform group-hover:scale-110 shadow-lg",
-                          panel.tone === 'sky' && 'bg-sky-500 text-white shadow-sky-200',
-                          panel.tone === 'violet' && 'bg-violet-500 text-white shadow-violet-200',
-                          panel.tone === 'emerald' && 'bg-emerald-500 text-white shadow-emerald-200',
+                          "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border",
+                          panel.color === 'blue' && 'bg-blue-50 border-blue-100 text-blue-600',
+                          panel.color === 'slate' && 'bg-slate-50 border-slate-200 text-slate-600',
+                          panel.color === 'indigo' && 'bg-indigo-50 border-indigo-100 text-indigo-600',
                         )}>
-                          <panel.icon size={26} strokeWidth={2.5} />
+                          <panel.icon size={20} />
                         </div>
                         <div>
-                          <p className="text-xs font-black uppercase tracking-widest text-indigo-400">{panel.eyebrow}</p>
-                          <h3 className="mt-1 text-xl font-bold text-slate-900 tracking-tight">{panel.title}</h3>
-                          <p className="mt-2 text-[15px] font-medium leading-relaxed text-slate-500">{panel.description}</p>
+                          <h3 className="text-lg font-bold text-slate-900">{panel.title}</h3>
+                          <p className="mt-1 text-sm font-medium text-slate-500 line-clamp-2">{panel.description}</p>
                         </div>
-                      </motion.div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              </div>
-              
-              {/* Floating element for more life */}
-              <div className="absolute -bottom-10 -right-6 h-32 w-32 glass-card flex items-center justify-center animate-float shadow-2xl border-indigo-100">
-                <div className="text-center">
-                  <p className="text-2xl font-black text-indigo-600">AI</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Powered</p>
                 </div>
               </div>
             </motion.div>
@@ -191,60 +170,53 @@ export function Landing() {
       </section>
 
       {/* Principles Section */}
-      <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <div className="mb-16 text-center max-w-2xl mx-auto">
-          <h2 className="text-base font-black uppercase tracking-[0.25em] text-indigo-500">Principles</h2>
-          <h3 className="mt-4 text-4xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
-            결과보다 <span className="text-gradient">과정의 연결</span>을 중시합니다
-          </h3>
-        </div>
+      <section className="bg-slate-50 border-y border-slate-200 py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-16 text-center">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-blue-600">Principles</h2>
+            <h3 className="mt-4 text-3xl font-extrabold text-slate-900 sm:text-4xl">
+              데이터의 투명성을 고수합니다
+            </h3>
+          </div>
 
-        <div className="grid gap-8 md:grid-cols-3">
-          {principles.map((item, index) => (
-            <div key={item.title} className="glass-card p-10 flex flex-col items-center text-center group">
-              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 text-xl font-black group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                0{index + 1}
+          <div className="grid gap-6 md:grid-cols-3">
+            {principles.map((item, index) => (
+              <div key={item.title} className="document-card bg-white p-8">
+                <span className="text-xs font-black text-slate-300">0{index + 1}</span>
+                <h4 className="mt-4 text-xl font-bold text-slate-900">{item.title}</h4>
+                <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">{item.description}</p>
               </div>
-              <h4 className="text-2xl font-bold tracking-tight text-slate-950">{item.title}</h4>
-              <p className="mt-4 text-[15px] font-medium leading-relaxed text-slate-500">{item.description}</p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
       {/* CTA Section */}
       <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <div className="relative overflow-hidden rounded-[3rem] bg-indigo-600 px-8 py-20 text-center shadow-2xl">
-          <div className="absolute inset-0 -z-10 bg-[linear-gradient(135deg,#6366f1_0%,#4f46e5_40%,#7c3aed_100%)]" />
-          <div className="absolute pointer-events-none inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
-          
-          <div className="relative z-10">
-            <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
-              지금 당신의 학생부는 어떻게 읽힐까요?<br />
-              <span className="opacity-80">데이터로 직접 확인하세요.</span>
-            </h2>
-            <div className="mt-12 flex flex-wrap justify-center gap-6">
-              <Link to={startHref} onClick={scrollToTop} className="rounded-2xl bg-white px-10 py-5 text-lg font-black text-indigo-600 shadow-xl transition-transform hover:-translate-y-1 hover:scale-105 active:scale-95">
-                무료 진단 시작하기
-              </Link>
-              <Link to="/contact" onClick={scrollToTop} className="rounded-2xl border-2 border-white/20 px-10 py-5 text-lg font-black text-white backdrop-blur-sm transition-colors hover:bg-white/10">
-                도입 문의
-              </Link>
-            </div>
+        <div className="rounded-[2rem] bg-slate-900 px-8 py-16 text-center text-white shadow-xl">
+          <h2 className="text-3xl font-extrabold sm:text-4xl">
+            준비된 학생부 데이터로<br />
+            입시 방향성을 정립하세요.
+          </h2>
+          <div className="mt-10 flex flex-wrap justify-center gap-4">
+            <Link to={startHref} onClick={scrollToTop} className="btn-primary bg-white text-slate-900 hover:bg-slate-100">
+              무료 진단 시작하기
+            </Link>
+            <Link to="/contact" onClick={scrollToTop} className="btn-secondary bg-transparent text-white border-white/20 hover:bg-white/10">
+              시스템 도입 문의
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* Summary Footer-like Trust Section */}
-      <section className="bg-slate-50 py-20">
+      {/* Trust Section */}
+      <section className="py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-12 md:grid-cols-3">
+          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
             {trustRows.map((row, i) => (
-              <div key={i} className="flex items-center gap-6">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-500 shadow-sm">
-                  <ShieldCheck size={24} />
-                </div>
-                <p className="text-lg font-bold text-slate-700 tracking-tight">{row}</p>
+              <div key={i} className="flex items-center gap-3">
+                <ShieldCheck size={20} className="text-blue-600" />
+                <p className="text-sm font-bold text-slate-600">{row}</p>
               </div>
             ))}
           </div>

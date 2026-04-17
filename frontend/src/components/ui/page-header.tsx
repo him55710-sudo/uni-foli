@@ -12,8 +12,7 @@ export interface PageHeaderProps {
 
 export function PageHeader({ eyebrow, title, description, actions, evidence, className }: PageHeaderProps) {
   return (
-    <header className={cn('relative overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.9)_0%,rgba(246,249,255,0.84)_100%)] p-6 shadow-[0_18px_40px_rgba(42,64,132,0.1)] backdrop-blur-xl sm:p-9', className)}>
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_12%_10%,rgba(56,189,248,0.2),transparent_32%),radial-gradient(circle_at_88%_0%,rgba(251,191,36,0.16),transparent_26%)]" />
+    <header className={cn('relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-9', className)}>
       <div className="relative flex flex-col gap-5 sm:gap-6 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           {eyebrow ? (
@@ -24,7 +23,7 @@ export function PageHeader({ eyebrow, title, description, actions, evidence, cla
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2.5">{actions}</div> : null}
       </div>
-      {evidence ? <div className="relative mt-6 border-t border-white/80 pt-6">{evidence}</div> : null}
+      {evidence ? <div className="relative mt-6 border-t border-slate-100 pt-6">{evidence}</div> : null}
     </header>
   );
 }
