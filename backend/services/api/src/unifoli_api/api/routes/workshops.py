@@ -90,7 +90,6 @@ def _get_session_loaded(workshop_id: str, db: Session) -> WorkshopSession:
         .options(
             joinedload(WorkshopSession.turns),
             joinedload(WorkshopSession.pinned_references),
-            joinedload(WorkshopSession.draft_artifacts),
         )
         .filter(WorkshopSession.id == workshop_id)
     )
@@ -107,7 +106,6 @@ def _get_session_loaded_for_user(workshop_id: str, db: Session, owner_user_id: s
         .options(
             joinedload(WorkshopSession.turns),
             joinedload(WorkshopSession.pinned_references),
-            joinedload(WorkshopSession.draft_artifacts),
         )
         .where(WorkshopSession.id == workshop_id, Project.owner_user_id == owner_user_id)
     )
@@ -126,10 +124,15 @@ def _get_project_and_quest(db: Session, session: WorkshopSession) -> tuple[Proje
 
 
 def _latest_artifact(session: WorkshopSession) -> DraftArtifact | None:
-    if not session.draft_artifacts:
+    try:
+        artifacts = list(session.draft_artifacts or [])
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to read workshop draft artifacts. session_id=%s", session.id)
         return None
-    completed = [artifact for artifact in session.draft_artifacts if artifact.render_status == "completed"]
-    return (completed or session.draft_artifacts)[-1]
+    if not artifacts:
+        return None
+    completed = [artifact for artifact in artifacts if artifact.render_status == "completed"]
+    return (completed or artifacts)[-1]
 
 
 def _sync_session_status(session: WorkshopSession) -> None:
