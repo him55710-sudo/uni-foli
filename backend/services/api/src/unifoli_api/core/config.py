@@ -158,7 +158,12 @@ class Settings(BaseSettings):
     render_llm_provider: str | None = None
     gemini_api_key: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY", "GENAI_API_KEY"),
+        validation_alias=AliasChoices(
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "GENAI_API_KEY",
+            "GEMINI_KEY",
+        ),
     )
     gemini_model: str = "gemini-2.0-flash"
     ollama_base_url: str = "http://localhost:11434/v1"
@@ -184,6 +189,7 @@ class Settings(BaseSettings):
             "GEMINI_API_KEY",
             "GOOGLE_API_KEY",
             "GENAI_API_KEY",
+            "GEMINI_KEY",
         ),
     )
     pdf_analysis_gemini_model: str | None = None

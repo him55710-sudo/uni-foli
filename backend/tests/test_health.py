@@ -277,9 +277,23 @@ def test_health_payload_reads_firebase_bootstrap_flags_from_loaded_settings(tmp_
 def test_snapshot_settings_from_env_accepts_google_api_key_alias(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("PDF_ANALYSIS_GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_API_KEY", "test-google-api-key")
 
     settings = snapshot_settings_from_env()
 
     assert settings.gemini_api_key == "test-google-api-key"
     assert settings.pdf_analysis_gemini_api_key == "test-google-api-key"
+
+
+def test_snapshot_settings_from_env_accepts_gemini_key_alias(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("PDF_ANALYSIS_GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_KEY", "test-gemini-key")
+
+    settings = snapshot_settings_from_env()
+
+    assert settings.gemini_api_key == "test-gemini-key"
+    assert settings.pdf_analysis_gemini_api_key == "test-gemini-key"

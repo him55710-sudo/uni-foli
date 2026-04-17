@@ -93,6 +93,26 @@ def test_gemini_uses_google_api_key_env_alias(monkeypatch) -> None:
     assert isinstance(client, (GeminiClient, RobustLLMClient))
 
 
+def test_gemini_uses_gemini_key_env_alias(monkeypatch) -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="production",
+        app_debug=False,
+        auth_allow_local_dev_bypass=False,
+        llm_provider="gemini",
+        gemini_api_key=None,
+        ollama_base_url="https://ollama.example.com/v1",
+        ollama_model="gemma4-main",
+    )
+    monkeypatch.setattr("unifoli_api.core.llm.get_settings", lambda: settings)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_KEY", "test-gemini-key-alias")
+
+    client = get_llm_client(profile="standard")
+    assert isinstance(client, (GeminiClient, RobustLLMClient))
+
+
 def test_select_ollama_fallback_model_prefers_same_family_and_nearest_size() -> None:
     chosen = _select_ollama_fallback_model(
         "qwen2.5:7b",
