@@ -121,16 +121,26 @@ class GeminiClient(LLMClient):
     ) -> T:
         started_at = time.perf_counter()
         try:
-            response = await self.client.models.generate_content_async(
-                model=self.model_name,
-                contents=prompt,
-                config={
-                    "system_instruction": system_instruction,
-                    "response_mime_type": "application/json",
-                    "response_schema": response_model,
-                    "temperature": temperature,
-                },
-            )
+            config = {
+                "system_instruction": system_instruction,
+                "response_mime_type": "application/json",
+                "response_schema": response_model,
+                "temperature": temperature,
+            }
+            generate_async = getattr(self.client.models, "generate_content_async", None)
+            if callable(generate_async):
+                response = await generate_async(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
+            else:
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
             parsed = response_model.model_validate_json(response.text)
             _record_runtime_success(
                 self,
@@ -158,18 +168,55 @@ class GeminiClient(LLMClient):
         temperature: float = 0.5,
     ) -> AsyncIterator[str]:
         started_at = time.perf_counter()
+        config = {
+            "system_instruction": system_instruction,
+            "temperature": temperature,
+        }
         try:
-            response_stream = await self.client.models.generate_content_stream_async(
-                model=self.model_name,
-                contents=prompt,
-                config={
-                    "system_instruction": system_instruction,
-                    "temperature": temperature,
-                },
-            )
-            async for chunk in response_stream:
-                if chunk.text:
-                    yield chunk.text
+            try:
+                stream_async = getattr(self.client.models, "generate_content_stream_async", None)
+                if callable(stream_async):
+                    response_stream = await stream_async(
+                        model=self.model_name,
+                        contents=prompt,
+                        config=config,
+                    )
+                    async for chunk in response_stream:
+                        if chunk.text:
+                            yield chunk.text
+                else:
+                    stream_sync = getattr(self.client.models, "generate_content_stream", None)
+                    if callable(stream_sync):
+                        def _collect_stream_chunks() -> list[str]:
+                            chunks: list[str] = []
+                            for chunk in stream_sync(
+                                model=self.model_name,
+                                contents=prompt,
+                                config=config,
+                            ):
+                                chunk_text = getattr(chunk, "text", None)
+                                if chunk_text:
+                                    chunks.append(str(chunk_text))
+                            return chunks
+
+                        for token in await asyncio.to_thread(_collect_stream_chunks):
+                            yield token
+                    else:
+                        raise RuntimeError("Gemini stream APIs are unavailable in current SDK.")
+            except Exception as stream_exc:  # noqa: BLE001
+                logger.warning(
+                    "Gemini stream failed; falling back to non-stream generation. model=%s error=%r",
+                    self.model_name,
+                    stream_exc,
+                )
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                if response.text:
+                    yield response.text
             _record_runtime_success(
                 self,
                 provider="gemini",
