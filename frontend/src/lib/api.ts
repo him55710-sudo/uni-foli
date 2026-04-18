@@ -21,21 +21,29 @@ export function resolveApiBaseUrl() {
     return normalizeBaseUrl(configured.trim());
   }
 
-  if (typeof window !== 'undefined') {
-    const { protocol, hostname, origin } = window.location;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return `${protocol}//${hostname}:8000`;
-    }
-    if (!hasWarnedMissingApiUrl) {
+  const sameOriginBase = resolveSameOriginApiBaseUrl();
+  if (sameOriginBase) {
+    if (typeof window !== 'undefined' && !hasWarnedMissingApiUrl) {
       console.warn(
         'VITE_API_URL is not set. The frontend will call the current origin. Set VITE_API_URL when the API is deployed separately.',
       );
       hasWarnedMissingApiUrl = true;
     }
-    return normalizeBaseUrl(origin);
+    return sameOriginBase;
   }
 
   return 'http://localhost:8000';
+}
+
+export function resolveSameOriginApiBaseUrl(): string | null {
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname, origin } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return normalizeBaseUrl(`${protocol}//${hostname}:8000`);
+    }
+    return normalizeBaseUrl(origin);
+  }
+  return null;
 }
 
 export function shouldUseSynchronousApiJobs() {

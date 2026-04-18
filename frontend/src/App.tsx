@@ -24,6 +24,7 @@ const Archive = lazy(() => import('./pages/Archive').then(m => ({ default: m.Arc
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Trends = lazy(() => import('./pages/Trends').then(m => ({ default: m.Trends })));
 const Diagnosis = lazy(() => import('./pages/Diagnosis').then(m => ({ default: m.Diagnosis })));
+const Interview = lazy(() => import('./pages/Interview').then(m => ({ default: m.Interview })));
 const RecordPdfHelp = lazy(() => import('./pages/RecordPdfHelp').then(m => ({ default: m.RecordPdfHelp })));
 const TermsOfService = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.TermsOfService })));
 const PrivacyPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.PrivacyPolicy })));
@@ -155,6 +156,7 @@ export default function App() {
                 <Route path="editor/:projectId" element={<DocumentEditorPage />} />
                 <Route path="archive" element={<Archive />} />
                 <Route path="trends" element={<Trends />} />
+                <Route path="interview/:projectId" element={<Interview />} />
                 <Route path="settings" element={<Settings />} />
               </Route>
 

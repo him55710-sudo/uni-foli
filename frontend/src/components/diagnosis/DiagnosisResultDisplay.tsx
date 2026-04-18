@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { CheckCircle2, AlertTriangle, Zap, Clock, Download, AlertCircle, Gauge, Compass, Target } from 'lucide-react';
-import { SectionCard, SurfaceCard, StatusBadge } from '../primitives';
+import { useNavigate } from 'react-router-dom';
+import { CheckCircle2, AlertTriangle, Zap, Clock, Download, AlertCircle, Gauge, Compass, Target, Mic } from 'lucide-react';
+import { SectionCard, SurfaceCard, StatusBadge, PrimaryButton } from '../primitives';
 import { formatRiskLevel } from '../../lib/diagnosis';
 import { DiagnosisRunResponse } from '../../types/api';
 import { DiagnosisRelationalGraph } from './DiagnosisRelationalGraph';
@@ -10,6 +11,7 @@ import { DiagnosisRelationalGraph } from './DiagnosisRelationalGraph';
 interface DiagnosisResultDisplayProps {
   diagnosisResult: any;
   diagnosisRun?: DiagnosisRunResponse | null;
+  projectId?: string;
 }
 
 const NEEDS_SUPPORT_PATTERN = /\bneeds?\s+support\b/gi;
@@ -66,7 +68,8 @@ function completionStateLabel(value: unknown): string | null {
   return '상태 확인 중';
 }
 
-export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ diagnosisResult, diagnosisRun }) => {
+export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ diagnosisResult, diagnosisRun, projectId }) => {
+  const navigate = useNavigate();
   const summaryJson = asRecord(diagnosisResult?.diagnosis_summary_json);
   const totalScore = summaryJson ? asNumber(summaryJson.total_score) : null;
   const categoryScoresRaw = summaryJson ? asRecord(summaryJson.category_scores) : null;
@@ -142,6 +145,16 @@ export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ 
                   <StatusBadge status="neutral">
                     {completionState}
                   </StatusBadge>
+                )}
+                {summaryJson?.completion_state === 'finalized' && projectId && (
+                  <PrimaryButton
+                    size="sm"
+                    className="h-8 rounded-full bg-[#004aad] text-[10px] font-black shadow-lg shadow-[#004aad]/20"
+                    onClick={() => navigate(`/app/interview/${projectId}`)}
+                  >
+                    <Mic size={12} className="mr-1" />
+                    AI 실전 면접 연습
+                  </PrimaryButton>
                 )}
               </div>
             }

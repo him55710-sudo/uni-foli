@@ -133,6 +133,7 @@ export interface OpenChatEventStreamParams extends AuthorizationHeaderOptions {
 }
 
 export interface OpenChatEventStreamResult {
+  endpoint: string;
   response: Response;
   authSource: AuthTokenSource;
 }
@@ -233,7 +234,70 @@ export async function openChatEventStream(
     });
   }
 
-  return { response: streamResponse, authSource };
+  return { endpoint, response: streamResponse, authSource };
+}
+
+export interface OpenChatEventStreamWithFallbackParams
+  extends Omit<OpenChatEventStreamParams, 'endpoint'> {
+  endpoints: string[];
+}
+
+const RETRYABLE_ENDPOINT_ERROR_CODES = new Set<ChatStreamErrorCode>([
+  'network_error',
+  'backend_misroute',
+  'backend_startup_failed',
+]);
+
+function dedupeEndpoints(endpoints: string[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of endpoints) {
+    const endpoint = String(item || '').trim();
+    if (!endpoint || seen.has(endpoint)) continue;
+    seen.add(endpoint);
+    result.push(endpoint);
+  }
+  return result;
+}
+
+export async function openChatEventStreamWithFallback(
+  params: OpenChatEventStreamWithFallbackParams,
+): Promise<OpenChatEventStreamResult> {
+  const { endpoints, ...rest } = params;
+  const normalizedEndpoints = dedupeEndpoints(endpoints);
+  if (!normalizedEndpoints.length) {
+    throw new ChatStreamError('network_error', 'No chat stream endpoint candidates were provided.', {
+      endpoint: '',
+      detail: 'empty_endpoint_candidates',
+    });
+  }
+
+  let lastError: ChatStreamError | null = null;
+  for (let index = 0; index < normalizedEndpoints.length; index += 1) {
+    const endpoint = normalizedEndpoints[index];
+    try {
+      return await openChatEventStream({
+        ...rest,
+        endpoint,
+      });
+    } catch (error) {
+      if (!(error instanceof ChatStreamError)) {
+        throw error;
+      }
+      lastError = error;
+      const hasNextEndpoint = index < normalizedEndpoints.length - 1;
+      if (!hasNextEndpoint || !RETRYABLE_ENDPOINT_ERROR_CODES.has(error.code)) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new ChatStreamError('network_error', 'Failed to open chat stream endpoint.', {
+    endpoint: normalizedEndpoints[normalizedEndpoints.length - 1] || '',
+  });
 }
 
 export interface ChatStreamMetaPayload {

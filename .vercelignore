@@ -9,6 +9,26 @@ scripts/
 storage/
 tests/
 tmp/
+.pytest-*/
+tmps*/
+tmpt*/
+.npm-cache/
+.codex-temp-*/
+artifacts/
+brain/
+build/
+pdf-check/
+scratch/
+
+# Backend local/runtime artifacts
+backend/.venv*/
+backend/storage/
+backend/.pytest_cache/
+backend/__pycache__/
+backend/services/api/.venv*/
+backend/services/api/__pycache__/
+backend/services/api/.pytest_cache/
+backend/services/api/tests/
 
 # Frontend local artifacts not needed for production build
 frontend/node_modules/

@@ -2,60 +2,50 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
+  ArrowDown,
   ArrowRight,
   Compass,
   FileSearch,
+  Layers3,
   Rocket,
-  ShieldCheck,
+  Sparkles,
   Target,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { cn } from '../lib/cn';
+import foliDuo from '../assets/foli-duo.png';
 
-const workflowPanels = [
+const featureCards = [
   {
-    eyebrow: 'Targets',
-    title: '목표 대학과 학과 기준 맞추기',
-    description: '대학과 학과에 따라 같은 학생부라도 읽는 기준이 달라집니다.',
-    icon: Target,
-    color: 'blue',
-  },
-  {
-    eyebrow: 'Evidence',
-    title: '학생부 PDF에서 근거만 추출하기',
-    description: '텍스트를 먼저 정리한 뒤 실제 기록이 남아 있는 문장만 증거로 씁니다.',
+    title: 'PDF 진단',
+    tag: 'Evidence',
     icon: FileSearch,
-    color: 'slate',
+    visual: 'from-[#3b82f6] via-[#8b5cf6] to-[#ec4899]',
+    bullets: ['업로드 후 핵심만 추출', '진단 요약 바로 확인'],
   },
   {
-    eyebrow: 'Direction',
-    title: '약점과 다음 행동까지 바로 연결하기',
-    description: '진단이 끝나면 바로 워크숍으로 이어서 초안과 활동 방향을 잡을 수 있습니다.',
+    title: '전공별 트렌드',
+    tag: 'Trend Copilot',
     icon: Compass,
-    color: 'indigo',
+    visual: 'from-[#06b6d4] via-[#10b981] to-[#84cc16]',
+    bullets: ['건축·컴공·바이오 칩 탐색', '탐구주제 흐름 즉시 선택'],
+  },
+  {
+    title: '워크숍 설계',
+    tag: 'Action',
+    icon: Layers3,
+    visual: 'from-[#fb7185] via-[#f97316] to-[#facc15]',
+    bullets: ['주제 → 질문 → 활동 계획', '실행 중심 구조 자동 정리'],
+  },
+  {
+    title: '최종 실행',
+    tag: 'Output',
+    icon: Target,
+    visual: 'from-[#6366f1] via-[#14b8a6] to-[#22c55e]',
+    bullets: ['보고서 흐름 고도화', '면접/세특 포인트 연결'],
   },
 ];
 
-const principles = [
-  {
-    title: '많이 읽게 하지 않습니다',
-    description: '첫 화면에서는 지금 해야 할 행동 하나만 크게 보여줍니다.',
-  },
-  {
-    title: '좋아 보이는 말보다 기록을 먼저 봅니다',
-    description: '학생부 원문에 없는 강한 주장은 만들지 않고, 근거가 약하면 먼저 경고합니다.',
-  },
-  {
-    title: '진단을 문서 작업과 분리하지 않습니다',
-    description: '진단 결과, 보고서, 챗봇 질문이 같은 아티팩트를 공유하도록 설계했습니다.',
-  },
-];
-
-const trustRows = [
-  '학생부에 없는 내용은 추천하지 않습니다.',
-  '애매한 문장은 먼저 경고합니다.',
-  '진단 뒤에는 바로 워크숍으로 이어집니다.',
-];
+const quickMajors = ['건축', '컴공', '바이오', '경영', '사회과학', '디자인'];
 
 export function Landing() {
   const { isAuthenticated } = useAuth();
@@ -66,162 +56,156 @@ export function Landing() {
   };
 
   return (
-    <div className="bg-white text-slate-900 selection:bg-blue-100">
-      <section className="relative overflow-hidden py-16 lg:py-24">
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid items-center gap-16 lg:grid-cols-[1.1fr_1fr]">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="max-w-2xl text-center lg:text-left"
-            >
-              <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                <span className="h-2 w-2 rounded-full bg-blue-600" />
-                <span>Admission Decision Support</span>
-              </div>
+    <div className="bg-transparent text-slate-900 selection:bg-fuchsia-100">
+      <section className="relative overflow-hidden pt-14 sm:pt-20 lg:pt-24">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-14 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14 lg:px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.45 }}
+            transition={{ duration: 0.48 }}
+            className="space-y-6"
+          >
+            <div className="inline-flex items-center gap-2 rounded-full border border-fuchsia-200 bg-white/90 px-3 py-1.5 text-xs font-black text-fuchsia-700 shadow-sm">
+              <Sparkles size={14} />
+              기능 중심 입시 코파일럿
+            </div>
+            <h1 className="text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+              긴 설명 없이
+              <br />
+              <span className="bg-gradient-to-r from-fuchsia-600 via-violet-600 to-cyan-600 bg-clip-text text-transparent">
+                바로 실행 가능한
+              </span>
+              <br />
+              학생부 설계
+            </h1>
+            <p className="max-w-xl text-base font-semibold text-slate-600 sm:text-lg">
+              진단, 트렌드 탐색, 워크숍 설계를 한 흐름으로 연결합니다.
+            </p>
 
-              <h1 className="mt-8 text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
-                학생부 기록의 가치를<br />
-                <span className="text-blue-700">데이터와 증명으로</span> 확인하세요
-              </h1>
-
-              <p className="mt-6 text-lg font-medium leading-relaxed text-slate-500 sm:text-xl">
-                단순 분석을 넘어, 목표 대학 기준에 맞춘 정밀 진단과<br className="hidden sm:block" />
-                실행 가능한 워크숍 초안까지 한 번에 연결합니다.
-              </p>
-
-              <div className="mt-10 flex flex-wrap justify-center lg:justify-start gap-4">
-                <Link
-                  to={startHref}
-                  onClick={scrollToTop}
-                  className="btn-primary group flex items-center gap-2"
+            <div className="flex flex-wrap gap-2">
+              {quickMajors.map((major) => (
+                <span
+                  key={major}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-bold text-slate-700"
                 >
-                  <Rocket size={18} />
-                  <span>진단 시작하기</span>
-                  <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
-                </Link>
-                <Link
-                  to="/faq"
-                  onClick={scrollToTop}
-                  className="btn-secondary flex items-center gap-2"
-                >
-                  시스템 소개서
-                </Link>
-              </div>
+                  {major}
+                </span>
+              ))}
+            </div>
 
-              <div className="mt-16 grid grid-cols-3 gap-8">
-                {[
-                  { label: "신뢰도 파싱", val: "99%" },
-                  { label: "분석 핵심 축", val: "6개" },
-                  { label: "분석 속도", val: "즉시" }
-                ].map((stat, i) => (
-                  <div key={i}>
-                    <p className="text-3xl font-bold text-slate-900">{stat.val}</p>
-                    <p className="mt-1 text-xs font-bold text-slate-400 uppercase tracking-widest">{stat.label}</p>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
+            <div className="flex flex-wrap gap-3">
+              <Link to={startHref} onClick={scrollToTop} className="btn-primary inline-flex items-center gap-2">
+                <Rocket size={16} />
+                바로 시작
+                <ArrowRight size={14} />
+              </Link>
+              <Link to="/app/trends" onClick={scrollToTop} className="btn-secondary inline-flex items-center gap-2">
+                트렌드 보기
+                <ArrowRight size={14} />
+              </Link>
+            </div>
+          </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="relative hidden lg:block"
-            >
-              <div className="document-card p-1">
-                <div className="overflow-hidden rounded-lg bg-white p-8">
-                  <div className="mb-8 flex items-center justify-between border-b border-slate-100 pb-4">
-                    <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Diagnosis Pipeline</span>
-                    <div className="flex gap-1.5">
-                      <div className="h-2 w-2 rounded-full bg-slate-200" />
-                      <div className="h-2 w-2 rounded-full bg-slate-200" />
-                      <div className="h-2 w-2 rounded-full bg-slate-200" />
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.35 }}
+            transition={{ duration: 0.55, delay: 0.05 }}
+            className="relative perspective-[1200px]"
+          >
+            <div className="tilt-3d rounded-[2rem] border border-white/60 bg-white/78 p-5 shadow-[0_34px_60px_-28px_rgba(79,70,229,0.35)] backdrop-blur-xl">
+              <div className="grid grid-cols-[1.25fr_0.75fr] gap-4">
+                <div className="rounded-2xl bg-gradient-to-br from-violet-50 via-sky-50 to-rose-50 p-4">
+                  <p className="text-xs font-black text-violet-600">학생부 코파일럿</p>
+                  <p className="mt-1 text-sm font-bold text-slate-800">진단 → 트렌드 → 워크숍</p>
+                  <img src={foliDuo} alt="Uni Foli assistant" className="mt-4 h-40 w-full rounded-xl object-cover" />
+                </div>
+                <div className="space-y-3">
+                  {['증거 기반 진단', '전공별 칩 탐색', '실행형 플랜'].map((label, index) => (
+                    <div
+                      key={label}
+                      className={`rounded-xl p-3 text-xs font-black text-white ${
+                        index === 0
+                          ? 'bg-gradient-to-br from-cyan-500 to-blue-600'
+                          : index === 1
+                            ? 'bg-gradient-to-br from-fuchsia-500 to-violet-600'
+                            : 'bg-gradient-to-br from-amber-500 to-orange-600'
+                      }`}
+                    >
+                      {label}
                     </div>
-                  </div>
-
-                  <div className="space-y-6">
-                    {workflowPanels.map((panel) => (
-                      <div
-                        key={panel.title}
-                        className="flex items-start gap-4 rounded-xl p-4 transition-colors hover:bg-slate-50"
-                      >
-                        <div className={cn(
-                          "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border",
-                          panel.color === 'blue' && 'bg-blue-50 border-blue-100 text-blue-600',
-                          panel.color === 'slate' && 'bg-slate-50 border-slate-200 text-slate-600',
-                          panel.color === 'indigo' && 'bg-indigo-50 border-indigo-100 text-indigo-600',
-                        )}>
-                          <panel.icon size={20} />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900">{panel.title}</h3>
-                          <p className="mt-1 text-sm font-medium text-slate-500 line-clamp-2">{panel.description}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  ))}
                 </div>
               </div>
-            </motion.div>
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="mb-8 flex justify-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-500">
+            스크롤해서 기능 보기
+            <ArrowDown size={13} />
           </div>
         </div>
       </section>
 
-      {/* Principles Section */}
-      <section className="bg-slate-50 border-y border-slate-200 py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-16 text-center">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-blue-600">Principles</h2>
-            <h3 className="mt-4 text-3xl font-extrabold text-slate-900 sm:text-4xl">
-              데이터의 투명성을 고수합니다
-            </h3>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            {principles.map((item, index) => (
-              <div key={item.title} className="document-card bg-white p-8">
-                <span className="text-xs font-black text-slate-300">0{index + 1}</span>
-                <h4 className="mt-4 text-xl font-bold text-slate-900">{item.title}</h4>
-                <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">{item.description}</p>
+      <section className="mx-auto max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {featureCards.map((card, index) => (
+            <motion.article
+              key={card.title}
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.35 }}
+              transition={{ duration: 0.4, delay: index * 0.06 }}
+              className="tilt-3d rounded-3xl border border-white/70 bg-white/85 p-4 shadow-[0_22px_50px_-34px_rgba(15,23,42,0.5)] backdrop-blur-md"
+            >
+              <div className={`mb-3 inline-flex items-center gap-2 rounded-full bg-gradient-to-r px-3 py-1 text-xs font-black text-white ${card.visual}`}>
+                <card.icon size={14} />
+                {card.tag}
               </div>
-            ))}
-          </div>
+              <h2 className="text-xl font-black text-slate-900">{card.title}</h2>
+              <div className={`mt-3 h-24 rounded-2xl bg-gradient-to-br ${card.visual}`} />
+              <ul className="mt-3 space-y-1.5 text-sm font-semibold text-slate-600">
+                {card.bullets.map((bullet) => (
+                  <li key={bullet} className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                    {bullet}
+                  </li>
+                ))}
+              </ul>
+            </motion.article>
+          ))}
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <div className="rounded-[2rem] bg-slate-900 px-8 py-16 text-center text-white shadow-xl">
-          <h2 className="text-3xl font-extrabold sm:text-4xl">
-            준비된 학생부 데이터로<br />
-            입시 방향성을 정립하세요.
-          </h2>
-          <div className="mt-10 flex flex-wrap justify-center gap-4">
-            <Link to={startHref} onClick={scrollToTop} className="btn-primary bg-white text-slate-900 hover:bg-slate-100">
-              무료 진단 시작하기
+      <section className="border-y border-white/70 bg-[linear-gradient(120deg,rgba(252,231,243,0.42)_0%,rgba(224,242,254,0.42)_50%,rgba(220,252,231,0.42)_100%)] py-16">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.35 }}
+          transition={{ duration: 0.45 }}
+          className="mx-auto max-w-5xl rounded-3xl border border-white/70 bg-white/86 p-6 text-center shadow-[0_26px_54px_-34px_rgba(15,23,42,0.4)] backdrop-blur-xl sm:p-8"
+        >
+          <h3 className="text-2xl font-black text-slate-900 sm:text-3xl">기능 선택 후 바로 실행</h3>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <Link to={startHref} onClick={scrollToTop} className="btn-primary inline-flex items-center gap-2">
+              진단 시작
+              <ArrowRight size={14} />
             </Link>
-            <Link to="/contact" onClick={scrollToTop} className="btn-secondary bg-transparent text-white border-white/20 hover:bg-white/10">
-              시스템 도입 문의
+            <Link to="/app/trends" onClick={scrollToTop} className="btn-secondary inline-flex items-center gap-2">
+              전공 트렌드 탐색
+              <ArrowRight size={14} />
+            </Link>
+            <Link to="/app/workshop" onClick={scrollToTop} className="btn-secondary inline-flex items-center gap-2">
+              워크숍 열기
+              <ArrowRight size={14} />
             </Link>
           </div>
-        </div>
-      </section>
-
-      {/* Trust Section */}
-      <section className="py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
-            {trustRows.map((row, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <ShieldCheck size={20} className="text-blue-600" />
-                <p className="text-sm font-bold text-slate-600">{row}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        </motion.div>
       </section>
     </div>
   );
 }
+

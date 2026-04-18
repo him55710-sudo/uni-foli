@@ -7,6 +7,7 @@ import { api, applyAuthorizationHeader } from '../src/lib/api';
 import {
   ChatStreamError,
   openChatEventStream,
+  openChatEventStreamWithFallback,
   resolveChatStreamFallbackHint,
   resolveChatStreamToastMessage,
 } from '../src/lib/chatStream';
@@ -88,6 +89,68 @@ test('chat stream rejects non-event-stream content types and keeps auth header w
   );
 
   assert.equal(observedAuthorization, 'Bearer draft-token');
+});
+
+test('chat stream retries a same-flow fallback endpoint after misroute-style HTML response', async () => {
+  const primaryEndpoint = 'https://broken.example.com/api/v1/workshops/w1/chat/stream';
+  const fallbackEndpoint = 'https://api.example.com/api/v1/workshops/w1/chat/stream';
+  const calledEndpoints: string[] = [];
+
+  const { endpoint, response } = await openChatEventStreamWithFallback({
+    endpoints: [primaryEndpoint, fallbackEndpoint],
+    payload: { message: 'hello' },
+    appAccessToken: 'stream-token',
+    fetchImpl: async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      calledEndpoints.push(url);
+
+      if (url === primaryEndpoint) {
+        return new Response('<html><body>frontend shell</body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        });
+      }
+
+      return new Response('data: {"done":true}\n\n', {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    },
+  });
+
+  assert.equal(endpoint, fallbackEndpoint);
+  assert.equal(response.status, 200);
+  assert.deepEqual(calledEndpoints, [primaryEndpoint, fallbackEndpoint]);
+});
+
+test('chat stream fallback does not retry when authentication fails', async () => {
+  let callCount = 0;
+
+  await assert.rejects(
+    () =>
+      openChatEventStreamWithFallback({
+        endpoints: [
+          'https://api.example.com/api/v1/workshops/w1/chat/stream',
+          'https://api.example.com/api/v1/workshops/w1/chat/stream?retry=1',
+        ],
+        payload: { message: 'hello' },
+        appAccessToken: 'stream-token',
+        fetchImpl: async () => {
+          callCount += 1;
+          return new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          });
+        },
+      }),
+    (error: unknown) => {
+      assert(error instanceof ChatStreamError);
+      assert.equal(error.code, 'auth_failure');
+      return true;
+    },
+  );
+
+  assert.equal(callCount, 1);
 });
 
 test('chat stream classifies backend startup failures separately from generic HTTP errors', async () => {

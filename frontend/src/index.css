@@ -3,9 +3,9 @@
 
 @theme {
   --font-sans: "Pretendard Variable", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --color-primary: #004aad;
-  --color-primary-light: #3b82f6;
-  --color-primary-dark: #1e3a8a;
+  --color-primary: #5b5cf0;
+  --color-primary-light: #8f6dff;
+  --color-primary-dark: #3d43b8;
   --color-background: #ffffff;
   --color-surface: #f8fafc;
   --color-text-main: #0f172a;
@@ -14,52 +14,78 @@
   --color-safe: #10b981;
 }
 
-html,
-#root {
-  font-family: var(--font-sans);
-}
-
 :root {
-  /* Calm & Professional Theme Tokens */
   --ui-bg: #ffffff;
   --ui-surface: #f8fafc;
   --ui-surface-muted: #f1f5f9;
   --ui-surface-elevated: #ffffff;
   --ui-border: #e2e8f0;
   --ui-border-strong: #cbd5e1;
-  
+
   --ui-text: #0f172a;
   --ui-text-secondary: #334155;
   --ui-text-muted: #64748b;
-  
-  --ui-brand: #004aad;
-  --ui-brand-soft: #eff6ff;
-  --ui-brand-strong: #1e3a8a;
-  
+
+  --ui-brand: #5b5cf0;
+  --ui-brand-soft: #eef0ff;
+  --ui-brand-strong: #3d43b8;
+  --ui-accent-a: #22c1c3;
+  --ui-accent-b: #ff6b6b;
+  --ui-accent-c: #ffb347;
+  --ui-accent-d: #8a5cf6;
+
   --ui-danger: #ef4444;
   --ui-success: #10b981;
   --ui-warning: #f59e0b;
-  
+
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
-  
+
   --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  
+  --shadow-md: 0 6px 14px -4px rgb(0 0 0 / 0.12), 0 3px 8px -5px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 16px 28px -12px rgb(0 0 0 / 0.14), 0 8px 12px -10px rgb(0 0 0 / 0.12);
+
   --duration-fast: 150ms;
   --duration-normal: 250ms;
   --easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+#root {
+  font-family: var(--font-sans);
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background-color: var(--ui-bg);
+  background:
+    radial-gradient(circle at 8% 14%, rgb(255 182 193 / 0.18) 0%, transparent 36%),
+    radial-gradient(circle at 92% 10%, rgb(103 232 249 / 0.16) 0%, transparent 38%),
+    radial-gradient(circle at 76% 78%, rgb(196 181 253 / 0.18) 0%, transparent 42%),
+    var(--ui-bg);
   color: var(--ui-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+span,
+button,
+a,
+li {
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .document-card {
@@ -67,27 +93,28 @@ body {
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  transition: all var(--duration-normal);
+  transition: transform var(--duration-normal), box-shadow var(--duration-normal), border-color var(--duration-normal);
 }
 
 .document-card:hover {
-  border-color: var(--ui-brand);
+  border-color: color-mix(in oklab, var(--ui-brand) 54%, white);
   box-shadow: var(--shadow-md);
 }
 
 .btn-primary {
-  background-color: var(--ui-brand);
+  background-image: linear-gradient(135deg, var(--ui-brand), var(--ui-accent-d));
   color: white;
   padding: 0.75rem 1.5rem;
   border-radius: var(--radius-md);
-  font-weight: 600;
+  font-weight: 700;
   border: none;
   cursor: pointer;
-  transition: background-color var(--duration-fast);
+  transition: transform var(--duration-fast), filter var(--duration-fast);
 }
 
 .btn-primary:hover {
-  background-color: var(--ui-brand-strong);
+  transform: translateY(-1px);
+  filter: brightness(1.06);
 }
 
 .btn-secondary {
@@ -95,10 +122,10 @@ body {
   color: var(--ui-text);
   padding: 0.75rem 1.5rem;
   border-radius: var(--radius-md);
-  font-weight: 600;
+  font-weight: 700;
   border: 1px solid var(--ui-border);
   cursor: pointer;
-  transition: all var(--duration-fast);
+  transition: border-color var(--duration-fast), background-color var(--duration-fast);
 }
 
 .btn-secondary:hover {
@@ -106,10 +133,30 @@ body {
   border-color: var(--ui-border-strong);
 }
 
-/* Animations */
+.tilt-3d {
+  transform-style: preserve-3d;
+  transform: perspective(1200px) rotateX(0deg) rotateY(0deg);
+  transition: transform 280ms ease, box-shadow 280ms ease;
+}
+
+.tilt-3d:hover {
+  transform: perspective(1200px) rotateX(4deg) rotateY(-5deg) translateY(-6px);
+  box-shadow: 0 28px 42px -24px rgb(62 28 115 / 0.5);
+}
+
+.tilt-depth {
+  transform: translateZ(26px);
+}
+
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-in {

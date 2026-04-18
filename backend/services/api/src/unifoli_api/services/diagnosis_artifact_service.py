@@ -134,13 +134,277 @@ def _build_evidence_references(result_payload: dict[str, Any], *, limit: int = 8
     return references
 
 
+def _private_to_bounded_score(value: Any, *, default: int = 55) -> int:
+    try:
+        return max(0, min(100, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _private_score_label(score: int) -> str:
+    if score >= 85:
+        return "매우 우수"
+    if score >= 70:
+        return "우수"
+    if score >= 55:
+        return "보통"
+    if score >= 40:
+        return "보완 필요"
+    return "집중 보완 필요"
+
+
+def _private_average_score(values: list[int], *, default: int = 55) -> int:
+    if not values:
+        return default
+    return _private_to_bounded_score(sum(values) / len(values), default=default)
+
+
+def _private_merge_scores(primary: int | None, secondary: int | None, *, default: int = 55) -> int:
+    scores = [item for item in [primary, secondary] if isinstance(item, int)]
+    return _private_average_score(scores, default=default)
+
+
+def _private_is_award_or_achievement_section(value: Any) -> bool:
+    normalized = _normalize_text(value).lower()
+    if not normalized:
+        return False
+    keywords = (
+        "수상",
+        "awards",
+        "award",
+        "scholarship",
+        "장학",
+        "포상",
+    )
+    return any(token in normalized for token in keywords)
+
+
+def _private_collect_axis_index(result_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    axes = result_payload.get("admission_axes")
+    if not isinstance(axes, list):
+        return {}
+    output: dict[str, dict[str, Any]] = {}
+    for item in axes:
+        if not isinstance(item, dict):
+            continue
+        key = _normalize_text(item.get("key")).lower()
+        if not key:
+            continue
+        output[key] = {
+            "score": _private_to_bounded_score(item.get("score")),
+            "rationale": _normalize_text(item.get("rationale")) or None,
+        }
+    return output
+
+
+def _private_collect_section_index(
+    *,
+    result_payload: dict[str, Any],
+    canonical_metadata: dict[str, Any],
+) -> dict[str, int]:
+    section_index = {
+        "교과학습발달상황": 0,
+        "창의적 체험활동": 0,
+        "행동특성 및 종합의견": 0,
+        "독서활동": 0,
+        "출결": 0,
+    }
+
+    section_analysis = result_payload.get("section_analysis")
+    if isinstance(section_analysis, list):
+        for row in section_analysis:
+            if not isinstance(row, dict):
+                continue
+            if _private_is_award_or_achievement_section(row.get("key")) or _private_is_award_or_achievement_section(
+                row.get("label")
+            ):
+                continue
+            label = _normalize_text(row.get("label") or row.get("key"))
+            record_count = max(0, _private_to_bounded_score(row.get("record_count"), default=0))
+            if "교과" in label or "세특" in label:
+                section_index["교과학습발달상황"] += record_count
+            elif "창의적 체험활동" in label or "창체" in label:
+                section_index["창의적 체험활동"] += record_count
+            elif "행동특성" in label or "종합의견" in label:
+                section_index["행동특성 및 종합의견"] += record_count
+            elif "독서" in label:
+                section_index["독서활동"] += record_count
+            elif "출결" in label:
+                section_index["출결"] += record_count
+
+    attendance = canonical_metadata.get("attendance")
+    if isinstance(attendance, list):
+        section_index["출결"] = max(section_index["출결"], len(attendance))
+    elif isinstance(attendance, dict):
+        section_index["출결"] = max(section_index["출결"], len(attendance.keys()))
+
+    return section_index
+
+
+def _private_section_count_score(count: int) -> int:
+    if count >= 6:
+        return 88
+    if count >= 4:
+        return 78
+    if count >= 2:
+        return 68
+    if count == 1:
+        return 58
+    return 42
+
+
+def _private_extract_major_direction_candidates(result_payload: dict[str, Any], *, limit: int = 3) -> list[dict[str, str]]:
+    candidates = result_payload.get("recommended_directions")
+    if not isinstance(candidates, list):
+        return []
+    output: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        direction_id = _normalize_text(item.get("id"))
+        label = _normalize_text(item.get("label"))
+        summary = _normalize_text(item.get("summary"))
+        unique_key = (direction_id or label or summary).lower()
+        if not unique_key or unique_key in seen:
+            continue
+        seen.add(unique_key)
+        output.append(
+            {
+                "id": direction_id or f"direction-{len(output) + 1}",
+                "label": label or "진로 방향",
+                "summary": summary or "기록 근거 기반 보완 방향",
+            }
+        )
+        if len(output) >= limit:
+            break
+    return output
+
+
+def _private_resolve_completion_state(result_payload: dict[str, Any]) -> str:
+    raw = _normalize_text(result_payload.get("record_completion_state")).lower()
+    if raw == "finalized":
+        return "finalized"
+    if raw == "ongoing":
+        return "ongoing"
+    return "unknown"
+
+
+def _private_build_stage_mode(completion_state: str) -> tuple[str, str]:
+    if completion_state == "finalized":
+        return (
+            "finalized",
+            "완성된 기록의 정합성 점검과 설득력 강화 중심으로 추천합니다.",
+        )
+    return (
+        "ongoing",
+        "보완 가능한 항목을 우선 강화하는 개선 중심 추천 모드입니다.",
+    )
+
+
+def _private_build_score_ready_summary_fields(
+    *,
+    result_payload: dict[str, Any],
+    canonical_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    axis_index = _private_collect_axis_index(result_payload)
+    section_index = _private_collect_section_index(result_payload=result_payload, canonical_metadata=canonical_metadata)
+
+    rigor_score = axis_index.get("universal_rigor", {}).get("score")
+    specificity_score = axis_index.get("universal_specificity", {}).get("score")
+    narrative_score = axis_index.get("relational_narrative", {}).get("score")
+    continuity_score = axis_index.get("relational_continuity", {}).get("score")
+    depth_score = axis_index.get("cluster_depth", {}).get("score")
+    suitability_score = axis_index.get("cluster_suitability", {}).get("score")
+
+    category_scores: dict[str, int] = {
+        "교과/세특": _private_merge_scores(
+            _private_average_score(
+                [item for item in [rigor_score, specificity_score] if isinstance(item, int)],
+                default=60,
+            ),
+            _private_section_count_score(section_index["교과학습발달상황"]),
+            default=60,
+        ),
+        "창체": _private_merge_scores(
+            _private_section_count_score(section_index["창의적 체험활동"]),
+            narrative_score if isinstance(narrative_score, int) else None,
+            default=58,
+        ),
+        "행동특성/종합의견": _private_merge_scores(
+            _private_section_count_score(section_index["행동특성 및 종합의견"]),
+            suitability_score if isinstance(suitability_score, int) else None,
+            default=56,
+        ),
+        "독서": _private_merge_scores(
+            _private_section_count_score(section_index["독서활동"]),
+            specificity_score if isinstance(specificity_score, int) else None,
+            default=55,
+        ),
+        "출결": _private_merge_scores(
+            _private_section_count_score(section_index["출결"]),
+            rigor_score if isinstance(rigor_score, int) else None,
+            default=58,
+        ),
+        "항목 간 연계성": _private_average_score(
+            [item for item in [narrative_score, continuity_score] if isinstance(item, int)],
+            default=57,
+        ),
+        "종합 진로연계성": _private_average_score(
+            [item for item in [depth_score, suitability_score] if isinstance(item, int)],
+            default=57,
+        ),
+    }
+
+    total_score = _private_average_score(list(category_scores.values()), default=57)
+    score_labels = {"총점": _private_score_label(total_score)}
+    score_labels.update({key: _private_score_label(value) for key, value in category_scores.items()})
+
+    completion_state = _private_resolve_completion_state(result_payload)
+    stage_mode, stage_note = _private_build_stage_mode(completion_state)
+
+    explanations = {
+        "교과/세특": _normalize_text(axis_index.get("universal_rigor", {}).get("rationale")) or "교과 근거 밀도 중심 평가",
+        "창체": _normalize_text(axis_index.get("relational_narrative", {}).get("rationale")) or "창체 활동의 서사 연결 평가",
+        "행동특성/종합의견": _normalize_text(axis_index.get("cluster_suitability", {}).get("rationale"))
+        or "행동특성·종합의견 기록의 진로 연결 평가",
+        "독서": _normalize_text(axis_index.get("universal_specificity", {}).get("rationale")) or "독서 활동의 근거 구체성 평가",
+        "출결": "출결 기록 존재 여부와 기초 학업 신뢰도 중심 평가",
+        "항목 간 연계성": _normalize_text(axis_index.get("relational_continuity", {}).get("rationale"))
+        or "섹션 간 흐름의 일관성 평가",
+        "종합 진로연계성": _normalize_text(axis_index.get("cluster_depth", {}).get("rationale"))
+        or "전공 연계 단서의 종합 평가",
+    }
+
+    return {
+        "total_score": total_score,
+        "category_scores": category_scores,
+        "score_labels": score_labels,
+        "score_explanations": explanations,
+        "major_direction_candidates_top3": _private_extract_major_direction_candidates(result_payload),
+        "completion_state": completion_state,
+        "stage_aware_recommendation_mode": stage_mode,
+        "stage_aware_recommendation_note": stage_note,
+        "scoring_policy": {
+            "awards_excluded": True,
+            "grade_trend_analysis_included": False,
+            "recommended_universities_included": False,
+        },
+    }
+
+
 def _build_summary_json(
     *,
     run_id: str,
     project_id: str,
     result_payload: dict[str, Any],
+    canonical_metadata: dict[str, Any],
     evidence_references: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    score_ready_fields = _private_build_score_ready_summary_fields(
+        result_payload=result_payload,
+        canonical_metadata=canonical_metadata,
+    )
     return {
         "schema_version": DIAGNOSIS_ARTIFACT_SCHEMA_VERSION,
         "diagnosis_run_id": run_id,
@@ -156,6 +420,7 @@ def _build_summary_json(
         "fallback_used": bool(result_payload.get("fallback_used")),
         "fallback_reason": _normalize_text(result_payload.get("fallback_reason")) or None,
         "evidence_references": evidence_references,
+        **score_ready_fields,
     }
 
 
@@ -193,6 +458,11 @@ def _build_chatbot_context_json(
             limit=8,
         )
 
+    score_ready_fields = _private_build_score_ready_summary_fields(
+        result_payload=result_payload,
+        canonical_metadata=canonical_metadata,
+    )
+
     return {
         "schema_version": DIAGNOSIS_ARTIFACT_SCHEMA_VERSION,
         "diagnosis_run_id": run_id,
@@ -214,6 +484,14 @@ def _build_chatbot_context_json(
             limit=6,
         ),
         "evidence_references": evidence_references,
+        "score_snapshot": {
+            "total_score": score_ready_fields["total_score"],
+            "category_scores": score_ready_fields["category_scores"],
+            "score_labels": score_ready_fields["score_labels"],
+            "completion_state": score_ready_fields["completion_state"],
+            "stage_aware_recommendation_mode": score_ready_fields["stage_aware_recommendation_mode"],
+            "major_direction_candidates_top3": score_ready_fields["major_direction_candidates_top3"],
+        },
     }
 
 
@@ -236,6 +514,41 @@ def _build_report_markdown(
     overview = _normalize_text(summary_json.get("overview"))
     if overview:
         lines.extend(["## Overview", overview, ""])
+
+    total_score = summary_json.get("total_score")
+    if total_score is not None:
+        lines.append("## Admissions Dashboard Metrics")
+        risk_level = _normalize_text(summary_json.get("risk_level")) or "warning"
+        lines.append(f"- **Total Score**: {total_score} points (Risk Level: {risk_level})")
+        category_scores = summary_json.get("category_scores")
+        if isinstance(category_scores, dict):
+            for cat, points in category_scores.items():
+                lines.append(f"  - {cat}: {points} / 100")
+        lines.append("")
+
+    major_directions = summary_json.get("major_direction_candidates_top3")
+    if isinstance(major_directions, list) and major_directions:
+        lines.extend(["## AI Major Direction Candidates (Top 3)"])
+        for idx, direction in enumerate(major_directions):
+            if isinstance(direction, dict):
+                label = direction.get("label", "Unknown")
+                summary = direction.get("summary", "")
+                lines.append(f"{idx + 1}. **{label}**: {summary}")
+        lines.append("")
+
+    state = summary_json.get("completion_state")
+    if state:
+        stage_mode = summary_json.get("stage_aware_recommendation_mode")
+        stage_note = summary_json.get("stage_aware_recommendation_note")
+        lines.extend([
+            "## Stage-Aware Recommendation",
+            f"- **Record State**: {state}",
+        ])
+        if stage_mode:
+            lines.append(f"- **Recommendation Mode**: {stage_mode}")
+        if stage_note:
+            lines.append(f"- **Strategy Note**: {stage_note}")
+        lines.append("")
 
     strengths = _string_list(summary_json.get("strengths"), limit=6)
     if strengths:
@@ -314,6 +627,7 @@ def build_diagnosis_artifact_bundle(
         run_id=run_id,
         project_id=project_id,
         result_payload=result_payload,
+        canonical_metadata=canonical_metadata,
         evidence_references=evidence_references,
     )
     chatbot_context_json = _build_chatbot_context_json(

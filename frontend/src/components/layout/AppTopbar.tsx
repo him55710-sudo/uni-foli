@@ -24,18 +24,18 @@ interface AppTopbarProps {
 
 const goalToneClasses = [
   {
-    shell: 'border-indigo-200/50 bg-indigo-50/80 text-indigo-700 shadow-lg shadow-indigo-100/50',
-    rank: 'text-indigo-600',
+    shell: 'border-fuchsia-200/60 bg-fuchsia-50/80 text-fuchsia-700 shadow-lg shadow-fuchsia-100/50',
+    rank: 'text-fuchsia-600',
     logo: 'bg-white',
   },
   {
-    shell: 'border-purple-200/50 bg-purple-50/80 text-purple-700 shadow-lg shadow-purple-100/50',
-    rank: 'text-purple-600',
+    shell: 'border-cyan-200/60 bg-cyan-50/80 text-cyan-700 shadow-lg shadow-cyan-100/50',
+    rank: 'text-cyan-600',
     logo: 'bg-white',
   },
   {
-    shell: 'border-pink-200/50 bg-pink-50/80 text-pink-700 shadow-lg shadow-pink-100/50',
-    rank: 'text-pink-600',
+    shell: 'border-amber-200/60 bg-amber-50/80 text-amber-700 shadow-lg shadow-amber-100/50',
+    rank: 'text-amber-600',
     logo: 'bg-white',
   },
 ];
@@ -119,7 +119,7 @@ export function AppTopbar({
 
           <Link
             to="/"
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/70 bg-white/84 px-3.5 py-2.5 text-sm font-bold text-[#35518d] shadow-[0_12px_26px_rgba(42,64,132,0.08)] backdrop-blur-md transition-colors hover:bg-[#f7f9ff]"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/70 bg-white/84 px-3.5 py-2.5 text-sm font-bold text-violet-700 shadow-[0_12px_26px_rgba(42,64,132,0.08)] backdrop-blur-md transition-colors hover:bg-[#f7f9ff]"
           >
             <ArrowLeft size={14} />
             공개 페이지

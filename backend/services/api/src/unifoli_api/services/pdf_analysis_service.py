@@ -20,15 +20,15 @@ _MAX_KEY_POINTS = 5
 _MAX_EVIDENCE_GAPS = 5
 
 _SECTION_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "student_info": ("student", "name", "school", "id", "profile", "?�적?�항", "?�적?�항", "?�생�?),
-    "attendance": ("attendance", "absence", "late", "tardy", "present", "출결", "결석", "지�?, "조퇴"),
-    "awards": ("award", "prize", "competition", "?�상", "?�장", "?�상�?),
-    "creative_activities": ("creative", "club", "activity", "project", "창의??, "?�아�?, "?�율?�동", "진로?�동"),
-    "volunteer": ("volunteer", "service", "hours", "봉사", "봉사?�간"),
-    "grades_subjects": ("grade", "subject", "score", "evaluation", "교과", "?�적", "발달?�황"),
-    "subject_special_notes": ("special note", "subject note", "comment", "?��??�력", "?�기?�항", "?�특"),
-    "reading": ("reading", "book", "library", "?�서", "?�서�?),
-    "behavior_general_comments": ("behavior", "general comment", "attitude", "?�동?�성", "종합?�견"),
+    "student_info": ("student", "name", "school", "id", "profile", "인적사항", "학적사항", "학생명"),
+    "attendance": ("attendance", "absence", "late", "tardy", "present", "출결", "결석", "지각", "조퇴"),
+    "awards": ("award", "prize", "competition", "수상", "상장", "수상명"),
+    "creative_activities": ("creative", "club", "activity", "project", "창의적", "동아리", "자율활동", "진로활동"),
+    "volunteer": ("volunteer", "service", "hours", "봉사", "봉사시간"),
+    "grades_subjects": ("grade", "subject", "score", "evaluation", "교과", "성적", "발달상황"),
+    "subject_special_notes": ("special note", "subject note", "comment", "세부능력", "특기사항", "세특"),
+    "reading": ("reading", "book", "library", "독서", "도서명"),
+    "behavior_general_comments": ("behavior", "general comment", "attitude", "행동특성", "종합의견"),
 }
 
 _LEGACY_SECTION_LABELS: dict[str, str] = {
@@ -110,7 +110,7 @@ class _PageInsight(BaseModel):
     page_number: int = Field(ge=1)
     summary: str = ""
     section_candidates: list[str] = Field(default_factory=list)
-    evidence_notes: list[str] = Field(default_factory=list)`n    block_ids: list[str] = Field(default_factory=list)
+    evidence_notes: list[str] = Field(default_factory=list)
 
 
 class _StageABatchOutput(BaseModel):
@@ -186,7 +186,14 @@ def _run_pdf_analysis_async(coro: Any) -> Any:
     return future.result()
 
 
-def build_pdf_analysis_metadata(parsed: ParsedDocumentPayload, analysis_artifact: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def build_pdf_analysis_metadata(
+    parsed: ParsedDocumentPayload,
+    analysis_artifact: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    # `analysis_artifact` is accepted for backward compatibility with callers
+    # that still pass it from parse metadata. The current implementation does
+    # not require this input directly.
+    _ = analysis_artifact
     settings = get_settings()
     if not getattr(settings, "pdf_analysis_llm_enabled", True):
         return None
@@ -206,7 +213,6 @@ def build_pdf_analysis_metadata(parsed: ParsedDocumentPayload, analysis_artifact
                 parsed=parsed,
                 masked_pages=masked_pages,
                 resolution=resolution,
-                analysis_artifact=analysis_artifact,
             )
         )
         actual_provider, actual_model, fallback_used, fallback_reason = _resolve_pdf_analysis_runtime_outcome(resolution)
@@ -364,7 +370,7 @@ async def _build_pdf_analysis_with_llm(
     *,
     parsed: ParsedDocumentPayload,
     masked_pages: list[_MaskedPage],
-    resolution: PDFAnalysisLLMResolution,`n    analysis_artifact: dict[str, Any] | None = None,
+    resolution: PDFAnalysisLLMResolution,
 ) -> dict[str, Any]:
     if not masked_pages:
         raise _PipelineStageError("input", "masked_input_unavailable")
@@ -418,7 +424,7 @@ def _pipeline_attempt_configs(*, total_pages: int) -> list[_PipelineAttemptConfi
 async def _run_stage_a(
     *,
     pages: list[_MaskedPage],
-    resolution: PDFAnalysisLLMResolution,`n    analysis_artifact: dict[str, Any] | None = None,
+    resolution: PDFAnalysisLLMResolution,
     batch_size: int,
 ) -> list[dict[str, Any]]:
     if batch_size <= 0:
@@ -450,7 +456,7 @@ async def _run_stage_a(
 async def _run_stage_b(
     *,
     stage_a_outputs: list[dict[str, Any]],
-    resolution: PDFAnalysisLLMResolution,`n    analysis_artifact: dict[str, Any] | None = None,
+    resolution: PDFAnalysisLLMResolution,
     compact_prompt: bool,
 ) -> _StageBFinalOutput:
     prompt = _build_stage_b_prompt(stage_a_outputs=stage_a_outputs, compact_prompt=compact_prompt)
@@ -465,7 +471,7 @@ async def _run_stage_b(
 
 async def _generate_stage_json(
     *,
-    resolution: PDFAnalysisLLMResolution,`n    analysis_artifact: dict[str, Any] | None = None,
+    resolution: PDFAnalysisLLMResolution,
     prompt: str,
     response_model: type[BaseModel],
     stage_name: str,
@@ -864,7 +870,7 @@ def _build_pdf_analysis_heuristic_fallback(
 
 
 def _resolve_pdf_analysis_runtime_outcome(
-    resolution: PDFAnalysisLLMResolution,`n    analysis_artifact: dict[str, Any] | None = None,
+    resolution: PDFAnalysisLLMResolution,
 ) -> tuple[str, str, bool, str | None]:
     client = resolution.client
     actual_provider = (
@@ -1221,15 +1227,15 @@ def _combined_text(parsed: ParsedDocumentPayload) -> str:
 
 def _build_pdf_summary(parsed: ParsedDocumentPayload, page_texts: list[str]) -> str:
     if not page_texts:
-        return "PDF ?�스?��? 충분??추출?��? 못해 문서 ?�약 근거가 ?�한?�입?�다."
+        return "PDF 텍스트를 충분히 추출하지 못해 문서 요약 근거가 제한적입니다."
 
     first = _clip(_normalize_sentence(page_texts[0]), 180)
     last = _clip(_normalize_sentence(page_texts[-1]), 180) if len(page_texts) > 1 else ""
-    page_note = f"{parsed.page_count}?�이지 문서?�서 ?�심 ?�름???�리?�습?�다."
+    page_note = f"{parsed.page_count}페이지 문서에서 핵심 흐름을 정리했습니다."
 
     if last and last != first:
-        return f"{page_note} �??�이지 ?�약?� {first} 마�?�??�이지 ?�약?� {last}"
-    return f"{page_note} ?�약: {first}"
+        return f"{page_note} 첫 페이지 요약은 {first} 마지막 페이지 요약은 {last}"
+    return f"{page_note} 요약: {first}"
 
 
 def _extract_key_points(page_texts: list[str]) -> list[str]:
@@ -1256,16 +1262,16 @@ def _build_page_insights(page_texts: list[str]) -> list[dict[str, Any]]:
 def _build_evidence_gaps(parsed: ParsedDocumentPayload, page_texts: list[str]) -> list[str]:
     gaps: list[str] = []
     if not page_texts:
-        gaps.append("?�스?��? 충분??추출?��? 못해 ?�이지�?근거 ?�인???�요?�니??")
+        gaps.append("텍스트를 충분히 추출하지 못해 페이지별 근거 확인이 필요합니다.")
     if parsed.needs_review:
-        gaps.append("문서 ?�질?�나 ?�캔 ?�태�??�시 ?�인??추출 ?�락???�는지 ?��???주세??")
+        gaps.append("문서 품질이나 스캔 상태를 다시 확인해 추출 누락이 없는지 점검해 주세요.")
     if parsed.page_count > len(page_texts):
-        gaps.append("?��? ?�이지?�서 추출 ?�스?��? 비어 ?�어 PDF ?�문 ?�인???�요?�니??")
+        gaps.append("일부 페이지에서 추출 텍스트가 비어 있어 PDF 원문 확인이 필요합니다.")
     warnings = parsed.warnings if isinstance(parsed.warnings, list) else []
     if warnings:
-        gaps.append("추�? 경고가 ?�어 ?�기??문단 구조가 깨�?지 ?�았?��? ?�인???�요?�니??")
+        gaps.append("추가 경고가 있어 표기나 문단 구조가 깨지지 않았는지 확인이 필요합니다.")
     if not gaps:
-        gaps.append("?�생부 주요 ?�션�?근거가 충분?��? 최종 검?��? ?�요?�니??")
+        gaps.append("학생부 주요 섹션별 근거가 충분한지 최종 검토가 필요합니다.")
     return _dedupe(gaps, limit=_MAX_EVIDENCE_GAPS)
 
 
@@ -1348,15 +1354,15 @@ def _build_uncertainties(
 ) -> list[str]:
     items: list[str] = []
     if parsed.needs_review:
-        items.append("문서 ?�질 ?�확?�이 ?�요?�니??")
+        items.append("문서 품질 재확인이 필요합니다.")
     if isinstance(section_coverage.get("missing_sections"), list) and section_coverage["missing_sections"]:
-        items.append("?��? ?�심 ?�생부 ?�션???�락?�어 추�? 검?��? ?�요?�니??")
+        items.append("일부 핵심 학생부 섹션이 누락되어 추가 검토가 필요합니다.")
     if isinstance(pdf_analysis, dict):
         gaps = pdf_analysis.get("evidence_gaps")
         if isinstance(gaps, list):
             items.extend(str(item) for item in gaps[:2] if str(item).strip())
     if not items:
-        items.append("?�재 ?�동 분석 결과만으로는 ?��? ?�석???�계가 ?�어 ?�문 검?��? ?�요?�니??")
+        items.append("현재 자동 분석 결과만으로는 세부 해석에 한계가 있어 원문 검토가 필요합니다.")
     return _dedupe(items, limit=5)
 
 
@@ -1390,7 +1396,7 @@ def _extract_grades_subjects(text: str, pipeline_canonical: dict[str, Any]) -> l
         if items:
             return items
 
-    subjects = re.findall(r"(�?��|?�학|?�어|?�회|??��|과학|물리|?�학|?�명과학|지구과???�보|미술|?�악|체육)", text)
+    subjects = re.findall(r"(국어|수학|영어|사회|역사|과학|물리|화학|생명과학|지구과학|정보|미술|음악|체육)", text)
     return [{"subject": subject, "label": subject} for subject in _dedupe(subjects, limit=8)]
 
 
@@ -1444,11 +1450,11 @@ def _extract_student_profile(text: str, pipeline_canonical: dict[str, Any]) -> d
     if isinstance(pipeline_canonical.get("school_name"), str) and pipeline_canonical["school_name"].strip():
         profile["school_name"] = pipeline_canonical["school_name"].strip()
 
-    name_match = re.search(r"(?:?�생�??�명)\s*[:�??\s*([가-??{2,5})", text)
+    name_match = re.search(r"(?:학생명|성명)\s*[:：]?\s*([가-힣]{2,5})", text)
     if name_match and "student_name" not in profile:
         profile["student_name"] = name_match.group(1)
 
-    school_match = re.search(r"([가-?�A-Za-z0-9 ]+고등?�교)", text)
+    school_match = re.search(r"([가-힣A-Za-z0-9 ]+고등학교)", text)
 
 def _extract_value_list(value: Any, key: str) -> list[str]:
     if not isinstance(value, list):
@@ -1498,5 +1504,4 @@ def _dedupe(items: list[str], *, limit: int) -> list[str]:
         if len(deduped) >= limit:
             break
     return deduped
-
 

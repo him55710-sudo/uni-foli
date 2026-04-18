@@ -90,6 +90,19 @@ export function AppSidebar({
     }
   };
 
+  const sectionActiveItemClass = (sectionKey: string) => {
+    switch (sectionKey) {
+      case 'setup':
+        return 'bg-gradient-to-br from-sky-500 to-cyan-500 text-white shadow-lg shadow-cyan-200/60';
+      case 'analyze':
+        return 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-200/60';
+      case 'execute':
+        return 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200/60';
+      default:
+        return 'bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-200/60';
+    }
+  };
+
   return (
     <Sidebar open={isOpen} aria-label="앱 주요 메뉴">
       {/* Desktop Toggle Button */}
@@ -140,6 +153,7 @@ export function AppSidebar({
                   {section.items.map(item => {
                     const active = isNavItemActive(pathname, item.path);
                     const Icon = item.icon;
+                    const activeClass = sectionActiveItemClass(section.key);
 
                     return (
                       <NavLink
@@ -148,9 +162,7 @@ export function AppSidebar({
                         onClick={onCloseMobile}
                         className={cn(
                           'group flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm transition-all duration-200',
-                          active
-                            ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-200/50 font-bold'
-                            : 'text-slate-500 hover:bg-white/72 hover:text-slate-900',
+                          active ? `${activeClass} font-bold` : 'text-slate-500 hover:bg-white/72 hover:text-slate-900',
                           !isOpen && 'mx-auto h-11 w-11 justify-center px-0 transition-transform hover:scale-105',
                         )}
                       >

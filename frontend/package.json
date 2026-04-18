@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test:contracts": "tsx --test tests/guided_choice_contract.test.ts tests/guided_chat_contract.test.ts tests/guided_conversation_phase_contract.test.ts tests/diagnosis_progress_status.test.ts tests/chat_stream_auth_contract.test.ts tests/diagnosis_project_context_contract.test.ts tests/onboarding_project_context_contract.test.ts",
+    "test:contracts": "tsx --test tests/guided_choice_contract.test.ts tests/guided_chat_contract.test.ts tests/guided_conversation_phase_contract.test.ts tests/diagnosis_progress_status.test.ts tests/chat_stream_auth_contract.test.ts tests/diagnosis_project_context_contract.test.ts tests/onboarding_project_context_contract.test.ts tests/trend_copilot_contract.test.ts",
     "test:ui-loop": "powershell -ExecutionPolicy Bypass -File scripts/three_hour_ui_loop.ps1"
   },
   "dependencies": {

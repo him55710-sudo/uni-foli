@@ -352,6 +352,20 @@ def test_pdf_analysis_sync_async_bridge_inside_running_loop(monkeypatch) -> None
     assert metadata["engine"] == "llm"
 
 
+def test_pdf_analysis_accepts_legacy_analysis_artifact_argument(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    fake_llm = _DeterministicPdfLLM()
+    _patch_resolution(monkeypatch, fake_llm)
+
+    metadata = build_pdf_analysis_metadata(
+        _build_payload(),
+        analysis_artifact={"legacy": "value"},
+    )
+
+    assert metadata is not None
+    assert metadata["engine"] == "llm"
+
+
 def test_get_pdf_analysis_llm_client_uses_split_config(monkeypatch) -> None:
     settings = Settings(
         pdf_analysis_llm_enabled=True,

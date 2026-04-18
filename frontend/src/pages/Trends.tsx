@@ -1,241 +1,284 @@
-import React, { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Newspaper, GraduationCap, Lightbulb, ChevronDown, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
+import { ArrowRight, Compass, Lightbulb, Link2, Sparkles, Target } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { DIAGNOSIS_STORAGE_KEY } from '../lib/diagnosis';
+import { extractDiagnosisMajorDirectionCandidates } from '../lib/chatbotMode';
+import {
+  MAJOR_TREND_PLAYBOOK,
+  buildMajorChipLabels,
+  buildWorkshopPrompt,
+  resolveTrendMajorKey,
+  type MajorTrendTopic,
+  type TrendLens,
+} from '../lib/trendCopilot';
 
-type TrendType = '도서 추천' | '입시 이슈' | '합격 가이드' | '탐구 아이디어';
-
-interface TrendItem {
-  id: number;
-  type: TrendType;
-  icon: React.ComponentType<{ size?: number }>;
-  title: string;
-  desc: string;
+interface TrendLocationState {
+  major?: string;
+  projectId?: string;
 }
 
-const trendItems: TrendItem[] = [
-  { id: 121, type: "탐구 아이디어", icon: Lightbulb, title: "[AI/SW] 생성형 AI의 윤리적 가이드라인 탐구", desc: "컴퓨터공학 지망생을 위한 최신 AI 윤리 탐구 주제입니다." },
-  { id: 122, type: "탐구 아이디어", icon: Lightbulb, title: "[바이오] 유전자 편집 기술의 규제 현황 분석", desc: "의생명공학 지망생을 위한 심화 생명윤리 주제입니다." },
-  { id: 123, type: "합격 가이드", icon: GraduationCap, title: "[경영] ESG 경영 지표의 실효성 검증 모델", desc: "경영학과 지망생을 위한 사회과학 탐구 로드맵입니다." },
-  { id: 124, type: "도서 추천", icon: BookOpen, title: "[반도체] 칩 전쟁: 세계 경제의 새로운 무기", desc: "전자공학 지망생을 위한 추천 도서 및 독후 활동 가이드입니다." },
-  { id: 125, type: "탐구 아이디어", icon: Lightbulb, title: "[미디어] 딥페이크 기술이 저널리즘에 미치는 영향", desc: "미디어학 지망생을 위한 뉴미디어 비판적 탐구 주제입니다." },
-  { id: 126, type: "탐구 아이디어", icon: Lightbulb, title: "[경제] 블록체인 기반의 중앙은행 디지털화폐(CBDC) 연구", desc: "경제학과 지망생을 위한 금융 혁신 탐구 로드맵입니다." },
-  { id: 372, type: "탐구 아이디어", icon: Lightbulb, title: "[정외] 혁신 탐구 로드맵", desc: "정외 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 373, type: "도서 추천", icon: BookOpen, title: "[심리] 글로벌 탐구 로드맵", desc: "심리 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 374, type: "탐구 아이디어", icon: Lightbulb, title: "[의예과] 실전 탐구 로드맵", desc: "의예과 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 375, type: "입시 이슈", icon: Newspaper, title: "[통계] 혁신 탐구 로드맵", desc: "통계 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 376, type: "탐구 아이디어", icon: Lightbulb, title: "[통계] 심화 탐구 로드맵", desc: "통계 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 377, type: "합격 가이드", icon: GraduationCap, title: "[심리] 실전 탐구 로드맵", desc: "심리 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 378, type: "탐구 아이디어", icon: Lightbulb, title: "[교육] 심화 탐구 로드맵", desc: "교육 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 379, type: "합격 가이드", icon: GraduationCap, title: "[전자] 글로벌 탐구 로드맵", desc: "전자 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 380, type: "합격 가이드", icon: GraduationCap, title: "[약학과] 실전 탐구 로드맵", desc: "약학과 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 381, type: "입시 이슈", icon: Newspaper, title: "[심리] 글로벌 탐구 로드맵", desc: "심리 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 382, type: "합격 가이드", icon: GraduationCap, title: "[교육] 실전 탐구 로드맵", desc: "교육 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 383, type: "합격 가이드", icon: GraduationCap, title: "[법학] 실전 탐구 로드맵", desc: "법학 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 384, type: "합격 가이드", icon: GraduationCap, title: "[미디어] 혁신 탐구 로드맵", desc: "미디어 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 385, type: "합격 가이드", icon: GraduationCap, title: "[교육] 실전 탐구 로드맵", desc: "교육 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 386, type: "탐구 아이디어", icon: Lightbulb, title: "[도시] 심화 탐구 로드맵", desc: "도시 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 387, type: "탐구 아이디어", icon: Lightbulb, title: "[교육] 심화 탐구 로드맵", desc: "교육 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 388, type: "합격 가이드", icon: GraduationCap, title: "[정외] 혁신 탐구 로드맵", desc: "정외 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 389, type: "탐구 아이디어", icon: Lightbulb, title: "[도시] 실전 탐구 로드맵", desc: "도시 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 390, type: "탐구 아이디어", icon: Lightbulb, title: "[정외] 글로벌 탐구 로드맵", desc: "정외 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 391, type: "입시 이슈", icon: Newspaper, title: "[도시] 글로벌 탐구 로드맵", desc: "도시 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 392, type: "입시 이슈", icon: Newspaper, title: "[생명] 심화 탐구 로드맵", desc: "생명 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 393, type: "도서 추천", icon: BookOpen, title: "[심리] 실전 탐구 로드맵", desc: "심리 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 394, type: "탐구 아이디어", icon: Lightbulb, title: "[전자] 심화 탐구 로드맵", desc: "전자 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 395, type: "탐구 아이디어", icon: Lightbulb, title: "[교육] 심화 탐구 로드맵", desc: "교육 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 396, type: "합격 가이드", icon: GraduationCap, title: "[전자] 심화 탐구 로드맵", desc: "전자 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 397, type: "도서 추천", icon: BookOpen, title: "[컴공] 실전 탐구 로드맵", desc: "컴공 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 398, type: "입시 이슈", icon: Newspaper, title: "[심리] 글로벌 탐구 로드맵", desc: "심리 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 399, type: "탐구 아이디어", icon: Lightbulb, title: "[치의예과] 심화 탐구 로드맵", desc: "치의예과 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 400, type: "탐구 아이디어", icon: Lightbulb, title: "[의예과] 글로벌 탐구 로드맵", desc: "의예과 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 401, type: "도서 추천", icon: BookOpen, title: "[의예과] 실전 탐구 로드맵", desc: "의예과 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 402, type: "탐구 아이디어", icon: Lightbulb, title: "[법학] 실전 탐구 로드맵", desc: "법학 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 403, type: "도서 추천", icon: BookOpen, title: "[법학] 실전 탐구 로드맵", desc: "법학 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 404, type: "합격 가이드", icon: GraduationCap, title: "[치의예과] 심화 탐구 로드맵", desc: "치의예과 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 405, type: "탐구 아이디어", icon: Lightbulb, title: "[미디어] 혁신 탐구 로드맵", desc: "미디어 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 406, type: "도서 추천", icon: BookOpen, title: "[경영] 혁신 탐구 로드맵", desc: "경영 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 407, type: "입시 이슈", icon: Newspaper, title: "[법학] 혁신 탐구 로드맵", desc: "법학 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 408, type: "도서 추천", icon: BookOpen, title: "[법학] 글로벌 탐구 로드맵", desc: "법학 지망생을 위한 글로벌 핵심 전략 자료입니다." },
-  { id: 409, type: "도서 추천", icon: BookOpen, title: "[치의예과] 실전 탐구 로드맵", desc: "치의예과 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 410, type: "도서 추천", icon: BookOpen, title: "[치의예과] 혁신 탐구 로드맵", desc: "치의예과 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 411, type: "탐구 아이디어", icon: Lightbulb, title: "[의예과] 심화 탐구 로드맵", desc: "의예과 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 412, type: "입시 이슈", icon: Newspaper, title: "[전자] 실전 탐구 로드맵", desc: "전자 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 413, type: "탐구 아이디어", icon: Lightbulb, title: "[심리] 실전 탐구 로드맵", desc: "심리 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 414, type: "탐구 아이디어", icon: Lightbulb, title: "[경영] 실전 탐구 로드맵", desc: "경영 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 415, type: "입시 이슈", icon: Newspaper, title: "[도시] 혁신 탐구 로드맵", desc: "도시 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 416, type: "입시 이슈", icon: Newspaper, title: "[도시] 심화 탐구 로드맵", desc: "도시 지망생을 위한 심화 핵심 전략 자료입니다." },
-  { id: 417, type: "탐구 아이디어", icon: Lightbulb, title: "[법학] 실전 탐구 로드맵", desc: "법학 지망생을 위한 실전 핵심 전략 자료입니다." },
-  { id: 418, type: "탐구 아이디어", icon: Lightbulb, title: "[정외] 혁신 탐구 로드맵", desc: "정외 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 419, type: "탐구 아이디어", icon: Lightbulb, title: "[의예과] 혁신 탐구 로드맵", desc: "의예과 지망생을 위한 혁신 핵심 전략 자료입니다." },
-  { id: 420, type: "입시 이슈", icon: Newspaper, title: "[도시] 실전 탐구 로드맵", desc: "도시 지망생을 위한 실전 핵심 전략 자료입니다." },
-];
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
 
-const baseFilters = ['전체', '탐구 아이디어', '도서 추천', '입시 이슈', '합격 가이드', '경영', '컴공', '의예'] as const;
+function asText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function readDiagnosisStorageSnapshot(): Record<string, unknown> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DIAGNOSIS_STORAGE_KEY);
+    if (!raw) return null;
+    return asRecord(JSON.parse(raw));
+  } catch (error) {
+    console.error('Failed to parse diagnosis storage for trend copilot:', error);
+    return null;
+  }
+}
+
+function resolveWorkshopPath(projectId: string | null): string {
+  if (!projectId) return '/app/workshop';
+  return `/app/workshop/${encodeURIComponent(projectId)}`;
+}
+
+function summaryLine(value: unknown, fallback: string): string {
+  const text = asText(value);
+  return text || fallback;
+}
 
 export function Trends() {
   const navigate = useNavigate();
-  const [activeFilter, setActiveFilter] = useState<string>('전체');
-  const [extraFilters, setExtraFilters] = useState<string[]>([]);
-  const [selectedTrend, setSelectedTrend] = useState<TrendItem | null>(null);
+  const location = useLocation();
+  const routeState = (location.state as TrendLocationState | null) ?? null;
 
-  const allFilters = useMemo(() => [...baseFilters, ...extraFilters], [extraFilters]);
+  const explicitMajorFromQuery = useMemo(() => {
+    const major = new URLSearchParams(location.search).get('major');
+    return major?.trim() || null;
+  }, [location.search]);
+  const explicitMajor = routeState?.major?.trim() || explicitMajorFromQuery;
 
-  const visibleItems = useMemo(() => {
-    if (activeFilter === '전체') return trendItems;
-    if (baseFilters.includes(activeFilter as any)) {
-      return trendItems.filter((item) => item.type === activeFilter);
+  const storedDiagnosis = useMemo(readDiagnosisStorageSnapshot, []);
+  const storedDiagnosisPayload = asRecord(storedDiagnosis?.diagnosis) ?? null;
+  const inferredMajorTop3 = useMemo(
+    () => extractDiagnosisMajorDirectionCandidates(storedDiagnosisPayload, 3),
+    [storedDiagnosisPayload],
+  );
+
+  const majorChips = useMemo(
+    () =>
+      buildMajorChipLabels({
+        explicitMajor,
+        inferredMajors: inferredMajorTop3,
+      }),
+    [explicitMajor, inferredMajorTop3],
+  );
+
+  const [selectedMajor, setSelectedMajor] = useState<string>(majorChips[0] || '컴공');
+  const [activeLens, setActiveLens] = useState<TrendLens>('flow');
+  const [showRecordConnection, setShowRecordConnection] = useState(false);
+
+  useEffect(() => {
+    if (!majorChips.length) return;
+    if (!majorChips.includes(selectedMajor)) {
+      setSelectedMajor(majorChips[0]);
     }
-    // Deeply match specific tags [Major] if available
-    const tagMatch = `[${activeFilter}]`;
-    return trendItems.filter((item) => 
-      item.title.includes(tagMatch) || item.title.includes(activeFilter)
-    );
-  }, [activeFilter]);
+  }, [majorChips, selectedMajor]);
 
-  const handleAddFilter = () => {
-    const input = window.prompt('관심 전공 키워드를 입력해주세요. (예: 컴퓨터공학)');
-    const value = input?.trim();
-    if (!value) return;
-    if (extraFilters.includes(value)) {
-      toast('이미 추가된 필터입니다.', { icon: 'ℹ️' });
-      return;
-    }
-    setExtraFilters((prev) => [...prev, value]);
-    setActiveFilter(value);
-    toast.success(`"${value}" 필터를 추가했습니다.`);
+  const majorKey = resolveTrendMajorKey(selectedMajor);
+  const trendTopics = MAJOR_TREND_PLAYBOOK[majorKey];
+
+  const diagnosisSummary = asRecord(storedDiagnosisPayload?.diagnosis_summary_json) ?? null;
+  const diagnosisContext = asRecord(storedDiagnosisPayload?.chatbot_context_json) ?? null;
+  const storedProjectId = asText(storedDiagnosis?.projectId);
+  const projectId = routeState?.projectId?.trim() || storedProjectId || null;
+  const workshopPath = resolveWorkshopPath(projectId);
+
+  const sourceLabel = explicitMajor
+    ? '직접 선택한 목표 전공 기준'
+    : inferredMajorTop3.length > 0
+      ? '진단 기반 추정 전공 Top 3 기준'
+      : '기본 전공 트렌드 기준';
+
+  const handleStartWorkshop = (topic?: MajorTrendTopic) => {
+    const prompt = topic ? buildWorkshopPrompt(topic, selectedMajor) : undefined;
+    navigate(workshopPath, {
+      state: {
+        major: selectedMajor,
+        chatbotMode: 'trend',
+        fromTrend: true,
+        trendTopicId: topic?.id ?? null,
+        trendPrompt: prompt ?? null,
+        projectId: projectId ?? undefined,
+      },
+    });
+    toast.success(topic ? '선택한 주제로 워크숍을 열었습니다.' : '트렌드 모드로 워크숍을 열었습니다.');
   };
 
+  const recordLinkHint = [
+    summaryLine(diagnosisSummary?.headline, '최근 진단 헤드라인이 아직 없습니다.'),
+    summaryLine(diagnosisSummary?.recommended_focus, '추천 초점이 없어 기본 실행 루틴을 안내합니다.'),
+    summaryLine(
+      diagnosisContext?.major_alignment_hints && Array.isArray(diagnosisContext.major_alignment_hints)
+        ? diagnosisContext.major_alignment_hints[0]
+        : null,
+      '진단 기반 전공 적합성 힌트를 추가로 불러오지 못했습니다.',
+    ),
+  ];
+
   return (
-    <div className="mx-auto max-w-7xl px-0 pb-24 sm:px-2 lg:px-4">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-        <h1 className="mb-2 text-3xl font-extrabold tracking-tight text-slate-800 sm:text-4xl">입시 트렌드 허브</h1>
-        <p className="text-base font-medium text-slate-500 sm:text-lg">
-          전공과 목표에 맞는 자료를 골라 보고서 주제로 바로 연결하세요.
-        </p>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="mb-10 flex flex-wrap gap-3"
-      >
-        {allFilters.map((filter) => (
-          <button
-            key={filter}
-            onClick={() => setActiveFilter(filter)}
-            className={`rounded-full px-5 py-2.5 text-sm font-extrabold shadow-sm transition-all ${
-              activeFilter === filter
-                ? 'scale-105 bg-[#004aad] text-white shadow-md'
-                : 'border border-slate-200 bg-white text-slate-600 hover:border-[#004aad]/30 hover:bg-[#004aad]/5 hover:text-[#004aad]'
-            }`}
-          >
-            {filter}
-          </button>
-        ))}
-        <button
-          onClick={handleAddFilter}
-          className="flex items-center gap-2 rounded-full border border-dashed border-slate-300 bg-slate-50 px-5 py-2.5 text-sm font-extrabold text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-        >
-          관심 전공 추가 <ChevronDown size={16} />
-        </button>
-      </motion.div>
-
-      <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {visibleItems.map((item, index) => (
-          <motion.button
-            type="button"
-            key={item.id}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.05 }}
-            onClick={() => setSelectedTrend(item)}
-            className="group flex h-auto min-h-[290px] w-full self-start cursor-pointer flex-col overflow-hidden p-5 text-left sm:h-[320px] sm:p-8 clay-card"
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 rounded-lg bg-[#004aad]/5 px-3 py-1 text-xs font-bold text-[#004aad]">
-                <item.icon size={14} />
-                {item.type}
-              </div>
-            </div>
-            <h3 className="mb-3 text-lg font-extrabold leading-tight text-slate-800 transition-colors group-hover:text-[#004aad] sm:text-xl">
-              {item.title}
-            </h3>
-            <p className="text-sm font-medium leading-relaxed text-slate-500 line-clamp-3 sm:text-base">
-              {item.desc}
-            </p>
-            <div className="mt-auto pt-6">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#004aad]/60 transition-colors group-hover:text-[#004aad]">
-                내용 보기 →
-              </span>
-            </div>
-          </motion.button>
-        ))}
-      </div>
-
-      <AnimatePresence>
-        {selectedTrend && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedTrend(null)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-white p-6 shadow-2xl sm:p-10"
-            >
-              <button
-                onClick={() => setSelectedTrend(null)}
-                className="absolute right-6 top-6 rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-              >
-                <X size={24} />
-              </button>
-
-              <div className="mb-6 inline-flex items-center gap-2 rounded-xl bg-[#004aad]/5 px-4 py-1.5 text-sm font-bold text-[#004aad]">
-                <selectedTrend.icon size={18} />
-                {selectedTrend.type}
-              </div>
-
-              <h2 className="mb-4 text-2xl font-extrabold leading-tight text-slate-800 sm:text-3xl">
-                {selectedTrend.title}
-              </h2>
-              
-              <div className="mb-8 space-y-4 text-base font-medium leading-relaxed text-slate-600 sm:text-lg">
-                <p>{selectedTrend.desc}</p>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6">
-                  <h4 className="mb-2 text-sm font-bold text-slate-400">보고서 연계 아이디어</h4>
-                  <p className="text-slate-700">이 주제를 나의 생기부와 어떻게 연결하면 좋을까요? 인공지능이 분석한 심화 탐구 로드맵을 워크숍에서 지금 바로 확인해보세요.</p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  onClick={() => {
-                    navigate('/workshop');
-                    toast.success('워크숍으로 이동합니다.');
-                  }}
-                  className="flex-1 rounded-2xl bg-[#004aad] py-4 text-lg font-extrabold text-white shadow-lg transition-transform hover:scale-[1.02] active:scale-95 shadow-[#004aad]/20"
-                >
-                  이 주제로 보고서 쓰기
-                </button>
-                <button
-                  onClick={() => setSelectedTrend(null)}
-                  className="rounded-2xl border border-slate-200 bg-white px-8 py-4 text-lg font-extrabold text-slate-600 transition-colors hover:bg-slate-50"
-                >
-                  닫기
-                </button>
-              </div>
-            </motion.div>
+    <div className="mx-auto max-w-6xl space-y-6 px-3 py-4 sm:px-5 sm:py-7">
+      <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+        <div className="rounded-3xl border border-[#d9e5ff] bg-[linear-gradient(145deg,#f4f8ff_0%,#ffffff_72%)] p-5 sm:p-7">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#c9dafc] bg-white px-3 py-1 text-xs font-extrabold text-[#004aad]">
+            <Compass size={14} />
+            전공별 탐구주제 트렌드 코파일럿
           </div>
-        )}
-      </AnimatePresence>
+          <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">
+            {selectedMajor} 기준 탐구주제 방향을 빠르게 고르고 실행으로 넘기기
+          </h1>
+          <p className="mt-2 text-sm font-semibold text-slate-600 sm:text-base">
+            {sourceLabel} · 짧은 칩으로 주제 흐름을 탐색하고 바로 워크숍 설계로 연결합니다.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {majorChips.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => {
+                  setSelectedMajor(chip);
+                  setShowRecordConnection(false);
+                }}
+                className={`rounded-full px-3 py-1.5 text-sm font-extrabold transition ${
+                  chip === selectedMajor
+                    ? 'bg-[#004aad] text-white shadow-[0_8px_18px_rgba(0,74,173,0.25)]'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:border-[#004aad]/40 hover:text-[#004aad]'
+                }`}
+              >
+                {chip}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setShowRecordConnection((prev) => !prev)}
+              className={`rounded-full px-3 py-1.5 text-sm font-extrabold transition ${
+                showRecordConnection
+                  ? 'bg-emerald-600 text-white shadow-[0_8px_18px_rgba(5,150,105,0.25)]'
+                  : 'border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'
+              }`}
+            >
+              내 학생부와 연결하기
+            </button>
+          </div>
+        </div>
+      </motion.section>
+
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="space-y-4"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { key: 'flow', label: '핵심 흐름', icon: Sparkles },
+            { key: 'question', label: '탐구 질문', icon: Target },
+            { key: 'activity', label: '활동 연결', icon: Lightbulb },
+          ].map((lens) => (
+            <button
+              key={lens.key}
+              type="button"
+              onClick={() => setActiveLens(lens.key as TrendLens)}
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold transition ${
+                activeLens === lens.key
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-400'
+              }`}
+            >
+              <lens.icon size={14} />
+              {lens.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => handleStartWorkshop()}
+            className="inline-flex items-center gap-2 rounded-full border border-[#c8dafd] bg-[#eff5ff] px-3 py-1.5 text-sm font-bold text-[#004aad] transition hover:bg-[#dfeaff]"
+          >
+            워크숍으로 가져가기
+            <ArrowRight size={14} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {trendTopics.map((topic) => (
+            <article
+              key={topic.id}
+              className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
+            >
+              <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-[#004aad]">{selectedMajor} 탐구 트렌드</p>
+              <h3 className="text-lg font-black text-slate-900">{topic.title}</h3>
+              <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+                {activeLens === 'flow' ? topic.flow : activeLens === 'question' ? topic.question : topic.activity}
+              </p>
+              <div className="mt-auto pt-4">
+                <button
+                  type="button"
+                  onClick={() => handleStartWorkshop(topic)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#004aad] px-3 py-2 text-sm font-extrabold text-white transition hover:brightness-110"
+                >
+                  이 주제로 설계하기
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </motion.section>
+
+      {showRecordConnection && (
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 sm:p-5"
+        >
+          <h2 className="mb-2 flex items-center gap-2 text-lg font-black text-emerald-900">
+            <Link2 size={18} />
+            내 학생부와 연결하기
+          </h2>
+          <ul className="space-y-2 text-sm font-semibold text-emerald-900/90">
+            <li>진단 요약: {recordLinkHint[0]}</li>
+            <li>현재 초점: {recordLinkHint[1]}</li>
+            <li>전공 연계 힌트: {recordLinkHint[2]}</li>
+          </ul>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => handleStartWorkshop(trendTopics[0])}
+              className="rounded-full bg-emerald-600 px-3 py-1.5 text-sm font-extrabold text-white transition hover:bg-emerald-700"
+            >
+              주제 계획 시작
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                navigate('/app/diagnosis', {
+                  state: { projectId: projectId ?? undefined },
+                })
+              }
+              className="rounded-full border border-emerald-300 bg-white px-3 py-1.5 text-sm font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+            >
+              진단 결과 다시 보기
+            </button>
+          </div>
+        </motion.section>
+      )}
     </div>
   );
 }
+

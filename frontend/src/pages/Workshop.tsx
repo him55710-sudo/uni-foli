@@ -22,11 +22,11 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { auth } from '../lib/firebase';
-import { api, resolveApiBaseUrl } from '../lib/api';
+import { api, resolveApiBaseUrl, resolveSameOriginApiBaseUrl } from '../lib/api';
 import {
   ChatStreamError,
   consumeChatEventStream,
-  openChatEventStream,
+  openChatEventStreamWithFallback,
   resolveChatStreamFallbackHint,
   resolveChatStreamToastMessage,
   type ChatStreamMetaPayload,
@@ -546,10 +546,17 @@ async function streamFoliReply(
     throw new Error('Workshop chat session is not initialized.');
   }
 
-  const endpoint = `${resolveApiBaseUrl()}/api/v1/workshops/${encodeURIComponent(workshopId)}/chat/stream`;
+  const chatPath = `/api/v1/workshops/${encodeURIComponent(workshopId)}/chat/stream`;
+  const primaryBaseUrl = resolveApiBaseUrl();
+  const sameOriginBaseUrl = resolveSameOriginApiBaseUrl();
+  const endpointCandidates = [`${primaryBaseUrl}${chatPath}`];
+  if (sameOriginBaseUrl && sameOriginBaseUrl !== primaryBaseUrl) {
+    endpointCandidates.push(`${sameOriginBaseUrl}${chatPath}`);
+  }
+
   try {
-    const { response, authSource } = await openChatEventStream({
-      endpoint,
+    const { endpoint, response, authSource } = await openChatEventStreamWithFallback({
+      endpoints: endpointCandidates,
       payload: {
         project_id: projectId,
         workshop_id: workshopId,
@@ -847,7 +854,7 @@ export function Workshop() {
         }
       }
       if (latestDiagnosisRun?.result_payload) {
-        setDiagnosisReport(latestDiagnosisRun.result_payload as Record<string, unknown>);
+        setDiagnosisReport(latestDiagnosisRun.result_payload as unknown as Record<string, unknown>);
         setShowDiagnosis(true);
       }
 
