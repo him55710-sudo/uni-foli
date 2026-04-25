@@ -31,6 +31,27 @@ _SECTION_KEYWORDS: dict[str, tuple[str, ...]] = {
     "behavior_general_comments": ("behavior", "general comment", "attitude", "행동특성", "종합의견"),
 }
 
+_SECTION_DISPLAY_LABELS: dict[str, str] = {
+    "student_info": "인적·학적사항",
+    "attendance": "출결상황",
+    "awards": "수상경력",
+    "creative_activities": "창의적 체험활동",
+    "volunteer": "봉사활동",
+    "grades_subjects": "교과학습발달상황",
+    "subject_special_notes": "세부능력 및 특기사항",
+    "reading": "독서활동",
+    "behavior_general_comments": "행동특성 및 종합의견",
+}
+
+_REQUIRED_STUDENT_RECORD_SECTIONS: tuple[str, ...] = (
+    "student_info",
+    "attendance",
+    "grades_subjects",
+    "subject_special_notes",
+    "creative_activities",
+    "behavior_general_comments",
+)
+
 _LEGACY_SECTION_LABELS: dict[str, str] = {
     "student_info": "student_info",
     "attendance": "attendance",
@@ -44,13 +65,34 @@ _LEGACY_SECTION_LABELS: dict[str, str] = {
 }
 
 _TIMELINE_PATTERNS = (
-    re.compile(r"[1-3]\\s*year\\s*[1-2]\\s*term", re.IGNORECASE),
-    re.compile(r"[1-3]\\s*year", re.IGNORECASE),
-    re.compile(r"[1-2]\\s*term", re.IGNORECASE),
+    re.compile(r"[1-3]\s*학년\s*[1-2]\s*학기"),
+    re.compile(r"[1-3]\s*학년"),
+    re.compile(r"[1-3]\s*-\s*[1-2]"),
+    re.compile(r"[1-3]\s*year\s*[1-2]\s*term", re.IGNORECASE),
+    re.compile(r"[1-3]\s*year", re.IGNORECASE),
+    re.compile(r"[1-2]\s*term", re.IGNORECASE),
 )
 
-_MAJOR_HINT_KEYWORDS = ("major", "career", "path", "goal", "admission", "future")
-_CAREER_KEYWORDS = ("career", "major", "future", "goal", "admission")
+_MAJOR_HINT_KEYWORDS = (
+    "major",
+    "career",
+    "path",
+    "goal",
+    "admission",
+    "future",
+    "전공",
+    "진로",
+    "희망",
+    "관심",
+    "학과",
+    "계열",
+    "적합",
+    "탐구",
+)
+_CAREER_KEYWORDS = ("career", "major", "future", "goal", "admission", "진로", "전공", "희망", "학과", "목표")
+_CONTINUITY_KEYWORDS = ("심화", "확장", "연계", "후속", "발전", "연속", "탐구", "비교")
+_PROCESS_KEYWORDS = ("과정", "방법", "한계", "개선", "성찰", "분석", "실험", "관찰", "결과")
+_EVIDENCE_KEYWORDS = ("수치", "데이터", "결과", "근거", "관찰", "측정", "비교", "그래프", "표")
 
 _PDF_ANALYSIS_SCHEMA_VERSION = "2026-04-13-pdf-analysis-v2"
 _HEURISTIC_MODEL_NAME = "heuristic-summary-v1"
@@ -251,7 +293,7 @@ def _resolve_requested_pdf_identity(settings: Any) -> tuple[str, str]:
         ).strip()
         return provider, model
     if provider == "gemini":
-        model = str(getattr(settings, "pdf_analysis_gemini_model", "") or "").strip() or "gemini-2.0-flash"
+        model = str(getattr(settings, "pdf_analysis_gemini_model", "") or "").strip() or "gemini-2.5-flash-lite"
         return provider, model
     return provider or "unknown", "unknown"
 
@@ -893,6 +935,11 @@ def _resolve_pdf_analysis_runtime_outcome(
         if client is not None
         else ""
     ) or resolution.fallback_reason
+    if actual_provider != resolution.attempted_provider or actual_model != resolution.attempted_model:
+        fallback_used = True
+        fallback_reason = fallback_reason or "provider_auto_fallback"
+    elif fallback_reason:
+        fallback_used = True
     return actual_provider, actual_model, fallback_used, fallback_reason
 
 
@@ -919,6 +966,8 @@ def _compose_pdf_analysis_metadata(
         "actual_provider": actual_provider,
         "actual_model": actual_model,
         "engine": engine,
+        "attempted_pdf_analysis_provider": attempted_provider,
+        "attempted_pdf_analysis_model": attempted_model,
         "requested_pdf_analysis_provider": attempted_provider,
         "requested_pdf_analysis_model": attempted_model,
         "actual_pdf_analysis_provider": actual_provider,
@@ -1086,6 +1135,32 @@ def build_student_record_canonical_metadata(
     career_signals = _extract_career_signals(text, pipeline_canonical)
     reading_activity = _extract_reading_activity(text, pipeline_canonical)
     behavior_opinion = _extract_behavior_opinion(text, pipeline_canonical)
+    evidence_bank = _build_evidence_bank(
+        page_texts=page_texts,
+        section_classification=section_classification,
+        pipeline_canonical=pipeline_canonical,
+    )
+    section_priority_map = _build_section_priority_map(
+        section_classification=section_classification,
+        evidence_bank=evidence_bank,
+    )
+    record_stage = _infer_record_stage(text)
+    priority_interventions = _build_priority_interventions(
+        section_priority_map=section_priority_map,
+        evidence_bank=evidence_bank,
+        major_alignment_hints=major_alignment_hints,
+    )
+    diagnostic_questions = _build_diagnostic_questions(
+        section_priority_map=section_priority_map,
+        evidence_bank=evidence_bank,
+        record_stage=record_stage,
+    )
+    evidence_page_numbers = {
+        page
+        for item in evidence_bank
+        for page in [_coerce_positive_int(item.get("page"))]
+        if page is not None
+    }
 
     confidence = round(
         min(
@@ -1118,12 +1193,27 @@ def build_student_record_canonical_metadata(
         "career_signals": career_signals,
         "reading_activity": reading_activity,
         "behavior_opinion": behavior_opinion,
+        "evidence_bank": evidence_bank,
+        "section_priority_map": section_priority_map,
+        "record_stage": record_stage,
+        "priority_interventions": priority_interventions,
+        "diagnostic_questions": diagnostic_questions,
+        "consulting_summary": _build_consulting_summary(
+            confidence=confidence,
+            coverage_score=coverage_score,
+            record_stage=record_stage,
+            section_priority_map=section_priority_map,
+            evidence_bank=evidence_bank,
+        ),
         "section_classification": section_classification,
         "section_coverage": section_coverage,
         "quality_gates": {
-            "missing_required_sections": list(section_coverage["missing_sections"]),
+            "missing_required_sections": list(section_coverage.get("missing_required_sections", [])),
             "reanalysis_required": bool(section_coverage["reanalysis_required"]),
             "coverage_score": coverage_score,
+            "required_coverage_score": float(section_coverage.get("required_coverage_score", 0.0) or 0.0),
+            "evidence_anchor_count": len(evidence_bank),
+            "evidence_page_count": len(evidence_page_numbers),
         },
         "page_count": parsed.page_count,
         "word_count": parsed.word_count,
@@ -1164,32 +1254,60 @@ def build_student_record_structure_metadata(
         section_density[legacy_label] = density
         section_status[legacy_label] = str(payload.get("status") or "missing")
 
+    alignment_values = _extract_value_list(canonical.get("major_alignment_hints"), "hint")
+    continuity_values = _extract_value_list(canonical.get("career_signals"), "label")
+    process_values = _extract_value_list(canonical.get("subject_special_notes"), "label")
+    strong_sections = [
+        _SECTION_DISPLAY_LABELS.get(key, key)
+        for key, payload in section_classification.items()
+        if isinstance(payload, dict) and _coerce_float(payload.get("density"), default=0.0) >= 0.55
+    ]
+
     return {
         "schema_version": _CANONICAL_SCHEMA_VERSION,
         "record_type": canonical.get("record_type") or "korean_student_record_pdf",
-        "major_alignment": _extract_value_list(canonical.get("major_alignment_hints"), "hint"),
+        "major_alignment": alignment_values,
+        "major_sections": _dedupe(strong_sections, limit=12),
         "section_density": section_density,
         "section_status": section_status,
         "weak_sections": _extract_value_list(canonical.get("weak_or_missing_sections"), "section"),
         "timeline_signals": _extract_value_list(canonical.get("timeline_signals"), "signal"),
         "activity_clusters": _extract_value_list(canonical.get("extracurricular"), "label"),
-        "alignment_signals": _extract_value_list(canonical.get("major_alignment_hints"), "hint"),
-        "continuity_signals": _extract_value_list(canonical.get("career_signals"), "label"),
-        "process_signals": _extract_value_list(canonical.get("subject_special_notes"), "label"),
+        "alignment_signals": alignment_values,
+        "subject_major_alignment_signals": alignment_values,
+        "continuity_signals": continuity_values,
+        "process_signals": process_values,
+        "process_reflection_signals": process_values,
         "uncertain_items": _extract_value_list(canonical.get("uncertainties"), "message"),
         "coverage_check": canonical.get("section_coverage") or {},
         "contradiction_check": {"passed": True, "items": []},
+        "evidence_bank": canonical.get("evidence_bank") if isinstance(canonical.get("evidence_bank"), list) else [],
+        "section_priority_map": canonical.get("section_priority_map")
+        if isinstance(canonical.get("section_priority_map"), list)
+        else [],
+        "priority_interventions": canonical.get("priority_interventions")
+        if isinstance(canonical.get("priority_interventions"), list)
+        else [],
+        "diagnostic_questions": canonical.get("diagnostic_questions")
+        if isinstance(canonical.get("diagnostic_questions"), list)
+        else [],
+        "record_stage": canonical.get("record_stage") or "unknown",
+        "consulting_summary": canonical.get("consulting_summary") or "",
     }
 
 
 def _extract_page_texts(parsed: ParsedDocumentPayload) -> list[str]:
     page_texts: list[str] = []
 
+    metadata = parsed.metadata if isinstance(parsed.metadata, dict) else {}
     for container in (
-        parsed.raw_artifact,
+        parsed.masked_artifact,
+        metadata.get("masked_artifact"),
         parsed.analysis_artifact,
-        parsed.metadata.get("raw_parse_artifact") if isinstance(parsed.metadata, dict) else None,
-        parsed.metadata,
+        metadata.get("analysis_artifact"),
+        parsed.raw_artifact,
+        metadata.get("raw_parse_artifact"),
+        metadata,
     ):
         if not isinstance(container, dict):
             continue
@@ -1278,7 +1396,7 @@ def _build_evidence_gaps(parsed: ParsedDocumentPayload, page_texts: list[str]) -
 def _looks_like_student_record(parsed: ParsedDocumentPayload, pipeline_canonical: dict[str, Any]) -> bool:
     if pipeline_canonical:
         return True
-    text = (parsed.content_text or "").strip()
+    text = _combined_text(parsed).strip() or (parsed.content_text or "").strip()
     if not text:
         return False
     hits = sum(1 for keywords in _SECTION_KEYWORDS.values() if any(keyword in text for keyword in keywords))
@@ -1326,11 +1444,24 @@ def _build_section_coverage(section_classification: dict[str, dict[str, Any]]) -
     ]
     present_count = sum(1 for payload in section_classification.values() if payload.get("status") == "present")
     coverage_score = round(present_count / max(len(_SECTION_KEYWORDS), 1), 3)
+    missing_required_sections = [
+        _SECTION_DISPLAY_LABELS.get(key, _LEGACY_SECTION_LABELS.get(key, key))
+        for key in _REQUIRED_STUDENT_RECORD_SECTIONS
+        if (section_classification.get(key) or {}).get("status") != "present"
+    ]
+    required_present_count = len(_REQUIRED_STUDENT_RECORD_SECTIONS) - len(missing_required_sections)
+    required_coverage_score = round(required_present_count / max(len(_REQUIRED_STUDENT_RECORD_SECTIONS), 1), 3)
     return {
         "section_counts": section_counts,
+        "required_sections": [
+            _SECTION_DISPLAY_LABELS.get(key, _LEGACY_SECTION_LABELS.get(key, key))
+            for key in _REQUIRED_STUDENT_RECORD_SECTIONS
+        ],
+        "missing_required_sections": missing_required_sections,
         "missing_sections": missing_sections,
         "coverage_score": coverage_score,
-        "reanalysis_required": coverage_score < 0.45,
+        "required_coverage_score": required_coverage_score,
+        "reanalysis_required": required_coverage_score < 0.5 or coverage_score < 0.45,
     }
 
 
@@ -1343,7 +1474,11 @@ def _extract_timeline_signals(text: str) -> list[str]:
 
 def _extract_major_alignment_hints(text: str) -> list[str]:
     sentences = _split_sentences(text)
-    hints = [sentence for sentence in sentences if any(keyword in sentence for keyword in _MAJOR_HINT_KEYWORDS)]
+    hints = [
+        sentence
+        for sentence in sentences
+        if any(keyword.lower() in sentence.lower() for keyword in _MAJOR_HINT_KEYWORDS)
+    ]
     return _dedupe([_clip(sentence, 180) for sentence in hints], limit=6)
 
 
@@ -1363,22 +1498,6 @@ def _build_uncertainties(
             items.extend(str(item) for item in gaps[:2] if str(item).strip())
     if not items:
         items.append("현재 자동 분석 결과만으로는 세부 해석에 한계가 있어 원문 검토가 필요합니다.")
-    return _dedupe(items, limit=5)
-
-
-def _extract_grades_subjects(text: str, pipeline_canonical: dict[str, Any]) -> list[dict[str, Any]]:
-    grades = pipeline_canonical.get("grades")
-    if isinstance(grades, list) and grades:
-        items: list[dict[str, Any]] = []
-        for entry in grades[:8]:
-            if not isinstance(entry, dict):
-                continue
-            subject = str(entry.get("subject") or "").strip()
-            if not subject:
-                continue
-            items.append({"subject": subject, "label": subject})
-        if items:
-            return items
     return _dedupe(items, limit=5)
 
 
@@ -1455,6 +1574,271 @@ def _extract_student_profile(text: str, pipeline_canonical: dict[str, Any]) -> d
         profile["student_name"] = name_match.group(1)
 
     school_match = re.search(r"([가-힣A-Za-z0-9 ]+고등학교)", text)
+    if school_match and "school_name" not in profile:
+        profile["school_name"] = school_match.group(1).strip()
+
+    grade_match = re.search(r"([1-3])\s*학년", text)
+    if grade_match:
+        profile["latest_grade_detected"] = int(grade_match.group(1))
+    return profile
+
+
+def _build_evidence_bank(
+    *,
+    page_texts: list[str],
+    section_classification: dict[str, dict[str, Any]],
+    pipeline_canonical: dict[str, Any],
+) -> list[dict[str, Any]]:
+    canonical_bank = pipeline_canonical.get("evidence_bank")
+    if isinstance(canonical_bank, list) and canonical_bank:
+        normalized: list[dict[str, Any]] = []
+        for index, item in enumerate(canonical_bank[:48], start=1):
+            if not isinstance(item, dict):
+                continue
+            quote = _clip(str(item.get("quote") or item.get("text") or ""), 240)
+            if not quote:
+                continue
+            page = _coerce_positive_int(item.get("page") or item.get("page_number")) or 1
+            section = str(item.get("section") or item.get("section_label") or _infer_section_for_text(quote)).strip()
+            normalized.append(
+                {
+                    "anchor_id": str(item.get("anchor_id") or f"canonical-{index}"),
+                    "page": page,
+                    "section": section or "student_record",
+                    "quote": quote,
+                    "theme": _infer_evidence_theme(quote),
+                    "confidence": round(max(0.45, min(0.95, _coerce_float(item.get("confidence"), default=0.74))), 3),
+                    "process_elements": _detect_process_elements(quote),
+                }
+            )
+        if normalized:
+            return normalized
+
+    section_density = {
+        section: max(0.0, min(1.0, _coerce_float(payload.get("density"), default=0.0)))
+        for section, payload in section_classification.items()
+        if isinstance(payload, dict)
+    }
+    bank: list[dict[str, Any]] = []
+    seen_quotes: set[str] = set()
+    for page_index, text in enumerate(page_texts[:36], start=1):
+        candidates = _candidate_evidence_sentences(text)
+        if not candidates and text.strip():
+            candidates = [_clip(text, 240)]
+        per_page_count = 0
+        for quote in candidates:
+            normalized_quote = _clip(quote, 240)
+            if len(normalized_quote) < 12:
+                continue
+            quote_key = normalized_quote.lower()
+            if quote_key in seen_quotes:
+                continue
+            seen_quotes.add(quote_key)
+            section = _infer_section_for_text(normalized_quote)
+            confidence = 0.58 + section_density.get(section, 0.18) * 0.32
+            if any(keyword in normalized_quote for keyword in _EVIDENCE_KEYWORDS):
+                confidence += 0.05
+            bank.append(
+                {
+                    "anchor_id": f"p{page_index}-e{per_page_count + 1}",
+                    "page": page_index,
+                    "section": _SECTION_DISPLAY_LABELS.get(section, section or "student_record"),
+                    "quote": normalized_quote,
+                    "theme": _infer_evidence_theme(normalized_quote),
+                    "confidence": round(max(0.45, min(0.92, confidence)), 3),
+                    "process_elements": _detect_process_elements(normalized_quote),
+                }
+            )
+            per_page_count += 1
+            if per_page_count >= 4 or len(bank) >= 48:
+                break
+        if len(bank) >= 48:
+            break
+    return bank
+
+
+def _candidate_evidence_sentences(text: str) -> list[str]:
+    sentences = _split_sentences(text)
+    scored: list[tuple[int, str]] = []
+    for index, sentence in enumerate(sentences):
+        clipped = _clip(sentence, 260)
+        if len(clipped) < 16:
+            continue
+        score = 0
+        score += 3 if any(keyword in clipped for keyword in _EVIDENCE_KEYWORDS) else 0
+        score += 3 if any(keyword in clipped for keyword in _PROCESS_KEYWORDS) else 0
+        score += 2 if any(keyword in clipped for keyword in _CONTINUITY_KEYWORDS) else 0
+        score += 2 if any(keyword in clipped for keyword in _MAJOR_HINT_KEYWORDS) else 0
+        score += 1 if any(char.isdigit() for char in clipped) else 0
+        scored.append((score * 1000 - index, clipped))
+    scored.sort(reverse=True)
+    return _dedupe([item for _, item in scored], limit=8)
+
+
+def _build_section_priority_map(
+    *,
+    section_classification: dict[str, dict[str, Any]],
+    evidence_bank: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    evidence_by_section: dict[str, int] = {}
+    for item in evidence_bank:
+        section = _normalize_section_key(str(item.get("section") or ""))
+        evidence_by_section[section] = evidence_by_section.get(section, 0) + 1
+
+    rows: list[dict[str, Any]] = []
+    for key, payload in section_classification.items():
+        if not isinstance(payload, dict):
+            continue
+        density = max(0.0, min(1.0, _coerce_float(payload.get("density"), default=0.0)))
+        evidence_count = evidence_by_section.get(key, 0)
+        if density >= 0.6 and evidence_count >= 2:
+            priority = "유지·확장"
+            action = "강점 근거로 사용하되 동일 표현 반복은 줄이세요."
+        elif density >= 0.35 or evidence_count >= 1:
+            priority = "정밀 보강"
+            action = "근거 문장을 1개 이상 추가하고 과정·한계 설명을 붙이세요."
+        else:
+            priority = "우선 복구"
+            action = "원문 추출 상태를 확인하고 섹션별 핵심 기록을 먼저 확보하세요."
+        rows.append(
+            {
+                "section": key,
+                "label": _SECTION_DISPLAY_LABELS.get(key, key),
+                "status": str(payload.get("status") or "missing"),
+                "density": round(density, 3),
+                "evidence_count": evidence_count,
+                "priority": priority,
+                "recommended_action": action,
+            }
+        )
+    rows.sort(key=lambda item: (item["priority"] != "우선 복구", item["priority"] != "정밀 보강", -item["density"]))
+    return rows
+
+
+def _build_priority_interventions(
+    *,
+    section_priority_map: list[dict[str, Any]],
+    evidence_bank: list[dict[str, Any]],
+    major_alignment_hints: list[dict[str, str]],
+) -> list[str]:
+    weak_rows = [row for row in section_priority_map if row.get("priority") in {"우선 복구", "정밀 보강"}]
+    actions: list[str] = []
+    for row in weak_rows[:4]:
+        actions.append(f"{row.get('label')}: {row.get('recommended_action')}")
+    evidence_pages = {
+        page
+        for item in evidence_bank
+        for page in [_coerce_positive_int(item.get("page"))]
+        if page is not None
+    }
+    if len(evidence_pages) < 5:
+        actions.append("페이지 근거가 한쪽에 몰려 있습니다. 학년·섹션이 다른 근거를 최소 5페이지 이상으로 분산하세요.")
+    if not major_alignment_hints:
+        actions.append("목표 전공과 직접 연결되는 교과/활동 문장을 2개 이상 표시해 전공 적합성 축을 보강하세요.")
+    if not actions:
+        actions.append("현재 강점 축을 유지하면서 주장마다 페이지 앵커와 과정 설명을 연결하세요.")
+    return _dedupe(actions, limit=6)
+
+
+def _build_diagnostic_questions(
+    *,
+    section_priority_map: list[dict[str, Any]],
+    evidence_bank: list[dict[str, Any]],
+    record_stage: str,
+) -> list[str]:
+    weakest = next((row for row in section_priority_map if row.get("priority") == "우선 복구"), None)
+    strongest = next((row for row in reversed(section_priority_map) if row.get("priority") == "유지·확장"), None)
+    questions = [
+        "가장 강한 근거 1개를 목표 전공과 연결하면 어떤 역량이 증명되나요?",
+        "근거 없이 좋아 보이는 표현을 제거하면 남는 핵심 사실은 무엇인가요?",
+    ]
+    if weakest:
+        questions.append(f"{weakest.get('label')} 섹션을 보완하려면 원문에서 어떤 문장 1개를 추가 확인해야 하나요?")
+    if strongest:
+        questions.append(f"{strongest.get('label')}의 강점을 반복하지 않고 한 단계 심화하려면 어떤 비교/분석 근거가 필요할까요?")
+    if record_stage == "finalized":
+        questions.append("이미 완성된 기록 기준으로 면접에서 방어해야 할 약점 질문은 무엇인가요?")
+    else:
+        questions.append("아직 기록을 보완할 수 있다면 다음 학기 활동에서 어떤 관찰값을 남겨야 하나요?")
+    if evidence_bank:
+        questions.append(f"p.{evidence_bank[0].get('page')} 근거를 활용해 2문장 답변을 만들면 첫 문장은 무엇인가요?")
+    return _dedupe(questions, limit=6)
+
+
+def _build_consulting_summary(
+    *,
+    confidence: float,
+    coverage_score: float,
+    record_stage: str,
+    section_priority_map: list[dict[str, Any]],
+    evidence_bank: list[dict[str, Any]],
+) -> str:
+    priority = next((row for row in section_priority_map if row.get("priority") in {"우선 복구", "정밀 보강"}), None)
+    priority_label = str(priority.get("label")) if priority else "근거 밀도"
+    stage_label = "완성 기록" if record_stage == "finalized" else "보완 가능 기록" if record_stage == "ongoing" else "단계 미확인 기록"
+    return (
+        f"{stage_label} 기준으로 문서 신뢰도 {int(confidence * 100)}%, 섹션 커버리지 {int(coverage_score * 100)}%입니다. "
+        f"우선 컨설팅 축은 {priority_label}이며, 현재 자동 확보된 근거 앵커는 {len(evidence_bank)}개입니다."
+    )
+
+
+def _infer_record_stage(text: str) -> str:
+    if any(marker in text for marker in ("졸업", "최종", "3학년 2학기", "3-2")):
+        return "finalized"
+    if any(marker in text for marker in ("1학년", "2학년", "3학년 1학기", "3-1")):
+        return "ongoing"
+    return "unknown"
+
+
+def _infer_section_for_text(text: str) -> str:
+    lowered = text.lower()
+    best_section = "student_record"
+    best_hits = 0
+    for section, keywords in _SECTION_KEYWORDS.items():
+        hits = sum(1 for keyword in keywords if keyword.lower() in lowered)
+        if hits > best_hits:
+            best_section = section
+            best_hits = hits
+    return best_section
+
+
+def _normalize_section_key(value: str) -> str:
+    normalized = value.strip()
+    for key, label in _SECTION_DISPLAY_LABELS.items():
+        if normalized == key or normalized == label or label in normalized:
+            return key
+    return normalized
+
+
+def _infer_evidence_theme(text: str) -> str:
+    if any(keyword in text for keyword in _EVIDENCE_KEYWORDS):
+        return "정량·관찰 근거"
+    if any(keyword in text for keyword in _PROCESS_KEYWORDS):
+        return "과정·성찰 근거"
+    if any(keyword in text for keyword in _CONTINUITY_KEYWORDS):
+        return "연속성 근거"
+    if any(keyword in text for keyword in _MAJOR_HINT_KEYWORDS):
+        return "전공 연계 근거"
+    return "학생부 핵심 근거"
+
+
+def _detect_process_elements(text: str) -> dict[str, bool]:
+    return {
+        "method": any(keyword in text for keyword in ("방법", "과정", "실험", "조사", "분석")),
+        "result": any(keyword in text for keyword in ("결과", "변화", "성과", "확인", "도출")),
+        "limitation": any(keyword in text for keyword in ("한계", "어려움", "보완", "개선", "성찰")),
+    }
+
+
+def _extract_keyword_sentences(text: str, keywords: tuple[str, ...], *, limit: int) -> list[str]:
+    lowered_keywords = [keyword.lower() for keyword in keywords if keyword]
+    candidates: list[str] = []
+    for sentence in _split_sentences(text):
+        lowered = sentence.lower()
+        if any(keyword in lowered for keyword in lowered_keywords):
+            candidates.append(_clip(sentence, 180))
+    return _dedupe(candidates, limit=limit)
+
 
 def _extract_value_list(value: Any, key: str) -> list[str]:
     if not isinstance(value, list):
@@ -1473,8 +1857,9 @@ def _split_sentences(text: str) -> list[str]:
     normalized = re.sub(r"\s+", " ", text or "").strip()
     if not normalized:
         return []
-    parts = re.split(r"(?<=[.!?])\s+|\n+", normalized)
+    parts = re.split(r"(?<=[.!?。])\s+|(?<=다)\s+|(?<=요)\s+|\n+", normalized)
     return [part.strip() for part in parts if part.strip()]
+
 
 def _normalize_sentence(text: str) -> str:
     sentence = re.sub(r"\s+", " ", text or "").strip()
@@ -1505,3 +1890,20 @@ def _dedupe(items: list[str], *, limit: int) -> list[str]:
             break
     return deduped
 
+
+def _coerce_float(value: Any, *, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed != parsed:
+        return default
+    return parsed
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None

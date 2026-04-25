@@ -20,6 +20,17 @@ _ollama_health_cache: dict[str, object] = {
 }
 
 
+def _settings_may_use_ollama(settings: object) -> bool:
+    providers = (
+        getattr(settings, "llm_provider", None),
+        getattr(settings, "guided_chat_llm_provider", None),
+        getattr(settings, "diagnosis_llm_provider", None),
+        getattr(settings, "render_llm_provider", None),
+        getattr(settings, "pdf_analysis_llm_provider", None),
+    )
+    return any(str(provider or "").strip().lower() == "ollama" for provider in providers)
+
+
 @router.get("/health")
 async def health_check(
     request: Request,
@@ -28,7 +39,7 @@ async def health_check(
 ) -> JSONResponse:
     settings = get_settings()
     ollama_payload: dict[str, object] | None = None
-    if check_llm and (settings.llm_provider or "").strip().lower() == "ollama":
+    if check_llm and _settings_may_use_ollama(settings):
         now = time.monotonic()
         checked_at = float(_ollama_health_cache["checked_at"])
         if now - checked_at > _OLLAMA_HEALTH_TTL_SECONDS:

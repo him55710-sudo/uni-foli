@@ -29,3 +29,9 @@ def test_guided_chat_schema_contains_phase_machine_contract() -> None:
     assert '"page_range_selection"' in source
     assert '"structure_selection"' in source
     assert '"drafting_next_step"' in source
+
+
+def test_guided_chat_topic_generation_uses_guided_chat_concern() -> None:
+    source = GUIDED_CHAT_SERVICE_PATH.read_text(encoding="utf-8")
+    assert 'get_llm_client(profile="fast", concern="guided_chat")' in source
+    assert 'get_llm_temperature(profile="fast", concern="guided_chat")' in source

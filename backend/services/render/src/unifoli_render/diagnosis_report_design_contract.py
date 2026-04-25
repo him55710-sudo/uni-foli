@@ -5,13 +5,16 @@ from typing import Any
 _DIAGNOSIS_SECTION_ORDER_PREMIUM: tuple[str, ...] = (
     "cover_title_summary",
     "executive_verdict",
+    "admissions_positioning_snapshot",
     "record_baseline_dashboard",
     "student_evaluation_matrix",
+    "consulting_priority_map",
     "system_quality_reliability",
     "strength_analysis",
     "weakness_risk_analysis",
     "section_by_section_diagnosis",
     "major_fit_interpretation",
+    "student_record_upgrade_blueprint",
     "recommended_report_directions",
     "avoid_repetition_topics",
     "evidence_cards",
@@ -24,6 +27,7 @@ _DIAGNOSIS_SECTION_ORDER_PREMIUM: tuple[str, ...] = (
 _DIAGNOSIS_SECTION_ORDER_COMPACT: tuple[str, ...] = (
     "executive_verdict",
     "record_baseline_dashboard",
+    "consulting_priority_brief",
     "strength_analysis",
     "risk_analysis",
     "recommended_report_direction",
@@ -46,13 +50,15 @@ def get_diagnosis_report_design_contract(
     The contract is code-first and deterministic, with Figma MCP metadata
     attached for registry mapping and future design handoff.
     """
-    is_premium = report_mode == "premium_10p"
+    canonical_mode = {"compact": "basic", "premium_10p": "premium"}.get(report_mode, report_mode)
+    is_premium = canonical_mode in {"premium", "consultant"}
+    min_pages = {"basic": 8, "premium": 18, "consultant": 28}.get(canonical_mode, 18)
     section_order = _DIAGNOSIS_SECTION_ORDER_PREMIUM if is_premium else _DIAGNOSIS_SECTION_ORDER_COMPACT
 
     return {
-        "contract_id": "diagnosis_report_premium_v2" if is_premium else "diagnosis_report_compact_v2",
+        "contract_id": f"diagnosis_report_{canonical_mode}_v3",
         "template_id": template_id,
-        "mode": report_mode,
+        "mode": canonical_mode,
         "figma_mapping": {
             "mcp_available": True,
             "source": "figma_mcp",
@@ -68,7 +74,7 @@ def get_diagnosis_report_design_contract(
                 "top": 44 if is_premium else 46,
                 "bottom": 50 if is_premium else 52,
             },
-            "minimum_pages": 10 if is_premium else 5,
+            "minimum_pages": min_pages,
         },
         "typography": {
             "cover_label": {"font_size": 9, "leading": 12, "weight": "medium"},
@@ -89,34 +95,40 @@ def get_diagnosis_report_design_contract(
             "table_cell_padding": 5,
         },
         "colors": {
-            "brand_primary": "#1E3A5F",
-            "brand_secondary": "#2B4F7B",
-            "text_primary": "#0F172A",
-            "text_secondary": "#334155",
-            "text_muted": "#526173",
-            "line_soft": "#D7DEE8",
-            "surface_soft": "#F8FAFC",
-            "surface_panel": "#F1F5F9",
+            "brand_primary": "#101828",
+            "brand_secondary": "#1D3557",
+            "academic_blue": "#2563EB",
+            "premium_gold": "#C9A227",
+            "success_green": "#12B76A",
+            "warning_orange": "#F79009",
+            "risk_red": "#D92D20",
+            "text_primary": "#111827",
+            "text_secondary": "#374151",
+            "text_muted": "#6B7280",
+            "line_soft": "#E5E7EB",
+            "surface_soft": "#FBFCFE",
+            "surface_panel": "#F3F4F6",
             "surface_warning": "#FFF7ED",
-            "line_warning": "#FDBA74",
-            "surface_evidence": "#EEF2FF",
-            "line_evidence": "#C7D2FE",
-            "surface_inferred": "#F4F7FB",
-            "line_inferred": "#CBD5E1",
-            "surface_action": "#F0F9FF",
-            "line_action": "#93C5FD",
+            "line_warning": "#F79009",
+            "surface_evidence": "#EFF6FF",
+            "line_evidence": "#93C5FD",
+            "surface_inferred": "#F8FAFC",
+            "line_inferred": "#D1D5DB",
+            "surface_action": "#ECFDF3",
+            "line_action": "#12B76A",
         },
         "section_hierarchy": {
             "required_order": list(section_order),
             "section_groups": [
                 ["cover_title_summary"],
                 ["executive_verdict"],
+                ["admissions_positioning_snapshot"],
                 ["record_baseline_dashboard"],
-                ["student_evaluation_matrix"],
+                ["student_evaluation_matrix", "consulting_priority_map"],
                 ["system_quality_reliability"],
                 ["strength_analysis", "weakness_risk_analysis"],
                 ["section_by_section_diagnosis"],
-                ["major_fit_interpretation"],
+                ["major_fit_interpretation", "student_record_upgrade_blueprint"],
                 ["recommended_report_directions", "avoid_repetition_topics"],
                 ["evidence_cards"],
                 ["interview_readiness"],
@@ -127,7 +139,7 @@ def get_diagnosis_report_design_contract(
             if is_premium
             else [
                 ["executive_verdict"],
-                ["record_baseline_dashboard"],
+                ["record_baseline_dashboard", "consulting_priority_brief"],
                 ["strength_analysis", "risk_analysis"],
                 ["recommended_report_direction"],
                 ["roadmap"],
@@ -148,6 +160,9 @@ def get_diagnosis_report_design_contract(
             "ReportCover": {"variant": "premium_editorial"},
             "SummaryCard": {"variant": "executive"},
             "MetricCard": {"variant": "dashboard"},
+            "PositioningMap": {"variant": "admissions_fit_snapshot"},
+            "PriorityMatrix": {"variant": "consultant_action_grid"},
+            "UpgradeBlueprint": {"variant": "record_rewrite_plan"},
             "EvidenceCard": {"variant": "four-line"},
             "StorylineTimeline": {"variant": "grade_progression"},
             "RiskCard": {"variant": "caution"},

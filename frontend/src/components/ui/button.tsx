@@ -12,12 +12,12 @@ interface ButtonStyleOptions {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'border-indigo-400/20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-200/50 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-indigo-300/60 active:scale-[0.98]',
+    'border-transparent bg-[#3182f6] text-white shadow-md shadow-blue-200/50 hover:bg-[#1b64da] active:scale-[0.96]',
   secondary:
-    'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-slate-50 hover:text-indigo-700 active:scale-[0.98]',
-  tertiary: 'border-transparent bg-indigo-50 text-indigo-700 hover:bg-indigo-100',
-  ghost: 'border-transparent bg-transparent text-slate-500 hover:bg-slate-100 hover:text-indigo-600',
-  danger: 'border-transparent bg-rose-600 text-white shadow-lg shadow-rose-100 hover:bg-rose-700 active:scale-[0.98]',
+    'border-transparent bg-[#f2f4f6] text-[#333d4b] hover:bg-[#e5e8eb] active:scale-[0.96]',
+  tertiary: 'border-transparent bg-blue-50 text-[#3182f6] hover:bg-blue-100 active:scale-[0.96]',
+  ghost: 'border-transparent bg-transparent text-[#6b7684] hover:bg-[#f2f4f6] hover:text-[#3182f6]',
+  danger: 'border-transparent bg-[#f04452] text-white shadow-md shadow-red-100 hover:bg-[#d73441] active:scale-[0.96]',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

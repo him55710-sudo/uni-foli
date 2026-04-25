@@ -96,15 +96,26 @@ def _is_sqlite_disk_full_error(exc: Exception) -> bool:
 
 
 def _extract_document_text(document: Any) -> str:
+    metadata = getattr(document, "parse_metadata", None)
     primary = str(
         getattr(document, "content_text", "")
         or getattr(document, "content_markdown", "")
         or ""
     ).strip()
     if primary:
+        if isinstance(metadata, dict):
+            canonical = metadata.get("student_record_canonical")
+            if isinstance(canonical, dict):
+                context_lines = [str(canonical.get("consulting_summary") or "").strip()]
+                for item in canonical.get("priority_interventions", [])[:4] if isinstance(canonical.get("priority_interventions"), list) else []:
+                    value = str(item or "").strip()
+                    if value:
+                        context_lines.append(f"- {value[:220]}")
+                prefix = "\n".join(line for line in context_lines if line).strip()
+                if prefix:
+                    return f"[student_record_consulting_context]\n{prefix}\n\n[masked_student_record]\n{primary}"[:MAX_DOC_TEXT_CHARS]
         return primary[:MAX_DOC_TEXT_CHARS]
 
-    metadata = getattr(document, "parse_metadata", None)
     if not isinstance(metadata, dict):
         return ""
 
@@ -143,6 +154,31 @@ def _extract_document_text(document: Any) -> str:
                     value = str(item.get(key) or "").strip()
                     if value:
                         canonical_parts.append(f"- {value[:220]}")
+
+        consulting_summary = str(canonical.get("consulting_summary") or "").strip()
+        if consulting_summary:
+            canonical_parts.append(f"[consulting_summary] {consulting_summary[:360]}")
+
+        for field in ("priority_interventions", "diagnostic_questions"):
+            items = canonical.get(field)
+            if isinstance(items, list):
+                canonical_parts.append(f"[{field}]")
+                for item in items[:6]:
+                    value = str(item or "").strip()
+                    if value:
+                        canonical_parts.append(f"- {value[:240]}")
+
+        evidence_bank = canonical.get("evidence_bank")
+        if isinstance(evidence_bank, list) and evidence_bank:
+            canonical_parts.append("[evidence_bank]")
+            for item in evidence_bank[:10]:
+                if not isinstance(item, dict):
+                    continue
+                quote = str(item.get("quote") or "").strip()
+                if quote:
+                    canonical_parts.append(
+                        f"- p.{item.get('page') or '-'} {item.get('section') or '학생부'}: {quote[:220]}"
+                    )
 
         for field, key in (
             ("grades_subjects", "subject"),
@@ -280,6 +316,29 @@ def _diagnosis_llm_strategy() -> dict[str, Any]:
         "resolved_client": resolution.client,
         "resolved_resolution": resolution,
     }
+
+
+def _apply_llm_invocation_metadata(llm_strategy: dict[str, Any], invocation: dict[str, Any]) -> str | None:
+    provider = (
+        str(invocation.get("last_provider_used") or "").strip()
+        or str(invocation.get("provider") or "").strip()
+        or str(invocation.get("actual_provider") or "").strip()
+    )
+    model = (
+        str(invocation.get("last_model_used") or "").strip()
+        or str(invocation.get("model") or "").strip()
+        or str(invocation.get("actual_model") or "").strip()
+    )
+    if provider:
+        llm_strategy["actual_llm_provider"] = provider
+    if model:
+        llm_strategy["actual_llm_model"] = model
+    if invocation.get("fallback_used"):
+        llm_strategy["fallback_used"] = True
+        llm_strategy["fallback_reason"] = (
+            str(invocation.get("fallback_reason") or "").strip() or "provider_auto_fallback"
+        )
+    return model or None
 
 
 def _merge_unique(items: list[str], extra: list[str], *, limit: int) -> list[str]:
@@ -571,16 +630,9 @@ async def run_diagnosis_run(
                     timeout=generation_timeout_seconds,
                 )
                 invocation = get_last_llm_invocation(resolved_llm_client)
-                if invocation.get("provider"):
-                    llm_strategy["actual_llm_provider"] = invocation["provider"]
-                if invocation.get("model"):
-                    llm_strategy["actual_llm_model"] = invocation["model"]
-                    model_name = str(invocation["model"])
-                if invocation.get("fallback_used"):
-                    llm_strategy["fallback_used"] = True
-                    llm_strategy["fallback_reason"] = (
-                        str(invocation.get("fallback_reason") or "").strip() or "provider_auto_fallback"
-                    )
+                invoked_model = _apply_llm_invocation_metadata(llm_strategy, invocation)
+                if invoked_model:
+                    model_name = invoked_model
             except asyncio.TimeoutError as exc:
                 logger.warning(
                     "LLM diagnosis generation timed out for run %s after %.1fs",

@@ -4,7 +4,7 @@ import json
 from typing import Any, AsyncIterator
 
 from unifoli_api.core.config import get_settings
-from unifoli_api.core.llm import get_llm_client, get_llm_temperature
+from unifoli_api.core.llm import LLMRuntimeResolution, get_llm_client, get_llm_temperature, resolve_llm_runtime
 
 from unifoli_api.services.quality_control import (
     build_quality_control_metadata,
@@ -53,21 +53,14 @@ def _sse_line(event: str, data: dict[str, Any]) -> str:
 
 
 
-def _supports_live_generation() -> bool:
-    settings = get_settings()
-    if settings.llm_provider == "ollama":
-        return True
-    api_key = settings.gemini_api_key
-    return bool(api_key and api_key != "DUMMY_KEY")
+def _supports_live_generation(resolution: LLMRuntimeResolution | None = None) -> bool:
+    resolved = resolution or resolve_llm_runtime(profile="render", concern="render")
+    return resolved.client is not None
 
 
-def _current_model_name() -> str:
-    from unifoli_api.core.config import get_settings
-
-    settings = get_settings()
-    if settings.llm_provider == "ollama":
-        return settings.ollama_model
-    return "gemini-1.5-pro"
+def _current_model_name(resolution: LLMRuntimeResolution | None = None) -> str:
+    resolved = resolution or resolve_llm_runtime(profile="render", concern="render")
+    return resolved.actual_model or resolved.attempted_model or "deterministic-render"
 
 
 def _clip(text: str, *, length: int = 160) -> str:
@@ -87,20 +80,20 @@ def _turn_display_text(turn: Any) -> str:
 
 def _serialize_turns(turns: list[Any]) -> str:
     if not turns:
-        return "(????기록 ??음)"
+        return "(대화 기록 없음)"
     parts: list[str] = []
     for turn in turns:
-        role = {"starter": "??택(??작)", "follow_up": "??택(??속)", "message": "직접 ??력"}.get(
+        role = {"starter": "선택(시작)", "follow_up": "선택(후속)", "message": "직접 입력"}.get(
             getattr(turn, "turn_type", ""),
             getattr(turn, "turn_type", "message"),
         )
-        parts.append(f"[{role}] ??생: {_clip(getattr(turn, 'query', '') or '', length=220)}")
+        parts.append(f"[{role}] 학생: {_clip(getattr(turn, 'query', '') or '', length=220)}")
     return "\n".join(parts)
 
 
 def _serialize_references(references: list[Any]) -> str:
     if not references:
-        return "(????참고??료 ??음)"
+        return "(참고자료 없음)"
     return "\n".join(
         f"- [{normalize_grounding_source_type(getattr(reference, 'source_type', None))}] {_clip(getattr(reference, 'text_content', '') or '', length=260)}"
         for reference in references
@@ -361,14 +354,18 @@ async def _generate_with_llm(
     *,
     prompt: str,
     quality_level: str,
+    resolution: LLMRuntimeResolution | None = None,
 ) -> AsyncIterator[str]:
     profile = get_quality_profile(quality_level)
-    llm = get_llm_client(profile="render")
+    llm = resolution.client if resolution and resolution.client is not None else get_llm_client(profile="render", concern="render")
     system_instruction = _build_render_system_instruction(quality_level=profile.level)
     async for token in llm.stream_chat(
         prompt=prompt,
         system_instruction=system_instruction,
-        temperature=max(profile.temperature, get_llm_temperature(profile="render")),
+        temperature=max(
+            profile.temperature,
+            get_llm_temperature(profile="render", concern="render", resolution=resolution),
+        ),
     ):
         yield token
 
@@ -396,7 +393,7 @@ async def stream_render(
         reference_count=len(references),
     )
 
-    # ??화 모드 RAG 컨텍??트 빌드
+    # 심화 모드 RAG 컨텍스트 빌드
     rag_injection = ""
     rag_context: RAGContext | None = None
     if effective_advanced_mode and rag_config and rag_config.enabled:
@@ -423,9 +420,10 @@ async def stream_render(
         rag_injection=rag_injection,
     )
     settings = get_settings()
+    render_resolution = resolve_llm_runtime(profile="render", concern="render")
     cache_request = CacheRequest(
         feature_name="workshop_render.stream_render",
-        model_name=_current_model_name(),
+        model_name=_current_model_name(render_resolution),
         scope_key=f"project:{project_id}",
         config_version=settings.llm_cache_version,
         ttl_seconds=settings.llm_cache_ttl_seconds if settings.llm_cache_enabled else 0,
@@ -455,7 +453,7 @@ async def stream_render(
             "advanced_mode": effective_advanced_mode,
             "advanced_reason": advanced_reason,
             "rag_enhanced": bool(rag_context and rag_context.is_enhanced),
-            "message": f"[{profile.label}]{' ?????화' if effective_advanced_mode else ''} ??전 중심 ??더링을 ??작??니??",
+            "message": f"[{profile.label}]{' 심화' if effective_advanced_mode else ''} 안전 중심 렌더링을 시작합니다.",
         },
     )
     yield _sse_line(
@@ -472,16 +470,20 @@ async def stream_render(
 
     full_text = ""
     buffer = ""
-    used_fallback = not _supports_live_generation()
+    used_fallback = not _supports_live_generation(render_resolution)
     cached_text = fetch_cached_response(db, cache_request)
     if cached_text:
         full_text = cached_text
         used_fallback = False
 
-    if not full_text and _supports_live_generation():
+    if not full_text and _supports_live_generation(render_resolution):
         try:
             chunk_count = 0
-            async for token in _generate_with_llm(prompt=prompt, quality_level=profile.level):
+            async for token in _generate_with_llm(
+                prompt=prompt,
+                quality_level=profile.level,
+                resolution=render_resolution,
+            ):
                 full_text += token
                 buffer += token
                 chunk_count += 1
@@ -493,7 +495,7 @@ async def stream_render(
                         SSEEvent.RENDER_PROGRESS,
                         {
                             "chars_generated": len(full_text),
-                            "message": f"{len(full_text)}????성 중입??다.",
+                            "message": f"{len(full_text)}자 생성 중입니다.",
                         },
                     )
         except Exception:
@@ -512,7 +514,7 @@ async def stream_render(
             SSEEvent.RENDER_PROGRESS,
             {
                 "chars_generated": len(full_text),
-                "message": "???? ??성?????이 ??전 초안??구성??습??다.",
+                "message": "실시간 생성이 어려워 안전 초안으로 구성했습니다.",
             },
         )
 
@@ -581,11 +583,11 @@ async def stream_render(
 
     advanced_features_applied = bool(parsed.get("visual_specs") or parsed.get("math_expressions"))
     if requested_advanced_mode and repair_applied:
-        advanced_reason = "??전 ??작??과정??서 고급 ??장????거??고 ??생 ???? 중심 결과?????돌??습??다."
+        advanced_reason = "안전 재작성 과정에서 고급 확장 요소를 줄이고 학생 맥락 중심 결과로 돌렸습니다."
     elif requested_advanced_mode and used_fallback and not advanced_features_applied:
-        advanced_reason = "??전??결정????더?????용??고급 ??장????용???? ??았??니??"
+        advanced_reason = "안전 결정에 따라 렌더링 중 고급 확장 요소를 적용하지 않았습니다."
     elif requested_advanced_mode and effective_advanced_mode and not advanced_features_applied:
-        advanced_reason = "고급 ??장????청?????????재 맥락??서????스??기반 결과가 ????전??차트/??식????략??습??다."
+        advanced_reason = "고급 확장을 요청했지만 현재 맥락에서는 텍스트 기반 결과가 더 안전해 차트/수식은 생략했습니다."
 
     checks_payload = _serialize_checks(safety.checks)
     yield _sse_line(

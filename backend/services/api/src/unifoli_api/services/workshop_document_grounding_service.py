@@ -77,11 +77,11 @@ def build_workshop_document_grounding_context(
 
     if project is None:
         return (
-            "[??로??문서 근거]\n"
-            "??결????로??트가 ??어 문서 근거???불러??????습??다.\n\n"
-            "[문서 근거 ??용 ??칙]\n"
-            "- ??인????스??근거가 ??으???모른??고 ??합??다.\n"
-            "- 추측??로 ??생 ??동??만들지 ??습??다."
+            "[업로드 문서 근거]\n"
+            "연결된 프로젝트가 없어 문서 근거를 불러오지 못했습니다.\n\n"
+            "[문서 근거 사용 원칙]\n"
+            "- 확인 가능한 근거가 없으면 모른다고 답합니다.\n"
+            "- 추측으로 학생 활동을 만들지 않습니다."
         )
 
     documents = _load_recent_documents(db=db, project_id=project.id, limit=resolved_docs)
@@ -94,10 +94,10 @@ def build_workshop_document_grounding_context(
     return (
         f"{document_block}\n\n"
         f"{evidence_block}\n\n"
-        "[문서 근거 ??용 ??칙]\n"
-        "- ??근거 범위???벗어??는 ??실?? ??정???? ??습??다.\n"
-        "- 부족한 ??보??'추?? ??인 ??요'?????내??니??\n"
-        "- 과장 ??는 ??격 보장 ??현?? 금????니??"
+        "[문서 근거 사용 원칙]\n"
+        "- 문서 근거 범위를 벗어나는 사실은 단정하지 않습니다.\n"
+        "- 부족한 정보는 '추가 확인 필요'라고 안내합니다.\n"
+        "- 과장 또는 합격 보장 표현은 금지합니다."
     )
 
 
@@ -133,44 +133,44 @@ def _load_recent_chunks(*, db: Session, project_id: str, limit: int) -> list[Doc
 
 def _format_document_analysis_block(documents: list[ParsedDocument]) -> str:
     if not documents:
-        return "[??로??문서 분석 ??약]\n분석 가??한 문서가 ??직 ??습??다."
+        return "[업로드 문서 분석 요약]\n분석 가능한 문서가 아직 없습니다."
 
-    lines = ["[??로??문서 분석 ??약]"]
+    lines = ["[업로드 문서 분석 요약]"]
     for index, document in enumerate(documents, start=1):
-        filename = _clip(document.original_filename or "??로??문서", limit=72)
+        filename = _clip(document.original_filename or "업로드 문서", limit=72)
         lines.append(
-            f"{index}. ??일: {filename} / ??이지: {document.page_count} / ??어: {document.word_count} / ??태: {document.status}"
+            f"{index}. 파일: {filename} / 페이지: {document.page_count} / 단어: {document.word_count} / 상태: {document.status}"
         )
 
         canonical = _extract_student_record_canonical(document.parse_metadata)
         if canonical:
             confidence = canonical.get("document_confidence")
             if isinstance(confidence, (int, float)):
-                lines.append(f"   - 구조 ??뢰?? {round(float(confidence), 3)}")
+                lines.append(f"   - 구조 신뢰도: {round(float(confidence), 3)}")
             timeline = _normalize_canonical_list(canonical.get("timeline_signals"), key="signal", limit=2, item_limit=140)
             for signal in timeline:
-                lines.append(f"   - ??기/??도 ??호: {signal}")
+                lines.append(f"   - 학기/연도 신호: {signal}")
             alignment = _normalize_canonical_list(canonical.get("major_alignment_hints"), key="hint", limit=2, item_limit=160)
             for hint in alignment:
-                lines.append(f"   - ??공 ??계 ??트: {hint}")
+                lines.append(f"   - 전공 연계 힌트: {hint}")
             weak_sections = _normalize_canonical_list(canonical.get("weak_or_missing_sections"), key="section", limit=2, item_limit=120)
             for section in weak_sections:
-                lines.append(f"   - 보강 ??요 ??션: {section}")
+                lines.append(f"   - 보강 필요 섹션: {section}")
             uncertainties = _normalize_canonical_list(canonical.get("uncertainties"), key="message", limit=1, item_limit=180)
             for uncertainty in uncertainties:
-                lines.append(f"   - 불확??성: {uncertainty}")
+                lines.append(f"   - 불확실성: {uncertainty}")
 
         pdf_analysis = _extract_pdf_analysis(document.parse_metadata)
         if pdf_analysis:
             summary = _clip(pdf_analysis.get("summary"), limit=260)
             if summary:
-                lines.append(f"   - 분석 ??약: {summary}")
+                lines.append(f"   - 분석 요약: {summary}")
             key_points = _normalize_list(pdf_analysis.get("key_points"), limit=2, item_limit=160)
             for point in key_points:
-                lines.append(f"   - ??심 ??인?? {point}")
+                lines.append(f"   - 핵심 포인트: {point}")
             evidence_gaps = _normalize_list(pdf_analysis.get("evidence_gaps"), limit=1, item_limit=160)
             for gap in evidence_gaps:
-                lines.append(f"   - 근거 ??계: {gap}")
+                lines.append(f"   - 근거 공백: {gap}")
 
         fallback_excerpt = _clip(document.content_markdown or document.content_text, limit=220)
         if fallback_excerpt:
@@ -180,13 +180,13 @@ def _format_document_analysis_block(documents: list[ParsedDocument]) -> str:
 
 def _format_chunk_evidence_block(chunks: list[DocumentChunk]) -> str:
     if not chunks:
-        return "[질문 관??문서 발췌]\n??재 질문???직접 ??결??는 문서 발췌???찾?? 못했??니??"
+        return "[질문 관련 문서 발췌]\n현재 질문과 직접 연결되는 문서 발췌를 찾지 못했습니다."
 
-    lines = ["[질문 관??문서 발췌]"]
+    lines = ["[질문 관련 문서 발췌]"]
     for index, chunk in enumerate(chunks, start=1):
-        doc_name = "??로??문서"
+        doc_name = "업로드 문서"
         if chunk.document is not None:
-            doc_name = _clip(chunk.document.original_filename or "??로??문서", limit=56)
+            doc_name = _clip(chunk.document.original_filename or "업로드 문서", limit=56)
         page_hint = f"p.{chunk.page_number}" if chunk.page_number else "p.?"
         excerpt = _clip(chunk.content_text, limit=180)
         lines.append(f"{index}. {doc_name} ({page_hint})")

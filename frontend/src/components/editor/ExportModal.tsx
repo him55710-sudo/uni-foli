@@ -12,10 +12,6 @@ import {
 import type { JSONContent } from '@tiptap/react';
 import toast from 'react-hot-toast';
 
-import { exportToPdf } from './exporters/exportPdf';
-import { exportToDocx } from './exporters/exportDocx';
-import { exportToHtml } from './exporters/exportHtml';
-
 type ExportFormat = 'pdf' | 'docx' | 'html';
 
 interface ExportModalProps {
@@ -66,15 +62,21 @@ export function ExportModal({ isOpen, onClose, documentTitle, getJSON, getHTML }
 
     try {
       switch (selectedFormat) {
-        case 'pdf':
+        case 'pdf': {
+          const { exportToPdf } = await import('./exporters/exportPdf');
           await exportToPdf({ html: getHTML(), filename });
           break;
-        case 'docx':
+        }
+        case 'docx': {
+          const { exportToDocx } = await import('./exporters/exportDocx');
           await exportToDocx(getJSON(), filename);
           break;
-        case 'html':
+        }
+        case 'html': {
+          const { exportToHtml } = await import('./exporters/exportHtml');
           exportToHtml(getHTML(), filename);
           break;
+        }
       }
       setExportComplete(true);
       toast.success(`${filename}.${selectedFormat} 파일이 다운로드됩니다.`);

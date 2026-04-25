@@ -645,7 +645,7 @@ async def _try_llm_topic_suggestions(
     context: GuidedChatContext,
 ) -> tuple[TopicSuggestionResponse | None, str | None]:
     try:
-        llm = get_llm_client(profile="fast")
+        llm = get_llm_client(profile="fast", concern="guided_chat")
     except TypeError:
         # Backward compatibility for tests monkeypatching get_llm_client() without kwargs.
         llm = get_llm_client()  # type: ignore[call-arg]
@@ -656,7 +656,7 @@ async def _try_llm_topic_suggestions(
             prompt=prompt,
             response_model=TopicSuggestionResponse,
             system_instruction=system_instruction,
-            temperature=get_llm_temperature(profile="fast"),
+            temperature=get_llm_temperature(profile="fast", concern="guided_chat"),
         )
         return response, None
     except LLMRequestError as exc:

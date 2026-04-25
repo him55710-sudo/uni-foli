@@ -30,11 +30,14 @@ export interface TiptapEditorHandle {
   getJSON: () => JSONContent;
   getHTML: () => string;
   insertTemplate: () => void;
+  setContent: (content: any) => void;
 }
 
 interface TiptapEditorProps {
   initialContent?: JSONContent | string | null;
-  onUpdate?: (json: JSONContent) => void;
+  onUpdate?: (json: JSONContent, html: string, text: string) => void;
+  onJsonUpdate?: (json: JSONContent) => void;
+  onHtmlUpdate?: (html: string) => void;
   readOnly?: boolean;
 }
 
@@ -126,7 +129,7 @@ function markdownStringToHtml(markdown: string): string {
   return blocks.join('');
 }
 
-function normalizeInitialStringContent(value: string): string {
+export function normalizeInitialStringContent(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return value;
   if (/<[a-z][\s\S]*>/i.test(trimmed)) {
@@ -136,7 +139,7 @@ function normalizeInitialStringContent(value: string): string {
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
-  function TiptapEditor({ initialContent, onUpdate, readOnly = false }, ref) {
+  function TiptapEditor({ initialContent, onUpdate, onJsonUpdate, onHtmlUpdate, readOnly = false }, ref) {
     const contentRef = useRef<JSONContent | null>(null);
 
     // Resolve initial content — if it's a string (markdown/html), 
@@ -192,9 +195,21 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
       content: resolvedInitial,
       editable: !readOnly,
       onUpdate: ({ editor: e }) => {
-        const json = e.getJSON();
-        contentRef.current = json;
-        onUpdate?.(json);
+        if (onJsonUpdate) {
+          const json = e.getJSON();
+          contentRef.current = json;
+          onJsonUpdate(json);
+        }
+
+        if (onHtmlUpdate) {
+          onHtmlUpdate(e.getHTML());
+        }
+
+        if (onUpdate) {
+          const json = contentRef.current || e.getJSON();
+          contentRef.current = json;
+          onUpdate(json, e.getHTML(), e.getText());
+        }
       },
       editorProps: {
         attributes: {
@@ -217,6 +232,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
         getJSON: () => contentRef.current || editor?.getJSON() || { type: 'doc', content: [] },
         getHTML: () => editor?.getHTML() || '',
         insertTemplate,
+        setContent: (content: any) => editor?.commands.setContent(content),
       }),
       [editor, insertTemplate],
     );

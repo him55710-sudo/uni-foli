@@ -38,6 +38,17 @@ _ASYNC_BRIDGE_LOCK = Lock()
 _PROGRESS_HISTORY_LIMIT = 20
 
 
+def _normalize_report_mode(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"compact", "basic"}:
+        return "basic"
+    if normalized in {"premium_10p", "premium", ""}:
+        return "premium"
+    if normalized == "consultant":
+        return "consultant"
+    return "premium"
+
+
 def _progress_defaults_for_job(job_type: str) -> tuple[str, str]:
     if job_type == AsyncJobType.DIAGNOSIS.value:
         return "queued", "진단 작업이 대기열에 등록되었습니다."
@@ -488,7 +499,7 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
             fallback_target_university=_opt_str(payload.get("fallback_target_university")),
             fallback_target_major=_opt_str(payload.get("fallback_target_major")),
             interest_universities=_normalize_interest_universities(payload.get("interest_universities")),
-            job_id=job.id,
+            job_id=getattr(job, "id", None),
         )
         db.expire_all()
         completed_run = db.get(DiagnosisRun, str(completed_run_id or run_id))
@@ -501,7 +512,7 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
                     owner_user_id=_opt_str(payload.get("owner_user_id")),
                     fallback_target_university=_opt_str(payload.get("fallback_target_university")),
                     fallback_target_major=_opt_str(payload.get("fallback_target_major")),
-                    report_mode=_opt_str(payload.get("auto_report_mode")) or "premium_10p",
+                    report_mode=_opt_str(payload.get("auto_report_mode")) or "premium",
                     include_appendix=bool(payload.get("auto_report_include_appendix", True)),
                     include_citations=bool(payload.get("auto_report_include_citations", True)),
                 )
@@ -519,9 +530,7 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
         return
     if job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
         run_id = str(payload.get("run_id") or job.resource_id)
-        report_mode = str(payload.get("report_mode") or "premium_10p")
-        if report_mode not in {"compact", "premium_10p"}:
-            report_mode = "premium_10p"
+        report_mode = _normalize_report_mode(str(payload.get("report_mode") or "premium"))
         artifact_id, artifact_status, artifact_project_id = _run_async_callable(
             _run_diagnosis_report_with_worker_session,
             run_id=run_id,
@@ -594,8 +603,13 @@ def _queue_auto_diagnosis_report_job(
     if run.status != "COMPLETED" or not run.result_payload:
         return "diagnosis_not_ready"
 
-    if report_mode not in {"compact", "premium_10p"}:
-        report_mode = "premium_10p"
+    requested_report_mode = str(report_mode or "premium_10p").strip() or "premium_10p"
+    report_mode = _normalize_report_mode(requested_report_mode)
+    payload_report_mode = (
+        requested_report_mode
+        if requested_report_mode in {"basic", "premium", "consultant", "compact", "premium_10p"}
+        else report_mode
+    )
 
     latest_artifact = get_latest_report_artifact_for_run(
         db,
@@ -662,7 +676,7 @@ def _queue_auto_diagnosis_report_job(
             "owner_user_id": owner_user_id,
             "fallback_target_university": fallback_target_university,
             "fallback_target_major": fallback_target_major,
-            "report_mode": report_mode,
+            "report_mode": payload_report_mode,
             "include_appendix": include_appendix,
             "include_citations": include_citations,
             "force_regenerate": False,

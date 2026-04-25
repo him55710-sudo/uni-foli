@@ -21,7 +21,7 @@ interface DiagnosisReportPanelProps {
   reportErrorMessage?: string | null;
 }
 
-const FIXED_REPORT_MODE: DiagnosisReportMode = 'premium_10p';
+const FIXED_REPORT_MODE: DiagnosisReportMode = 'premium';
 const REPORT_IN_PROGRESS_STATUS = new Set(['AUTO_STARTING', 'QUEUED', 'RUNNING', 'RETRYING', 'SUCCEEDED']);
 const REPORT_SYNC_MAX_RETRIES = 24;
 const REPORT_POLL_INTERVAL_MS = 2500;
@@ -374,4 +374,3 @@ export function DiagnosisReportPanel({
     </SectionCard>
   );
 }
-

@@ -1,4 +1,4 @@
-export type TrendMajorKey = '건축' | '컴공' | '바이오' | '경영' | '사회과학' | '디자인';
+export type TrendMajorKey = '건축' | '컴공' | '바이오' | '경영' | '사회과학' | '디자인' | '국어' | '수학' | '영어' | '과학탐구' | '사회탐구';
 export type TrendLens = 'flow' | 'question' | 'activity';
 
 export interface MajorTrendTopic {
@@ -9,7 +9,7 @@ export interface MajorTrendTopic {
   activity: string;
 }
 
-const DEFAULT_MAJOR_CHIPS: TrendMajorKey[] = ['건축', '컴공', '바이오', '경영', '사회과학', '디자인'];
+const DEFAULT_MAJOR_CHIPS: TrendMajorKey[] = ['건축', '컴공', '바이오', '경영', '사회과학', '디자인', '국어', '수학', '영어', '과학탐구', '사회탐구'];
 
 const MAJOR_KEYWORD_MAP: Array<{ key: TrendMajorKey; keywords: string[] }> = [
   { key: '건축', keywords: ['건축', '도시', '공간', '조경', '설계'] },
@@ -18,6 +18,11 @@ const MAJOR_KEYWORD_MAP: Array<{ key: TrendMajorKey; keywords: string[] }> = [
   { key: '경영', keywords: ['경영', '경제', '회계', '마케팅', 'esg', '창업', '금융'] },
   { key: '사회과학', keywords: ['사회과학', '사회', '정치', '행정', '심리', '교육', '법'] },
   { key: '디자인', keywords: ['디자인', '산업디자인', 'ux', 'ui', '시각', '브랜딩', '미디어'] },
+  { key: '국어', keywords: ['국어', '문학', '화법', '작문', '언어', '매체', '독서'] },
+  { key: '수학', keywords: ['수학', '미적분', '기하', '확률', '통계'] },
+  { key: '영어', keywords: ['영어', '회화', '독해', '영작'] },
+  { key: '과학탐구', keywords: ['물리', '화학', '생명과학', '지구과학', '과학', '통합과학'] },
+  { key: '사회탐구', keywords: ['사회탐구', '역사', '지리', '윤리', '통합사회', '경제', '정치와 법', '생활과 윤리'] },
 ];
 
 function normalizeLabel(value: string): string {
@@ -218,4 +223,84 @@ export const MAJOR_TREND_PLAYBOOK: Record<TrendMajorKey, MajorTrendTopic[]> = {
       activity: '한 주제를 서로 다른 레이아웃으로 시각화해 전달력 비교',
     },
   ],
+  국어: [
+    {
+      id: 'kor-media-literacy',
+      title: '디지털 매체 리터러시와 가짜뉴스',
+      flow: '매체 언어의 영향력과 비판적 수용이 중요해지는 흐름',
+      question: '가짜뉴스의 언어적 특성은 어떻게 독자의 확증 편향을 강화하는가?',
+      activity: '뉴스 기사 3건을 비교 분석하여 비판적 읽기 가이드라인 제작',
+    },
+    {
+      id: 'kor-modern-lit',
+      title: '현대문학과 사회적 소수자',
+      flow: '문학 작품을 통한 공감과 타자 이해 능력이 강조되는 흐름',
+      question: '현대소설 속 소수자 재현 방식은 시대별로 어떻게 변화했는가?',
+      activity: '작품 간 비교를 통해 사회적 배경과 인물 묘사의 상관관계 분석',
+    }
+  ],
+  수학: [
+    {
+      id: 'math-epidemic',
+      title: '전염병 확산 모델과 미적분',
+      flow: '수학적 모델링을 통한 실생활 문제 해결 역량이 중시되는 흐름',
+      question: 'SIR 모델의 미분방정식은 확산 예측에 어떻게 기여하는가?',
+      activity: '기본 SIR 모델 방정식을 세우고 변수에 따른 확산 그래프 시뮬레이션',
+    },
+    {
+      id: 'math-data-stat',
+      title: '빅데이터와 통계적 추론의 함정',
+      flow: '데이터 기반 의사결정에서 통계적 오류 파악이 중요한 흐름',
+      question: '심슨의 역설 등 통계적 착시는 실제 여론조사에서 어떻게 나타나는가?',
+      activity: '모순되는 통계 기사 사례를 찾아 데이터 해석의 오류 지적',
+    }
+  ],
+  영어: [
+    {
+      id: 'eng-global-issue',
+      title: '글로벌 환경 이슈와 영문 에세이',
+      flow: '글로벌 이슈에 대한 영어 표현력과 논리적 사고가 요구되는 흐름',
+      question: '기후위기 대응 방안을 영어로 어떻게 논리적으로 설득할 것인가?',
+      activity: '영문 기사 요약 후 자신의 견해를 담은 짧은 에세이 작성',
+    },
+    {
+      id: 'eng-cultural-translation',
+      title: '문화적 맥락과 번역의 차이',
+      flow: '단순 해석을 넘어 문화적 맥락을 반영한 이해가 강조되는 흐름',
+      question: '관용구나 문화적 비유는 어떻게 번역해야 원문의 의도를 살리는가?',
+      activity: '영미권 영화/드라마 자막의 오역 사례를 찾아 올바른 맥락으로 재번역',
+    }
+  ],
+  과학탐구: [
+    {
+      id: 'sci-renewable-energy',
+      title: '신재생에너지 효율 비교',
+      flow: '탄소중립을 위한 에너지 전환 기술이 주목받는 흐름',
+      question: '우리 지역 환경에 가장 적합한 신재생에너지 효율 조건은 무엇인가?',
+      activity: '지역 일조량/풍량 데이터를 기반으로 발전 효율 간이 비교',
+    },
+    {
+      id: 'sci-genetic-tech',
+      title: '크리스퍼 유전자가위와 생명윤리',
+      flow: '첨단 생명과학 기술의 원리와 윤리적 쟁점이 동시 부각되는 흐름',
+      question: '유전자 편집 기술의 한계와 상용화를 위한 조건은 무엇인가?',
+      activity: '기술적 장단점 및 윤리적 찬반 의견을 담은 보고서 작성',
+    }
+  ],
+  사회탐구: [
+    {
+      id: 'soc-welfare-policy',
+      title: '복지 사각지대와 선별/보편적 복지',
+      flow: '사회적 불평등 해소를 위한 복지 제도의 효과성 분석 흐름',
+      question: '특정 지역의 복지 사각지대 발생 원인과 해결책은 무엇인가?',
+      activity: '지자체 복지 예산 통계를 활용하여 정책 효과성 분석',
+    },
+    {
+      id: 'soc-gig-economy',
+      title: '플랫폼 노동과 긱 경제의 그림자',
+      flow: '새로운 노동 형태 등장과 법적 보호망의 한계가 논의되는 흐름',
+      question: '플랫폼 노동자의 법적 지위는 기존 노동법으로 보호 가능한가?',
+      activity: '관련 법적 쟁점 요약 및 노동권 보장을 위한 개선안 제안',
+    }
+  ]
 };

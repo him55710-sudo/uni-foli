@@ -1,9 +1,9 @@
-﻿import React from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ArrowDown, ArrowRight, Compass, FileSearch, Layers3, Rocket, Sparkles, Target } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import orbitIllustration from '../assets/illustration-orbit.svg';
+
 
 const quickMajors = ['건축', '컴공', '바이오', '경영', '사회과학', '디자인'];
 
@@ -12,28 +12,28 @@ const quickFeatures = [
     title: 'PDF 진단',
     subtitle: '파일 업로드',
     icon: FileSearch,
-    accent: 'from-fuchsia-500 via-violet-500 to-indigo-500',
+    accent: 'from-indigo-600 to-indigo-500',
     href: '/app/diagnosis',
   },
   {
     title: '트렌드 탐색',
     subtitle: '전공 주제칩',
     icon: Compass,
-    accent: 'from-cyan-500 via-sky-500 to-blue-500',
+    accent: 'from-indigo-500 to-indigo-400',
     href: '/app/trends',
   },
   {
     title: '워크숍 설계',
     subtitle: '실행 계획',
     icon: Layers3,
-    accent: 'from-emerald-500 via-teal-500 to-cyan-500',
+    accent: 'from-indigo-400 to-blue-400',
     href: '/app/workshop',
   },
   {
     title: '결과 출력',
     subtitle: '문서 정리',
     icon: Target,
-    accent: 'from-amber-500 via-orange-500 to-rose-500',
+    accent: 'from-blue-400 to-sky-400',
     href: '/app/workshop',
   },
 ];
@@ -47,10 +47,9 @@ export function Landing() {
   };
 
   return (
-    <div className="bg-transparent text-slate-900 selection:bg-fuchsia-100">
+    <div className="bg-transparent text-slate-900 selection:bg-indigo-100">
       <section className="relative overflow-hidden pt-14 sm:pt-20 lg:pt-24">
-        <div className="pointer-events-none absolute -left-20 -top-24 h-72 w-72 rounded-full bg-fuchsia-300/35 blur-3xl" />
-        <div className="pointer-events-none absolute -right-20 top-20 h-72 w-72 rounded-full bg-cyan-300/30 blur-3xl" />
+
 
         <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-14 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14 lg:px-8">
           <motion.div
@@ -60,7 +59,7 @@ export function Landing() {
             transition={{ duration: 0.48 }}
             className="space-y-6"
           >
-            <div className="inline-flex items-center gap-2 rounded-full border border-fuchsia-200 bg-white/92 px-3 py-1.5 text-xs font-black text-fuchsia-700 shadow-sm">
+            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/92 px-3 py-1.5 text-xs font-black text-indigo-700 shadow-sm">
               <Sparkles size={14} />
               트렌드·진단·워크숍 코파일럿
             </div>
@@ -68,7 +67,7 @@ export function Landing() {
             <h1 className="text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl">
               말은 짧게
               <br />
-              <span className="bg-gradient-to-r from-fuchsia-600 via-violet-600 to-cyan-600 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent">
                 실행은 빠르게
               </span>
             </h1>
@@ -108,9 +107,9 @@ export function Landing() {
             transition={{ duration: 0.55, delay: 0.05 }}
             className="relative"
           >
-            <div className="tilt-3d relative rounded-[2.2rem] border border-white/70 bg-white/78 p-4 shadow-[0_38px_64px_-28px_rgba(79,70,229,0.35)] backdrop-blur-xl sm:p-6">
-              <img src={orbitIllustration} alt="기능 흐름 일러스트" className="tilt-depth h-auto w-full rounded-2xl object-cover" />
-              <div className="absolute inset-x-8 -bottom-6 h-16 rounded-full bg-[linear-gradient(90deg,rgba(236,72,153,0.2)_0%,rgba(6,182,212,0.24)_100%)] blur-xl" />
+            <div className="tilt-3d relative rounded-[2.2rem] border border-slate-200 bg-white/78 p-8 shadow-sm backdrop-blur-xl sm:p-12 flex flex-col items-center justify-center h-full">
+              <h2 className="text-2xl font-bold text-slate-800 mb-4">입시 전략의 새로운 패러다임</h2>
+              <p className="text-slate-600 text-center">여러분의 학생부 분석부터 워크숍 기획까지, UniFoli가 함께합니다.</p>
             </div>
           </motion.div>
         </div>
@@ -138,7 +137,7 @@ export function Landing() {
                 onClick={scrollToTop}
                 className="group tilt-3d block rounded-3xl border border-white/70 bg-white/84 p-4 shadow-[0_20px_42px_-30px_rgba(15,23,42,0.5)] backdrop-blur-md"
               >
-                <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-white ${item.accent}`}>
+                <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-white shadow-inner ${item.accent}`}>
                   <item.icon size={16} />
                   <p className="mt-8 text-lg font-black">{item.title}</p>
                   <p className="text-xs font-bold text-white/85">{item.subtitle}</p>

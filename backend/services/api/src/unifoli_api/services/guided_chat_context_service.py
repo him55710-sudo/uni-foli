@@ -153,7 +153,7 @@ def _load_record_flow_summary(*, db: Session, project: Project | None) -> str | 
     )
     snippets: list[str] = []
     for doc in documents:
-        source = _clip(doc.original_filename or "??로??문서", 80)
+        source = _clip(doc.original_filename or "업로드 문서", 80)
         body = _clip(doc.content_markdown or doc.content_text, 260)
         if body:
             snippets.append(f"{source}: {body}")
@@ -184,7 +184,7 @@ def _load_workshop_history(*, db: Session, project: Project | None) -> list[str]
     )
     history: list[str] = []
     for turn in reversed(turns):
-        prefix = "??생" if turn.speaker_role == "user" else "코치"
+        prefix = "학생" if turn.speaker_role == "user" else "코치"
         value = _clip(turn.query or turn.response or "", 200)
         if value:
             history.append(f"{prefix}: {value}")
@@ -238,17 +238,17 @@ def _derive_evidence_gaps(
 ) -> list[str]:
     gaps: list[str] = []
     if invalid_project_requested:
-        gaps.append("??청??신 ??로??트???찾?? 못해 최근 ??로??트 기????로 ??내??립??다.")
+        gaps.append("요청하신 프로젝트를 찾지 못해 최근 프로젝트 기준으로 안내합니다.")
     if project is None:
-        gaps.append("??로??트 맥락????어 ??용??기본 ??보???기반??로 ??내??립??다.")
+        gaps.append("프로젝트 맥락이 없어 기본 정보 기준으로 안내합니다.")
     if not context.known_target_info.get("target_university") and not context.known_target_info.get("target_major"):
-        gaps.append("목표 ??????과 ??보가 ??인???? ??았??니??")
+        gaps.append("목표 대학과 전공 정보가 확인되지 않았습니다.")
     if context.diagnosis_summary is None:
-        gaps.append("진단 결과가 ??어 ??식 ??안??로 ??내??립??다.")
+        gaps.append("진단 결과가 없어 일반 제안으로 안내합니다.")
     if context.record_flow_summary is None:
-        gaps.append("??생부 문서 근거가 충분???? ??습??다.")
+        gaps.append("학생부 문서 근거가 충분하지 않습니다.")
     if not context.workshop_history and not context.prior_draft_signals:
-        gaps.append("기존 ??성 ??름 ??호가 ??어 보수??으?????안??립??다.")
+        gaps.append("기존 작성 흐름 신호가 없어 보수적으로 제안합니다.")
     if not context.known_student_profile and not user.name:
-        gaps.append("??생 ??로????보가 ??한??입??다.")
+        gaps.append("학생 프로필 정보가 제한적입니다.")
     return gaps

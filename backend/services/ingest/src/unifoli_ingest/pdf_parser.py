@@ -174,13 +174,15 @@ def _parse_pdf_with_pymupdf(
     blank_pages: list[int] = []
 
     for page_number, page in enumerate(document, start=1):
-        raw_text = _normalize_text(page.get_text("text") or "")
+        raw_text, text_blocks, layout_profile = _extract_text_with_layout_blocks(page, page_number=page_number)
         page_bbox = [0.0, 0.0, float(page.rect.width), float(page.rect.height)]
         raw_pages.append(
             {
                 "page_number": page_number,
                 "bbox": page_bbox,
                 "text": raw_text,
+                "blocks": text_blocks,
+                "layout_profile": layout_profile,
             }
         )
 
@@ -204,12 +206,15 @@ def _parse_pdf_with_pymupdf(
             "page_span": [page_number, page_number],
             "bbox_refs": [page_bbox],
             "source_confidence": source_confidence,
+            "block_count": layout_profile["text_block_count"],
+            "line_count": layout_profile["line_count_estimate"],
         }
         evidence_references.append(evidence_metadata)
         masked_pages.append(
             {
                 "page_number": page_number,
                 "masked_text": masked_text,
+                "layout_profile": layout_profile,
                 "masking": {
                     "pattern_hits": masking_result.pattern_hits,
                     "warnings": masking_result.warnings,
@@ -268,6 +273,14 @@ def _parse_pdf_with_pymupdf(
         "parse_confidence": parse_confidence,
         "evidence_references": evidence_references,
         "chunk_evidence_map": chunk_evidence_map,
+        "page_profiles": [
+            {
+                "page_number": page["page_number"],
+                "layout_profile": page.get("layout_profile", {}),
+            }
+            for page in raw_pages
+        ],
+        "layout_mode": "pymupdf_text_blocks",
     }
     if continuity_metadata:
         analysis_artifact["continuity"] = continuity_metadata
@@ -319,6 +332,64 @@ def _parse_pdf_with_pymupdf(
         parse_confidence=parse_confidence,
         needs_review=needs_review,
     )
+
+
+def _extract_text_with_layout_blocks(page: fitz.Page, *, page_number: int) -> tuple[str, list[dict[str, object]], dict[str, object]]:
+    text_blocks: list[dict[str, object]] = []
+    text_parts: list[str] = []
+    line_count = 0
+
+    try:
+        raw_blocks = page.get_text("blocks", sort=True) or []
+    except Exception:  # noqa: BLE001
+        raw_blocks = []
+
+    for block_index, block in enumerate(raw_blocks):
+        if not isinstance(block, tuple) or len(block) < 5:
+            continue
+        block_type = int(block[6]) if len(block) >= 7 and isinstance(block[6], int) else 0
+        if block_type != 0:
+            continue
+        text = _normalize_text(str(block[4] or ""))
+        if not text:
+            continue
+        bbox = [round(float(block[i]), 2) for i in range(4)]
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        line_count += max(1, len(lines))
+        block_id = f"p{page_number}-b{len(text_blocks)}"
+        text_blocks.append(
+            {
+                "block_id": block_id,
+                "block_index": block_index,
+                "page_number": page_number,
+                "bbox": bbox,
+                "text": text,
+                "line_count": max(1, len(lines)),
+            }
+        )
+        text_parts.append(text)
+
+    raw_text = _normalize_text("\n\n".join(text_parts))
+    if not raw_text:
+        raw_text = _normalize_text(page.get_text("text") or "")
+
+    page_width = max(float(page.rect.width), 1.0)
+    x_centers = sorted(
+        ((float(block["bbox"][0]) + float(block["bbox"][2])) / 2.0)
+        for block in text_blocks
+        if isinstance(block.get("bbox"), list) and len(block["bbox"]) >= 4
+    )
+    max_center_gap = max(
+        (right - left for left, right in zip(x_centers, x_centers[1:])),
+        default=0.0,
+    )
+    layout_profile = {
+        "text_block_count": len(text_blocks),
+        "line_count_estimate": line_count,
+        "column_hint": "multi_column" if len(text_blocks) >= 4 and max_center_gap > page_width * 0.22 else "single_flow",
+        "extraction_strategy": "blocks" if text_blocks else "text_fallback",
+    }
+    return raw_text, text_blocks, layout_profile
 
 
 def parse_text_document(

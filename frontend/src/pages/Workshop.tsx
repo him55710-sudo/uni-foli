@@ -47,6 +47,7 @@ import {
   SurfaceCard,
   WorkflowNotice,
 } from '../components/primitives';
+import { TiptapEditor } from '../components/editor/TiptapEditor';
 import { WorkshopProgress } from '../components/WorkshopProgress';
 import {
   ensureThreeSuggestions,
@@ -2052,18 +2053,18 @@ export function Workshop() {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[400px_minmax(0,1fr)] xl:grid-cols-[460px_minmax(0,1fr)]">
           <SectionCard
-            title="워크숍 코파일럿"
+            title="코파일럿"
             eyebrow="대화"
             className={cn(
-              'flex min-h-0 flex-col min-h-[68dvh] max-h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-15rem)] lg:min-h-[520px] lg:max-h-[800px]',
+              'flex min-h-0 flex-col min-h-[70dvh] max-h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-16rem)] lg:min-h-[600px] lg:max-h-[900px]',
               mobileView !== 'chat' && 'hidden lg:flex'
             )}
             bodyClassName="relative flex min-h-0 flex-1 flex-col overflow-hidden p-0"
           >
             <div className="flex h-full flex-col">
-              <div className="flex-1 space-y-6 overflow-y-auto px-3 py-3 scroll-smooth sm:px-4 sm:py-4">
+              <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4 scroll-smooth">
                 {workshopState?.render_requirements && (
-                  <div className="mb-2 border-b border-slate-100 bg-slate-50/30 px-4 py-4">
+                  <div className="mb-4 border-b border-slate-50 bg-slate-50/50 px-4 py-4 rounded-2xl">
                     <WorkshopProgress 
                       requirements={workshopState.render_requirements} 
                       qualityInfo={workshopState.quality_level_info}
@@ -2072,15 +2073,15 @@ export function Workshop() {
                 )}
 
                 {diagnosisReport && (
-                  <SurfaceCard tone="muted" padding="none" className="mb-4 overflow-hidden border-violet-200/60 bg-violet-50/60">
+                  <SurfaceCard tone="muted" padding="none" className="mb-4 overflow-hidden border-violet-100 bg-violet-50/40">
                     <button
                       type="button"
                       onClick={() => setShowDiagnosis(prev => !prev)}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-violet-100/60"
+                      className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-violet-100/50"
                     >
                       <span className="inline-flex items-center gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-violet-600 shadow-sm shadow-violet-500/50" />
-                        최근 진단 요약
+                        <div className="h-2 w-2 rounded-full bg-violet-500 shadow-sm shadow-violet-500/30" />
+                        진단 결과 요약
                       </span>
                       {showDiagnosis ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </button>
@@ -2090,15 +2091,15 @@ export function Workshop() {
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden border-t border-violet-200/70 px-4 pb-4"
+                          className="overflow-hidden border-t border-violet-100 px-4 pb-4"
                         >
-                          <SurfaceCard padding="sm" className="mt-3 space-y-2 border-none bg-white/60">
-                            <p className="text-sm font-bold text-slate-900">{diagnosisHeadline}</p>
+                          <div className="mt-3 space-y-2">
+                            <p className="text-sm font-bold text-slate-900 leading-snug">{diagnosisHeadline}</p>
                             <div className="flex flex-wrap items-center gap-2">
                               {diagnosisRisk && <StatusBadge status={diagnosisRiskStatus}>{diagnosisRiskLabel}</StatusBadge>}
                               <StatusBadge status="neutral">보완 {diagnosisGapCount}개</StatusBadge>
                             </div>
-                          </SurfaceCard>
+                          </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -2110,21 +2111,12 @@ export function Workshop() {
                     tone="warning"
                     title={limitedModeNotice.title}
                     description={limitedModeNotice.description}
-                    className="mb-4"
-                  />
-                )}
-
-                {isProjectBacked && !guidedSetupComplete && (
-                  <WorkflowNotice
-                    tone="info"
-                    title="가이드 설정을 먼저 진행해요"
-                    description="카드 4개 선택 후 자유 채팅이 열립니다."
-                    className="mb-4"
+                    className="mb-4 rounded-2xl"
                   />
                 )}
 
                 {!isSessionLoading ? (
-                  <div className="space-y-6 pb-4">
+                  <div className="space-y-6 pb-6">
                     {messages.map((message) => (
                       <ChatBubble
                         key={message.id}
@@ -2139,7 +2131,7 @@ export function Workshop() {
                   </div>
                 ) : (
                   <div className="flex h-full items-center justify-center py-20">
-                    <Loader2 size={24} className="animate-spin text-violet-600" />
+                    <Loader2 size={24} className="animate-spin text-blue-600" />
                   </div>
                 )}
               </div>
@@ -2157,13 +2149,13 @@ export function Workshop() {
                     }}
                     placeholder={inputPlaceholder}
                     disabled={isTyping || !!isSelectingGuidedTopicId || isGuidedActionLoading}
-                    className="flex-1 h-12 rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 text-[15px] font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-violet-400 disabled:opacity-50"
+                    className="flex-1 h-12 rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 text-[15px] font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white disabled:opacity-50"
                   />
                   <button
                     type="button"
                     onClick={() => void handleSend()}
                     disabled={!input.trim() || isTyping || !!isSelectingGuidedTopicId || isGuidedActionLoading}
-                    className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#7c3aed_0%,#06b6d4_100%)] text-white shadow-lg shadow-violet-200 transition-all hover:brightness-110 disabled:bg-slate-200"
+                    className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#3182f6] text-white shadow-lg shadow-blue-100 transition-all hover:bg-[#1b64da] disabled:bg-slate-200"
                   >
                     {isTyping ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
                   </button>
@@ -2173,28 +2165,16 @@ export function Workshop() {
           </SectionCard>
 
           <SectionCard
-            title="초안 문서"
-            description="제안 초안을 바로 수정해 완성하세요."
-            eyebrow="초안 작성"
+            title="문서 편집기"
+            description="작성 중인 보고서를 전문 편집기에서 자유롭게 다듬어보세요."
+            eyebrow="작성"
             className={cn(
-              'flex min-h-0 flex-col min-h-[68dvh] max-h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-15rem)] lg:min-h-[520px] lg:max-h-[800px]',
+              'flex min-h-0 flex-col min-h-[70dvh] max-h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-16rem)] lg:min-h-[600px] lg:max-h-[900px]',
               mobileView !== 'draft' && 'hidden lg:flex'
             )}
-            bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
+            bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0 bg-slate-50/50"
             actions={
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowDraftControls(prev => !prev)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
-                >
-                  {showDraftControls ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  초안 옵션
-                </button>
-                <SecondaryButton size="sm" onClick={handleOpenProfessionalEditor}>
-                  <PenSquare size={14} className="mr-1.5" />
-                  전문 편집기
-                </SecondaryButton>
                 <PrimaryButton size="sm" onClick={handleSaveDraft}>
                   <Save size={14} className="mr-1.5" />
                   저장
@@ -2209,177 +2189,48 @@ export function Workshop() {
                   URL.revokeObjectURL(url);
                 }}>
                   <Download size={14} className="mr-1.5" />
-                  마크다운
+                  내보내기
                 </SecondaryButton>
               </div>
             }
           >
-            <div className={cn("flex flex-1 flex-col overflow-hidden p-3 sm:p-4", advancedMode && "lg:flex-row gap-4")}>
-              {isDraftOutOfSync ? (
-                  <WorkflowNotice
-                    tone="warning"
-                    title="초안 동기화 충돌이 감지되었습니다"
-                    description="최신본으로 자동 병합되었습니다. 변경 내용을 확인해 주세요."
-                    className="mb-3"
-                  />
-              ) : null}
-
-              {pendingDraftPatch ? (
-                <SurfaceCard tone="muted" className="mb-3 border-violet-200/60 bg-violet-50/60 p-3">
-                  <p className="text-xs font-black uppercase tracking-wide text-violet-700">섹션 제안 대기</p>
-                  <p className="mt-1 text-sm font-bold text-slate-900">
-                    {pendingDraftPatch.heading || pendingDraftPatch.block_id}
-                  </p>
-                  {pendingDraftPatch.rationale ? (
-                    <p className="mt-1 text-xs font-medium text-slate-600">{pendingDraftPatch.rationale}</p>
-                  ) : null}
-                  {pendingDraftPatch.evidence_boundary_note ? (
-                    <p className="mt-1 text-xs font-semibold text-amber-700">
-                      근거 경계: {pendingDraftPatch.evidence_boundary_note}
-                    </p>
-                  ) : null}
-                  <div className="mt-2 flex items-center gap-2">
-                    <PrimaryButton size="sm" onClick={() => applyPatchToDraft(pendingDraftPatch, true, false)}>
-                      초안에 반영
-                    </PrimaryButton>
-                    <SecondaryButton size="sm" onClick={() => setPendingDraftPatch(null)}>
-                      제안으로 유지
-                    </SecondaryButton>
-                  </div>
-                </SurfaceCard>
-              ) : null}
-
-              {showDraftControls ? (
-                <div className={cn("space-y-3", advancedMode && "lg:w-1/2")}>
-                  <div className="grid gap-2 sm:grid-cols-4">
-                    {WORKSHOP_MODE_OPTIONS.map((option, idx) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => {
-                          setWorkshopMode(option.id);
-                          setStructuredDraft((prev) => ({ ...prev, mode: option.id }));
-                        }}
-                        className={cn(
-                          'p-2.5 rounded-xl border transition-all text-xs font-semibold text-left',
-                          workshopMode === option.id
-                            ? 'border-violet-300/70 bg-violet-50 shadow-sm'
-                            : 'border-slate-200 bg-white hover:border-slate-300',
-                        )}
-                      >
-                        <p className="text-xs font-black text-slate-800">{option.label}</p>
-                        <p className="mt-0.5 text-[11px] font-medium leading-4 text-slate-500">{option.description}</p>
-                      </button>
-                    ))}
-                  </div>
-
-                  <WorkflowNotice
-                    tone={coauthoringTier === 'pro' ? 'success' : coauthoringTier === 'plus' ? 'info' : 'warning'}
-                    title={
-                      coauthoringTier === 'pro'
-                        ? '고급 공동작성'
-                        : coauthoringTier === 'plus'
-                          ? '확장 공동작성'
-                          : '기본 공동작성'
-                    }
-                    description={
-                      coauthoringTier === 'basic'
-                        ? 'AI 제안은 승인 후에만 반영됩니다. 학생이 작성한 내용은 자동으로 덮어쓰지 않습니다.'
-                        : '채팅 중 받은 제안을 실시간으로 초안에 연결합니다. 반영 전에도 학생이 작성한 문단은 보호합니다.'
-                    }
-                  />
-                </div>
-              ) : (
-                <p className={cn('text-xs font-semibold text-slate-500', advancedMode && 'lg:w-1/2')}>
-                  초안 옵션이 숨겨져 있습니다. 모드/단계 조정이 필요할 때만 펼쳐서 사용하세요.
-                </p>
+            <div className="flex flex-1 flex-col overflow-hidden p-4 sm:p-6">
+              {isDraftOutOfSync && (
+                <WorkflowNotice
+                  tone="warning"
+                  title="동기화 알림"
+                  description="다른 기기에서 수정된 내용이 병합되었습니다."
+                  className="mb-4"
+                />
               )}
 
-              <div
-                className={cn(
-                  "mt-3 w-full min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 custom-scrollbar",
-                  advancedMode && "lg:w-1/2",
-                )}
-              >
-                {BLOCK_DEFINITIONS.map((definition) => {
-                  const block =
-                    structuredDraft.blocks.find((item) => item.block_id === definition.id) || {
-                      block_id: definition.id,
-                      heading: definition.heading,
-                      content_markdown: '',
-                      attribution: 'student-authored' as WorkshopDraftAttribution,
-                    };
-                  const attributionStatus =
-                    block.attribution === 'student-authored'
-                      ? 'success'
-                      : block.attribution === 'ai-inserted-after-approval'
-                        ? 'active'
-                        : 'warning';
-                  return (
-                    <SurfaceCard key={definition.id} className="border-slate-200 bg-white p-3 shadow-sm">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <input
-                          value={block.heading}
-                          onChange={(event) => updateDraftHeading(definition.id, event.target.value)}
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-violet-400 focus:bg-white"
-                        />
-                        <StatusBadge status={attributionStatus}>
-                          {formatDraftAttributionLabel(block.attribution)}
-                        </StatusBadge>
-                      </div>
-                      {definition.id === 'title' ? (
-                        <input
-                          value={block.content_markdown}
-                          onChange={(event) => updateDraftBlock(definition.id, event.target.value)}
-                          placeholder="제목"
-                          className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-violet-400 focus:bg-white"
-                        />
-                      ) : (
-                        <textarea
-                          value={block.content_markdown}
-                          onChange={(event) => updateDraftBlock(definition.id, event.target.value)}
-                          placeholder={`${block.heading} 내용을 작성해 주세요.`}
-                          className="min-h-[110px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm font-medium leading-6 text-slate-800 outline-none focus:border-violet-400 focus:bg-white"
-                        />
-                      )}
-                    </SurfaceCard>
-                  );
-                })}
+              <div className="flex-1 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm ring-1 ring-slate-200/50 transition-all focus-within:ring-indigo-500/30">
+                <TiptapEditor
+                  initialContent={documentContent}
+                  onUpdate={(json, html, text) => {
+                    // Simple text update for documentContent to keep it synced
+                    // In a real app, you'd convert HTML to Markdown properly
+                    setDocumentContent(text);
+                  }}
+                />
               </div>
-              
-              {advancedMode ? (
-                <div className="mt-4 space-y-3 lg:mt-0 lg:w-1/2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvancedTools(prev => !prev)}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
-                  >
-                    {showAdvancedTools ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    고급 도구
-                  </button>
 
-                  {showAdvancedTools ? (
-                    <div className="flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
-                      <EvidenceDrawer evidenceMap={renderArtifact?.evidence_map ?? null} />
-                      <SurfaceCard className="border-violet-200/50 bg-violet-50/60 p-4 shadow-sm">
-                        <AdvancedPreview
-                          workshopId={workshopState?.session.id || ''}
-                          artifactId={workshopState?.latest_artifact?.id || ''}
-                          isAdvancedMode={advancedMode}
-                          visualSpecs={renderArtifact?.visual_specs ?? []}
-                          mathExpressions={renderArtifact?.math_expressions ?? []}
-                          onUpdateVisualStatus={handleUpdateVisualStatus}
-                          onReplaceVisual={handleReplaceVisual}
-                        />
-                      </SurfaceCard>
-                    </div>
-                  ) : (
-                    <p className="text-sm font-bold text-slate-400">
-                      아직 시각화 요소를 선택하지 않았거나, 현재 환경에서는 미리보기를 제공하지 않습니다.
-                    </p>
-                  )}
+              {advancedMode && (
+                <div className="mt-4 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+                  <EvidenceDrawer evidenceMap={renderArtifact?.evidence_map ?? null} />
+                  <SurfaceCard className="border-indigo-100 bg-indigo-50/30 p-4">
+                    <AdvancedPreview
+                      workshopId={workshopState?.session.id || ''}
+                      artifactId={workshopState?.latest_artifact?.id || ''}
+                      isAdvancedMode={advancedMode}
+                      visualSpecs={renderArtifact?.visual_specs ?? []}
+                      mathExpressions={renderArtifact?.math_expressions ?? []}
+                      onUpdateVisualStatus={handleUpdateVisualStatus}
+                      onReplaceVisual={handleReplaceVisual}
+                    />
+                  </SurfaceCard>
                 </div>
-              ) : null}
+              )}
             </div>
           </SectionCard>
         </div>

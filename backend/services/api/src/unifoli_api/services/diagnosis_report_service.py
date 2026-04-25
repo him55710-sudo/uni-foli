@@ -19,7 +19,6 @@ from unifoli_api.core.llm import (
     get_last_llm_invocation,
     get_llm_client,
     get_llm_temperature,
-    resolve_llm_requested_model,
     resolve_llm_runtime,
 )
 from unifoli_api.core.security import sanitize_public_error
@@ -29,11 +28,21 @@ from unifoli_api.db.models.project import Project
 from unifoli_api.schemas.diagnosis import (
     ConsultantDiagnosisArtifactResponse,
     ConsultantDiagnosisEvidenceItem,
+    ConsultantBeforeAfterRewrite,
+    ConsultantInterviewQuestionFrame,
     ConsultantDiagnosisReport,
     ConsultantDiagnosisRoadmapItem,
     ConsultantDiagnosisScoreBlock,
     ConsultantDiagnosisScoreGroup,
     ConsultantDiagnosisSection,
+    ConsultantGradeStoryAnalysis,
+    ConsultantRecordNetwork,
+    ConsultantRecordNetworkEdge,
+    ConsultantRecordNetworkNode,
+    ConsultantReportQualityGate,
+    ConsultantResearchTopicRecommendation,
+    ConsultantSubjectMetricScores,
+    ConsultantSubjectSpecialtyAnalysis,
     DiagnosisReportMode,
     DiagnosisResultPayload,
 )
@@ -53,10 +62,32 @@ from unifoli_shared.storage import get_storage_provider, get_storage_provider_na
 logger = logging.getLogger("unifoli.api.diagnosis_report")
 
 _DEFAULT_TEMPLATE_BY_MODE: dict[str, str] = {
-    "compact": "consultant_diagnosis_compact",
-    "premium_10p": "consultant_diagnosis_premium_10p",
+    "basic": "consultant_diagnosis_basic",
+    "premium": "consultant_diagnosis_premium",
+    "consultant": "consultant_diagnosis_consultant",
+    "compact": "consultant_diagnosis_basic",
+    "premium_10p": "consultant_diagnosis_premium",
 }
 _REPORT_FAILURE_FALLBACK = "진단 보고서 생성에 실패했습니다. 프로젝트 근거를 확인한 뒤 다시 시도해 주세요."
+
+
+_REPORT_MODE_SPECS: dict[str, dict[str, Any]] = {
+    "basic": {"label": "Basic Report", "min_pages": 8, "max_pages": 10, "target_pages": 9},
+    "premium": {"label": "Premium Report", "min_pages": 18, "max_pages": 24, "target_pages": 22},
+    "consultant": {"label": "Consultant Report", "min_pages": 28, "max_pages": 40, "target_pages": 32},
+}
+_MODE_ALIASES = {"compact": "basic", "premium_10p": "premium"}
+
+
+def _canonical_report_mode(report_mode: str | None) -> str:
+    normalized = str(report_mode or "").strip().lower()
+    if not normalized:
+        return "premium"
+    return _MODE_ALIASES.get(normalized, normalized if normalized in _REPORT_MODE_SPECS else "premium")
+
+
+def _mode_spec(report_mode: str | None) -> dict[str, Any]:
+    return _REPORT_MODE_SPECS[_canonical_report_mode(report_mode)]
 
 
 class _ConsultantNarrativePayload(BaseModel):
@@ -80,13 +111,16 @@ class _NarrativeGenerationResult(BaseModel):
 _PREMIUM_SECTION_ORDER: tuple[str, ...] = (
     "cover_title_summary",
     "executive_verdict",
+    "admissions_positioning_snapshot",
     "record_baseline_dashboard",
     "student_evaluation_matrix",
+    "consulting_priority_map",
     "system_quality_reliability",
     "strength_analysis",
     "weakness_risk_analysis",
     "section_by_section_diagnosis",
     "major_fit_interpretation",
+    "student_record_upgrade_blueprint",
     "recommended_report_directions",
     "avoid_repetition_topics",
     "evidence_cards",
@@ -99,6 +133,7 @@ _PREMIUM_SECTION_ORDER: tuple[str, ...] = (
 _COMPACT_SECTION_ORDER: tuple[str, ...] = (
     "executive_verdict",
     "record_baseline_dashboard",
+    "consulting_priority_brief",
     "strength_analysis",
     "risk_analysis",
     "recommended_report_direction",
@@ -113,7 +148,8 @@ def resolve_consultant_report_template_id(
     report_mode: DiagnosisReportMode,
     template_id: str | None,
 ) -> str:
-    resolved = (template_id or _DEFAULT_TEMPLATE_BY_MODE[report_mode]).strip()
+    canonical_mode = _canonical_report_mode(report_mode)
+    resolved = (template_id or _DEFAULT_TEMPLATE_BY_MODE[canonical_mode]).strip()
     # Validate against the registry so frontend always receives a supported template id.
     get_template(resolved, render_format=RenderFormat.PDF)
     return resolved
@@ -127,7 +163,10 @@ def get_latest_report_artifact_for_run(
 ) -> DiagnosisReportArtifact | None:
     stmt = select(DiagnosisReportArtifact).where(DiagnosisReportArtifact.diagnosis_run_id == diagnosis_run_id)
     if report_mode is not None:
-        stmt = stmt.where(DiagnosisReportArtifact.report_mode == report_mode)
+        canonical_mode = _canonical_report_mode(report_mode)
+        mode_candidates = {canonical_mode}
+        mode_candidates.update(alias for alias, target in _MODE_ALIASES.items() if target == canonical_mode)
+        stmt = stmt.where(DiagnosisReportArtifact.report_mode.in_(sorted(mode_candidates)))
     stmt = stmt.order_by(DiagnosisReportArtifact.version.desc(), DiagnosisReportArtifact.created_at.desc()).limit(1)
     return db.scalar(stmt)
 
@@ -215,7 +254,7 @@ def build_report_artifact_response(
             f"{settings.api_prefix}/diagnosis/{artifact.diagnosis_run_id}/report.pdf"
             f"?artifact_id={artifact.id}"
         )
-    report_mode = artifact.report_mode if artifact.report_mode in {"compact", "premium_10p"} else "premium_10p"
+    report_mode = _canonical_report_mode(artifact.report_mode)
     report_status = artifact.status if artifact.status in {"READY", "FAILED"} else "FAILED"
 
     return ConsultantDiagnosisArtifactResponse(
@@ -224,7 +263,7 @@ def build_report_artifact_response(
         project_id=artifact.project_id,
         report_mode=report_mode,  # type: ignore[arg-type]
         template_id=artifact.template_id
-        or _DEFAULT_TEMPLATE_BY_MODE.get(report_mode, "consultant_diagnosis_premium_10p"),
+        or _DEFAULT_TEMPLATE_BY_MODE.get(report_mode, "consultant_diagnosis_premium"),
         export_format="pdf",
         include_appendix=bool(artifact.include_appendix),
         include_citations=bool(artifact.include_citations),
@@ -253,6 +292,7 @@ async def generate_consultant_report_artifact(
     include_citations: bool,
     force_regenerate: bool, heartbeat_callback: Callable[[], Awaitable[None]] | None = None,
 ) -> DiagnosisReportArtifact:
+    report_mode = _canonical_report_mode(report_mode)  # type: ignore[assignment]
     settings = get_settings()
     storage = get_storage_provider(settings)
     resolved_template_id = resolve_consultant_report_template_id(
@@ -408,6 +448,8 @@ async def build_consultant_report_payload(
     include_citations: bool,
     documents: list[Any], heartbeat_callback: Callable[[], Awaitable[None]] | None = None,
 ) -> ConsultantDiagnosisReport:
+    report_mode = _canonical_report_mode(report_mode)  # type: ignore[assignment]
+    mode_spec = _mode_spec(report_mode)
     target_context = _build_target_context(project=project, result=result, documents=documents)
     document_structure = _collect_student_record_structure(documents)
     evidence_bank = _collect_evidence_bank(documents)
@@ -427,11 +469,7 @@ async def build_consultant_report_payload(
         for item in evidence_bank
         if str(item.get("anchor_id") or "").strip()
     }
-    unique_anchor_pages = {
-        int(item.get("page") or 0)
-        for item in evidence_bank
-        if int(item.get("page") or 0) > 0
-    }
+    unique_anchor_pages = _unique_evidence_pages(evidence_bank)
     evidence_anchor_gate_failed = len(unique_anchor_ids) < 10 or len(unique_anchor_pages) < 6
     reanalysis_required = bool(
         (student_score_group and student_score_group.gating_status == "reanalysis_required")
@@ -525,9 +563,9 @@ async def build_consultant_report_payload(
 
     appendix_notes: list[str] = []
     internal_qa_artifact = _build_appendix_notes(documents, document_structure)
-    if include_appendix and report_mode == "compact":
+    if include_appendix and report_mode == "basic":
         appendix_notes.extend(internal_qa_artifact)
-    if include_citations and report_mode == "compact":
+    if include_citations and report_mode == "basic":
         appendix_notes.append("인용 부록에는 주장-근거 연결 검증을 위한 출처 라인이 포함됩니다.")
     diagnosis_confidence_block = next(
         (
@@ -546,6 +584,59 @@ async def build_consultant_report_payload(
             else 0.0
         )
     )
+    subject_specialty_analyses = _build_subject_specialty_analyses(
+        result=result,
+        document_structure=document_structure,
+        evidence_bank=evidence_bank,
+        target_context=target_context,
+    )
+    record_network = _build_record_network(
+        subject_analyses=subject_specialty_analyses,
+        document_structure=document_structure,
+        evidence_bank=evidence_bank,
+        target_context=target_context,
+    )
+    research_topics = _build_research_topics(
+        result=result,
+        target_context=target_context,
+        subject_analyses=subject_specialty_analyses,
+        evidence_bank=evidence_bank,
+        report_mode=report_mode,
+    )
+    interview_questions = _build_interview_questions(
+        result=result,
+        target_context=target_context,
+        subject_analyses=subject_specialty_analyses,
+        research_topics=research_topics,
+        report_mode=report_mode,
+    )
+    before_after_examples = _build_before_after_examples(
+        subject_analyses=subject_specialty_analyses,
+        evidence_bank=evidence_bank,
+        target_context=target_context,
+        report_mode=report_mode,
+    )
+    grade_profile = _build_grade_profile(
+        documents=documents,
+        document_structure=document_structure,
+        evidence_bank=evidence_bank,
+    )
+    grade_story_analyses = _build_grade_story_analyses(
+        grade_profile=grade_profile,
+        document_structure=document_structure,
+        subject_analyses=subject_specialty_analyses,
+        target_context=target_context,
+    )
+    quality_gates = _build_report_quality_gates(
+        report_mode=report_mode,
+        evidence_bank=evidence_bank,
+        subject_analyses=subject_specialty_analyses,
+        record_network=record_network,
+        research_topics=research_topics,
+        interview_questions=interview_questions,
+        sections=sections,
+        reanalysis_required=reanalysis_required,
+    )
 
     report_payload = ConsultantDiagnosisReport(
         diagnosis_run_id=run.id,
@@ -556,27 +647,42 @@ async def build_consultant_report_payload(
         subtitle="학생부 근거 기반 진단 · 리스크 명시 · 실행 로드맵",
         student_target_context=target_context,
         generated_at=datetime.now(timezone.utc),
+        report_mode_label=str(mode_spec["label"]),
+        expected_page_range=f"{mode_spec['min_pages']}~{mode_spec['max_pages']}p",
         score_blocks=score_blocks,
         score_groups=score_groups,
         sections=sections,
         roadmap=roadmap,
-        citations=evidence_items if include_citations and report_mode == "compact" else [],
+        subject_specialty_analyses=subject_specialty_analyses,
+        record_network=record_network,
+        research_topics=research_topics,
+        interview_questions=interview_questions,
+        before_after_examples=before_after_examples,
+        grade_story_analyses=grade_story_analyses,
+        quality_gates=quality_gates,
+        citations=evidence_items if include_citations and report_mode == "basic" else [],
         uncertainty_notes=uncertainty_notes,
         final_consultant_memo=narratives.final_consultant_memo,
         appendix_notes=appendix_notes,
         diagnosis_intelligence=diagnosis_intelligence,
         render_hints={
             "a4": True,
-            "minimum_pages": 10 if report_mode == "premium_10p" else 5,
+            "minimum_pages": int(mode_spec["min_pages"]),
+            "maximum_pages": int(mode_spec["max_pages"]),
+            "target_pages": int(mode_spec["target_pages"]),
+            "report_mode_label": str(mode_spec["label"]),
+            "expected_page_range": f"{mode_spec['min_pages']}~{mode_spec['max_pages']}p",
+            "structured_premium_renderer": report_mode in {"basic", "premium", "consultant"},
+            "grade_profile": grade_profile,
             "visual_tone": "consultant_premium",
             "include_appendix": include_appendix,
             "include_citations": include_citations,
             "analysis_confidence_score": analysis_confidence_score,
             "one_line_verdict": _clean_line(narratives.executive_summary, max_len=150),
-            "public_appendix_enabled": bool(include_appendix and report_mode == "compact"),
-            "public_citations_enabled": bool(include_citations and report_mode == "compact"),
-            "section_order": list(_PREMIUM_SECTION_ORDER if report_mode == "premium_10p" else _COMPACT_SECTION_ORDER),
-            "provisional_label": "reference_only" if reanalysis_required else "verified_ready",
+            "public_appendix_enabled": bool(include_appendix and report_mode == "basic"),
+            "public_citations_enabled": bool(include_citations and report_mode == "basic"),
+            "section_order": list(_PREMIUM_SECTION_ORDER if report_mode in {"premium", "consultant"} else _COMPACT_SECTION_ORDER),
+            "provisional_label": "자료 보완 권장" if reanalysis_required else "분석 가능",
             "verified_vs_inferred_policy": {
                 "verified": "근거 앵커로 확인된 문장만 단정적으로 표현",
                 "inferred": "추론 문장은 가능성/해석 표현으로 제한",
@@ -588,7 +694,7 @@ async def build_consultant_report_payload(
             "internal_qa_artifact": {
                 "appendix_notes": internal_qa_artifact,
                 "evidence_bank_size": len(evidence_bank),
-                "unique_evidence_pages": len({int(item.get("page") or 0) for item in evidence_bank if int(item.get("page") or 0) > 0}),
+                "unique_evidence_pages": len(_unique_evidence_pages(evidence_bank)),
                 "reanalysis_required": reanalysis_required,
             },
             "execution_metadata": {
@@ -637,6 +743,660 @@ def _build_target_context(*, project: Project, result: DiagnosisResultPayload, d
     if diagnosis_target:
         context_bits.append(f"진단 타깃 메모: {diagnosis_target}")
     return " | ".join(context_bits)
+
+
+def _evidence_quote(item: dict[str, Any]) -> str:
+    return _clean_line(str(item.get("quote") or item.get("excerpt") or item.get("text") or ""), max_len=180)
+
+
+def _evidence_ref(item: dict[str, Any]) -> str:
+    anchor = str(item.get("anchor_id") or item.get("id") or "").strip()
+    page = _coerce_positive_int(item.get("page") or item.get("page_number"))
+    bits: list[str] = []
+    if anchor:
+        bits.append(anchor)
+    if page is not None:
+        bits.append(f"p.{page}")
+    quote = _evidence_quote(item)
+    if quote:
+        bits.append(quote)
+    return " | ".join(bits) if bits else "학생부 근거 요약"
+
+
+def _target_major_from_context(target_context: str) -> str:
+    for prefix in ("목표 전공:", "목표 학과:", "紐⑺몴 ?꾧났:"):
+        if prefix in target_context:
+            return _clean_line(target_context.split(prefix, 1)[1].split("|", 1)[0], max_len=80)
+    if "건축" in target_context:
+        return "건축학과"
+    return "목표 학과"
+
+
+def _is_architecture_context(target_context: str) -> bool:
+    return "건축" in target_context or "architecture" in target_context.lower()
+
+
+def _select_subject_evidence(subject: str, evidence_bank: list[dict[str, Any]], *, limit: int = 3) -> list[dict[str, Any]]:
+    keywords_by_subject = {
+        "국어": ("국어", "문학", "독서", "화법", "작문", "언어"),
+        "영어": ("영어", "영문", "발표", "reading", "english"),
+        "사회/역사/윤리": ("사회", "역사", "윤리", "정치", "경제", "도시", "문화"),
+        "수학": ("수학", "미적분", "기하", "확률", "통계", "함수", "적분", "벡터"),
+        "과학": ("과학", "물리", "화학", "생명", "지구", "실험", "역학", "에너지"),
+        "기술/정보": ("기술", "정보", "프로그래밍", "데이터", "모델링", "알고리즘"),
+        "창체/진로": ("창체", "자율", "동아리", "진로", "봉사", "탐구", "발표"),
+        "독서": ("독서", "도서", "책", "저자", "읽고"),
+    }
+    keywords = keywords_by_subject.get(subject, (subject,))
+    matched: list[dict[str, Any]] = []
+    for item in evidence_bank:
+        quote = _evidence_quote(item)
+        section = str(item.get("section") or item.get("section_name") or "")
+        haystack = f"{quote} {section}".lower()
+        if any(keyword.lower() in haystack for keyword in keywords):
+            matched.append(item)
+        if len(matched) >= limit:
+            return matched
+    return evidence_bank[:limit]
+
+
+def _subject_level(score: int) -> str:
+    if score >= 85:
+        return "매우 강함"
+    if score >= 72:
+        return "강함"
+    if score >= 58:
+        return "보통"
+    if score >= 45:
+        return "약함"
+    return "위험"
+
+
+def _build_subject_specialty_analyses(
+    *,
+    result: DiagnosisResultPayload,
+    document_structure: dict[str, Any],
+    evidence_bank: list[dict[str, Any]],
+    target_context: str,
+) -> list[ConsultantSubjectSpecialtyAnalysis]:
+    major = _target_major_from_context(target_context)
+    architecture = _is_architecture_context(target_context)
+    subjects = ["국어", "영어", "사회/역사/윤리", "수학", "과학", "기술/정보", "창체/진로", "독서"]
+    alignment_signals = [str(item) for item in document_structure.get("subject_major_alignment_signals", [])]
+    process_signals = [str(item) for item in document_structure.get("process_reflection_signals", [])]
+    weak_sections = [str(item) for item in document_structure.get("weak_sections", [])]
+    analyses: list[ConsultantSubjectSpecialtyAnalysis] = []
+
+    for index, subject in enumerate(subjects):
+        evidence = _select_subject_evidence(subject, evidence_bank, limit=3)
+        evidence_refs = [_evidence_ref(item) for item in evidence]
+        support = min(3, len(evidence))
+        process_bonus = 8 if process_signals else 0
+        alignment_bonus = 8 if alignment_signals else 0
+        weak_penalty = 8 if any(subject in section for section in weak_sections) else 0
+        base = 58 + support * 6 + process_bonus + alignment_bonus - weak_penalty
+        subject_boost = 8 if architecture and subject in {"수학", "과학", "기술/정보", "사회/역사/윤리"} else 0
+        total_score = _bounded_score(base + subject_boost - index)
+        metrics = ConsultantSubjectMetricScores(
+            academic_concept_density=_bounded_score(total_score + (8 if subject in {"수학", "과학"} else 0)),
+            inquiry_process=_bounded_score(total_score + (6 if evidence else -4)),
+            student_agency=_bounded_score(total_score + (5 if process_signals else -3)),
+            major_connection=_bounded_score(total_score + (10 if architecture and subject in {"수학", "과학", "기술/정보"} else 2)),
+            expansion_potential=_bounded_score(total_score + 6),
+            differentiation=_bounded_score(total_score - 2 + support * 2),
+            interview_defense=_bounded_score(total_score + (6 if evidence_refs else -8)),
+        )
+        quote_summary = _clean_line(evidence_refs[0] if evidence_refs else "", max_len=110)
+        if not quote_summary:
+            quote_summary = f"{subject} 기록은 {major} 지원 서사와 연결 가능한 단서를 중심으로 추가 확인이 필요합니다."
+
+        if architecture and subject == "수학":
+            major_connection = "공간, 면적, 곡면, 채광 분포처럼 건축 설계에서 수리적으로 설명할 수 있는 문제로 확장할 수 있습니다."
+            follow_up = "건축 공간의 채광 또는 동선 밀도를 함수/적분/기하 개념으로 모델링한 탐구 보고서"
+        elif architecture and subject == "과학":
+            major_connection = "구조 안정성, 내진, 열환경, 바람길 등 건축 성능을 물리 개념으로 검증하는 근거가 됩니다."
+            follow_up = "건축 구조물의 안정성 또는 도시 열환경을 변인 통제 실험으로 비교하는 탐구"
+        elif architecture and subject == "사회/역사/윤리":
+            major_connection = "건축을 조형물이 아니라 도시, 공동체, 환경 문제를 해결하는 사회적 실천으로 해석하게 합니다."
+            follow_up = "도시 공간의 공공성, 주거 불평등, 기념 건축의 사회적 의미를 사례 비교로 분석"
+        else:
+            major_connection = f"{subject} 기록은 {major}에 필요한 사고력과 표현력을 보여주는 보조 근거로 정리할 수 있습니다."
+            follow_up = f"{subject} 개념을 {major}의 실제 문제 상황에 적용한 후속 탐구"
+
+        analyses.append(
+            ConsultantSubjectSpecialtyAnalysis(
+                subject=subject,
+                core_record_summary=quote_summary,
+                strengths=[
+                    f"{subject} 안에서 구체 기록을 추출해 전공 역량의 근거로 전환할 수 있습니다.",
+                    "활동 결과보다 과정과 판단 이유를 보강하면 면접 방어력이 올라갑니다.",
+                ],
+                weaknesses=[
+                    "현재 기록만으로는 산출물, 방법, 한계가 모두 선명하게 보이지 않을 수 있습니다.",
+                    f"{major}와 직접 연결되는 질문 문장으로 재정리할 필요가 있습니다.",
+                ],
+                score=total_score,
+                metric_scores=metrics,
+                level=_subject_level(total_score),  # type: ignore[arg-type]
+                admissions_meaning=f"{subject} 기록은 단순 성취보다 학생이 어떤 문제를 고르고 어떻게 설명했는지를 보여줄 때 평가 가치가 커집니다.",
+                major_connection=major_connection,
+                sentence_to_improve=f"{subject} 세특에는 선택 이유, 사용 개념, 결과 해석, 다음 질문이 한 문장 안에 드러나야 합니다.",
+                recommended_follow_up=follow_up,
+                interview_question=f"{subject} 활동에서 본인이 직접 설정한 질문과 결과 해석은 무엇이었나요?",
+                evidence_refs=evidence_refs,
+            )
+        )
+    return analyses[:8]
+
+
+def _edge_strength(score: int, index: int) -> str:
+    if score >= 78 and index < 4:
+        return "Strong"
+    if score >= 62:
+        return "Moderate"
+    if score >= 48:
+        return "Weak"
+    return "Artificial"
+
+
+def _build_record_network(
+    *,
+    subject_analyses: list[ConsultantSubjectSpecialtyAnalysis],
+    document_structure: dict[str, Any],
+    evidence_bank: list[dict[str, Any]],
+    target_context: str,
+) -> ConsultantRecordNetwork:
+    major = _target_major_from_context(target_context)
+    central_theme = (
+        "공간 문제를 교과 개념과 탐구 활동으로 해석하는 서사"
+        if _is_architecture_context(target_context)
+        else f"{major} 적합성을 교과와 활동 근거로 연결하는 서사"
+    )
+    nodes: list[ConsultantRecordNetworkNode] = [
+        ConsultantRecordNetworkNode(
+            id="major_goal",
+            label=major,
+            category="target",
+            evidence_summary="목표 대학/학과 맥락",
+            weight=5,
+        )
+    ]
+    for idx, analysis in enumerate(subject_analyses[:7], start=1):
+        nodes.append(
+            ConsultantRecordNetworkNode(
+                id=f"subject_{idx}",
+                label=analysis.subject,
+                category="subject",
+                evidence_summary=_clean_line(analysis.core_record_summary, max_len=90),
+                weight=max(1, min(5, round(analysis.score / 20))),
+            )
+        )
+    while len(nodes) < 8:
+        idx = len(nodes)
+        nodes.append(
+            ConsultantRecordNetworkNode(
+                id=f"context_{idx}",
+                label=["창체", "독서", "진로", "행동특성"][idx % 4],
+                category="record_section",
+                evidence_summary="학생부 전체 연결을 위해 추가 확인이 필요한 영역",
+                weight=2,
+            )
+        )
+
+    edges: list[ConsultantRecordNetworkEdge] = []
+    for idx, analysis in enumerate(subject_analyses[:7], start=1):
+        edges.append(
+            ConsultantRecordNetworkEdge(
+                source=f"subject_{idx}",
+                target="major_goal",
+                label=f"{analysis.subject} -> {major}",
+                strength=_edge_strength(analysis.score, idx),  # type: ignore[arg-type]
+                rationale=_clean_line(analysis.major_connection, max_len=120),
+            )
+        )
+    for idx in range(1, min(7, len(subject_analyses))):
+        left = subject_analyses[idx - 1]
+        right = subject_analyses[idx]
+        avg_score = round((left.score + right.score) / 2)
+        edges.append(
+            ConsultantRecordNetworkEdge(
+                source=f"subject_{idx}",
+                target=f"subject_{idx + 1}",
+                label=f"{left.subject} <-> {right.subject}",
+                strength=_edge_strength(avg_score, idx + 3),  # type: ignore[arg-type]
+                rationale="과목 간 같은 관심사가 반복되거나 후속 탐구 질문으로 이어질 수 있는 연결입니다.",
+            )
+        )
+        if len(edges) >= 10:
+            break
+    while len(edges) < 10:
+        source = nodes[(len(edges) % max(1, len(nodes) - 1)) + 1].id
+        edges.append(
+            ConsultantRecordNetworkEdge(
+                source=source,
+                target="major_goal",
+                label="보완 연결",
+                strength="Weak",
+                rationale="키워드는 이어지지만 산출물과 과정 기록을 보강해야 강한 연결로 인정됩니다.",
+            )
+        )
+
+    matrix = [
+        {"axis": "중심 주제", "evaluation": central_theme, "risk": "일부 기록은 산출물 보강이 필요합니다."},
+        {"axis": "학년 간 흐름", "evaluation": "관심 출발-개념 심화-전공 수렴의 순서로 재배열할 수 있습니다.", "risk": "학년별 연결 문장이 약하면 분절 기록처럼 보일 수 있습니다."},
+        {"axis": "과목 간 융합", "evaluation": "인문 과목은 문제의식, 이공 과목은 검증 도구로 역할을 나눌 수 있습니다.", "risk": "단순 키워드 연결은 억지 전공 연결로 보일 수 있습니다."},
+    ]
+    return ConsultantRecordNetwork(
+        central_theme=central_theme,
+        evaluation={
+            "theme_presence": "중심 주제는 형성 가능",
+            "grade_flow": "학년별 성장 흐름 보완 필요",
+            "fusion": "과목 간 융합 가능",
+            "artificial_risk": "직접 산출물이 없는 연결은 확장 가능 주제로 낮춰 표기",
+        },
+        nodes=nodes,
+        edges=edges[:12],
+        matrix=matrix,
+    )
+
+
+def _build_research_topics(
+    *,
+    result: DiagnosisResultPayload,
+    target_context: str,
+    subject_analyses: list[ConsultantSubjectSpecialtyAnalysis],
+    evidence_bank: list[dict[str, Any]],
+    report_mode: str,
+) -> list[ConsultantResearchTopicRecommendation]:
+    major = _target_major_from_context(target_context)
+    target_count = 4 if report_mode == "basic" else 12 if report_mode == "consultant" else 10
+    architecture_titles = [
+        "이중적분을 활용한 건축 공간의 채광 분포 분석",
+        "베르누이 원리를 활용한 고층 건축물 주변 바람길 탐구",
+        "내진 설계 원리를 활용한 구조 안정성 비교 실험",
+        "프랙탈 구조와 현대 건축 파사드 디자인의 관계",
+        "도시 열섬 완화를 위한 건축 재료와 배치 분석",
+        "해양 건축물의 부력과 구조 안정성 탐구",
+        "자연친화적 건축에서 패시브 디자인 요소 분석",
+        "기념적 건축물이 도시 기억 형성에 미치는 영향",
+        "건축가의 철학이 공간 경험에 반영되는 방식 분석",
+        "수학적 곡면 구조가 건축 조형에 활용되는 사례 분석",
+        "학교 공간의 동선 밀도와 학습 경험의 관계 분석",
+        "친환경 외피 설계가 실내 열쾌적성에 미치는 영향",
+    ]
+    generic_titles = [
+        f"{major} 핵심 개념을 실제 사회 문제에 적용한 사례 분석",
+        f"{major} 관련 데이터로 보는 문제 원인과 해결 전략",
+        f"{major} 전공 역량을 보여주는 교과 융합 탐구",
+        f"{major} 분야의 윤리적 쟁점과 의사결정 기준 분석",
+        f"{major} 관련 독서 내용을 바탕으로 한 후속 탐구 설계",
+        f"{major} 관점에서 본 지역사회 문제 해결 제안",
+        f"{major} 분야 최신 이슈를 학생부 활동과 연결한 보고서",
+        f"{major} 관련 실험 또는 사례 비교 탐구",
+        f"{major} 전공 면접에서 설명 가능한 개념 심화 보고서",
+        f"{major}와 창체 활동을 연결하는 프로젝트 기획",
+        f"{major} 학문적 방법론을 적용한 미니 연구",
+        f"{major} 관련 진로 독서 기반 탐구 확장",
+    ]
+    titles = architecture_titles if _is_architecture_context(target_context) else generic_titles
+    result_topics = [str(item).strip() for item in result.recommended_topics or [] if str(item).strip()]
+    titles = _dedupe([*result_topics, *titles], limit=target_count)
+    topics: list[ConsultantResearchTopicRecommendation] = []
+    for idx, title in enumerate(titles[:target_count], start=1):
+        analysis = subject_analyses[(idx - 1) % max(1, len(subject_analyses))]
+        has_direct_evidence = bool(analysis.evidence_refs) and idx <= max(4, len(evidence_bank) // 2)
+        topics.append(
+            ConsultantResearchTopicRecommendation(
+                title=title,
+                classification="강력 추천" if has_direct_evidence else "확장 가능 주제",
+                connected_evidence=_clean_line(analysis.core_record_summary, max_len=130),
+                inquiry_question=f"{title}에서 학생부의 {analysis.subject} 기록을 어떤 변수와 판단 기준으로 검증할 수 있는가?",
+                subject_concepts=[analysis.subject, "문제 설정", "자료 해석", "결과 한계"],
+                method="선행 개념 정리 - 사례/자료 수집 - 비교 기준 설정 - 표 또는 그래프 분석 - 한계와 후속 질문 정리",
+                expected_output="탐구보고서 4~6쪽, 계산/실험 표 1개, 세특 반영용 핵심 문장 2개",
+                record_sentence=f"{analysis.subject} 기록을 바탕으로 {title}를 탐구하며 개념 적용 과정과 결과 해석을 구체화함.",
+                interview_use="탐구 질문, 사용 개념, 변인/자료 선택 이유, 예상과 다른 결과 해석까지 답변 소재로 활용 가능",
+                difficulty="상" if idx in {1, 2, 3} else "중" if idx <= 8 else "하",
+                priority=idx,
+            )
+        )
+    return topics
+
+
+def _build_interview_questions(
+    *,
+    result: DiagnosisResultPayload,
+    target_context: str,
+    subject_analyses: list[ConsultantSubjectSpecialtyAnalysis],
+    research_topics: list[ConsultantResearchTopicRecommendation],
+    report_mode: str,
+) -> list[ConsultantInterviewQuestionFrame]:
+    major = _target_major_from_context(target_context)
+    target_count = 6 if report_mode == "basic" else 18 if report_mode == "consultant" else 15
+    base_questions = [
+        ("전공 적합성", f"왜 {major}를 지원하려고 하나요?"),
+        ("전공 적합성", f"{major}를 좋아하는 것과 학문적으로 탐구하는 것은 무엇이 다르다고 보나요?"),
+        ("전공 적합성", "학생부에서 전공 적합성을 가장 잘 보여주는 활동 하나를 고른다면 무엇인가요?"),
+        ("전공 적합성", "목표 대학/학과의 교육과정과 본인의 학생부가 만나는 지점은 어디인가요?"),
+        ("탐구 과정 검증", "탐구 과정에서 가장 어려웠던 점과 해결 방식은 무엇인가요?"),
+        ("탐구 과정 검증", "탐구에서 사용한 개념을 왜 선택했나요?"),
+        ("탐구 과정 검증", "변인 통제 또는 비교 기준은 어떻게 세웠나요?"),
+        ("탐구 과정 검증", "결과가 예상과 달랐다면 어떻게 해석하겠습니까?"),
+        ("약점 방어", "학년 간 활동 연속성이 약해 보인다는 지적에 어떻게 답하겠습니까?"),
+        ("약점 방어", "활동은 넓지만 깊이가 부족해 보인다는 평가를 받으면 어떻게 설명하겠습니까?"),
+        ("약점 방어", "전공 관련 활동이 일부 영역에 몰려 있다는 지적을 어떻게 보완하겠습니까?"),
+        ("약점 방어", "교과 탐구가 실제 전공 문제와 어떻게 연결되는지 설명해 보세요."),
+    ]
+    if _is_architecture_context(target_context):
+        base_questions.extend(
+            [
+                ("전공 적합성", "건축을 조형 디자인이 아니라 학문으로 바라본 경험은 무엇인가요?"),
+                ("탐구 과정 검증", "이중적분 또는 기하 탐구가 건축 공간 분석과 어떻게 연결되나요?"),
+                ("탐구 과정 검증", "내진 설계 활동에서 본인이 실제로 기여한 부분은 무엇인가요?"),
+                ("약점 방어", "수학/과학 탐구가 건축 문제와 직접 연결되지 않았다는 지적에 어떻게 답하겠습니까?"),
+            ]
+        )
+    for topic in research_topics[:4]:
+        base_questions.append(("탐구 과정 검증", f"{topic.title}를 다음 탐구로 확장한다면 첫 번째 검증 질문은 무엇인가요?"))
+    frames: list[ConsultantInterviewQuestionFrame] = []
+    for idx, (category, question) in enumerate(base_questions[:target_count], start=1):
+        analysis = subject_analyses[(idx - 1) % max(1, len(subject_analyses))]
+        frames.append(
+            ConsultantInterviewQuestionFrame(
+                category=category,  # type: ignore[arg-type]
+                question=question,
+                intent="기록의 진정성, 전공 이해도, 학생 본인의 판단 과정을 확인하려는 질문입니다.",
+                answer_frame="활동 배경 - 선택한 개념/방법 - 본인 역할 - 결과 해석 - 다음 질문 순서로 답변합니다.",
+                connected_evidence=_clean_line(analysis.core_record_summary, max_len=120),
+                good_direction=f"{analysis.subject} 기록을 근거로 말하되, 결과보다 선택 이유와 배운 점을 먼저 설명합니다.",
+                avoid="좋아서 했다, 열심히 했다처럼 감상 중심으로 답하거나 학생부에 없는 성과를 과장하는 방식",
+            )
+        )
+    return frames
+
+
+def _build_before_after_examples(
+    *,
+    subject_analyses: list[ConsultantSubjectSpecialtyAnalysis],
+    evidence_bank: list[dict[str, Any]],
+    target_context: str,
+    report_mode: str,
+) -> list[ConsultantBeforeAfterRewrite]:
+    major = _target_major_from_context(target_context)
+    target_count = 3 if report_mode == "basic" else 12 if report_mode == "consultant" else 8
+    examples: list[ConsultantBeforeAfterRewrite] = []
+    for idx in range(target_count):
+        analysis = subject_analyses[idx % max(1, len(subject_analyses))]
+        original = _clean_line(analysis.core_record_summary, max_len=95) or f"{analysis.subject} 활동 기록"
+        examples.append(
+            ConsultantBeforeAfterRewrite(
+                original_summary=original,
+                problem="활동명과 결과는 보이지만 질문 설정, 사용 개념, 본인 판단, 후속 확장이 한 문장 안에서 충분히 드러나지 않습니다.",
+                improved_sentence=(
+                    f"{analysis.subject} 수업에서 {major}와 연결되는 문제를 설정하고, 관련 개념을 적용해 자료를 비교한 뒤 "
+                    "결과의 한계와 다음 탐구 질문을 정리함."
+                ),
+                why_better="전공 연결을 선언하지 않고도 문제 설정-방법-해석-확장 흐름이 보여 면접에서 설명 가능한 문장이 됩니다.",
+                exaggeration_risk="실제 산출물이나 계산/실험이 없었다면 '분석함'보다 '분석 방향을 설계함'으로 낮춰 표현해야 합니다.",
+            )
+        )
+    return examples
+
+
+def _iter_nested_values(value: Any) -> list[Any]:
+    values: list[Any] = []
+    if isinstance(value, dict):
+        for nested in value.values():
+            values.extend(_iter_nested_values(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            values.extend(_iter_nested_values(nested))
+    else:
+        values.append(value)
+    return values
+
+
+def _extract_grade_numbers_from_text(text: str) -> set[int]:
+    grades: set[int] = set()
+    for match in re.finditer(r"([1-3])\s*학년", text):
+        grades.add(int(match.group(1)))
+    for match in re.finditer(r"\b([1-3])\s*-\s*[12]\b", text):
+        grades.add(int(match.group(1)))
+    return grades
+
+
+def _collect_explicit_grade_fields(value: Any, candidate_keys: set[str]) -> set[int]:
+    grades: set[int] = set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if str(key) in candidate_keys:
+                parsed = _coerce_positive_int(nested)
+                if parsed in {1, 2, 3}:
+                    grades.add(parsed)
+                if isinstance(nested, str):
+                    grades.update(_extract_grade_numbers_from_text(nested))
+            grades.update(_collect_explicit_grade_fields(nested, candidate_keys))
+    elif isinstance(value, list):
+        for nested in value:
+            grades.update(_collect_explicit_grade_fields(nested, candidate_keys))
+    return grades
+
+
+def _build_grade_profile(
+    *,
+    documents: list[Any],
+    document_structure: dict[str, Any],
+    evidence_bank: list[dict[str, Any]],
+) -> dict[str, Any]:
+    detected: set[int] = set()
+    explicit_current: int | None = None
+    text_samples: list[str] = []
+    candidate_keys = {
+        "latest_grade_detected",
+        "current_grade",
+        "student_grade",
+        "school_year",
+        "grade",
+    }
+
+    for document in documents:
+        metadata = getattr(document, "parse_metadata", None)
+        if not isinstance(metadata, dict):
+            continue
+        explicit_grades = _collect_explicit_grade_fields(metadata, candidate_keys)
+        if explicit_grades:
+            explicit_current = max(explicit_current or 0, max(explicit_grades))
+            detected.update(explicit_grades)
+        for nested in _iter_nested_values(metadata):
+            if isinstance(nested, int) and nested in {1, 2, 3}:
+                continue
+            text = str(nested or "").strip()
+            if not text:
+                continue
+            if any(token in text for token in ("학년", "3-1", "3-2", "2-1", "2-2", "1-1", "1-2")):
+                text_samples.append(_clean_line(text, max_len=140))
+                detected.update(_extract_grade_numbers_from_text(text))
+
+    for signal in document_structure.get("timeline_signals", []) or []:
+        text = str(signal or "").strip()
+        text_samples.append(_clean_line(text, max_len=140))
+        detected.update(_extract_grade_numbers_from_text(text))
+    for item in evidence_bank:
+        quote = _evidence_quote(item)
+        if quote:
+            detected.update(_extract_grade_numbers_from_text(quote))
+
+    available = sorted(grade for grade in detected if grade in {1, 2, 3})
+    current_grade = explicit_current if explicit_current in {1, 2, 3} else (max(available) if available else None)
+    return {
+        "current_grade": current_grade,
+        "available_grades": available,
+        "is_inferred": explicit_current is None,
+        "timeline_samples": _dedupe(text_samples, limit=6),
+        "template_variant": (
+            "grade_1_foundation"
+            if current_grade == 1
+            else "grade_2_deepening"
+            if current_grade == 2
+            else "grade_3_convergence"
+            if current_grade == 3
+            else "grade_unknown_flexible"
+        ),
+    }
+
+
+def _build_grade_story_analyses(
+    *,
+    grade_profile: dict[str, Any],
+    document_structure: dict[str, Any],
+    subject_analyses: list[ConsultantSubjectSpecialtyAnalysis],
+    target_context: str,
+) -> list[ConsultantGradeStoryAnalysis]:
+    current_grade = grade_profile.get("current_grade")
+    available_grades = set(grade_profile.get("available_grades") or [])
+    major = _target_major_from_context(target_context)
+    top_subjects = [item.subject for item in subject_analyses[:3]] or ["교과", "창체", "독서"]
+    timeline_samples = [str(item) for item in grade_profile.get("timeline_samples") or [] if str(item).strip()]
+
+    grade_roles = {
+        1: (
+            "관심의 출발점",
+            "현재 1학년이라면 전공 확정보다 문제의식, 독서, 발표 경험을 넓게 남기는 것이 중요합니다.",
+            "2학년에는 같은 관심사를 교과 개념과 작은 산출물로 이어가야 합니다.",
+        ),
+        2: (
+            "개념적 심화",
+            "현재 2학년이라면 1학년의 넓은 관심을 수업 개념, 탐구 질문, 산출물로 좁혀야 합니다.",
+            "3학년에는 이 흐름을 목표 학과 면접 답변과 최종 탐구로 수렴시켜야 합니다.",
+        ),
+        3: (
+            "전공 방향 수렴",
+            "현재 3학년이라면 새 활동을 늘리기보다 기존 기록의 근거, 역할, 결과 해석을 방어 가능한 문장으로 정리해야 합니다.",
+            "면접에서는 학년별 활동이 하나의 질문으로 이어졌다는 설명을 준비해야 합니다.",
+        ),
+    }
+
+    stories: list[ConsultantGradeStoryAnalysis] = []
+    for grade in (1, 2, 3):
+        role, tone, next_flow = grade_roles[grade]
+        if current_grade == grade:
+            stage_role = f"현재 학년 - {role}"
+        elif current_grade and grade < current_grade:
+            stage_role = f"이전 근거 회수 - {role}"
+        elif current_grade and grade > current_grade:
+            stage_role = f"다음 학년 설계 - {role}"
+        else:
+            stage_role = f"확인 필요 - {role}"
+        if grade in available_grades:
+            evidence_note = "원문에서 해당 학년 신호가 확인되어 실제 기록 기반으로 해석합니다."
+        elif current_grade and grade > current_grade:
+            evidence_note = "아직 기록이 없을 수 있으므로 로드맵 관점의 설계 카드로 표시합니다."
+        else:
+            evidence_note = "원문 학년 신호가 약해 추가 확인이 필요합니다."
+
+        stories.append(
+            ConsultantGradeStoryAnalysis(
+                grade_label=f"{grade}학년",
+                stage_role=stage_role,
+                core_activities=timeline_samples[:2] or [f"{', '.join(top_subjects)} 기록에서 관심 주제의 단서를 확인"],
+                visible_competencies=[
+                    "문제의식" if grade == 1 else "탐구 과정성" if grade == 2 else "면접 방어력",
+                    f"{major} 연결 가능성",
+                ],
+                weak_connections=[
+                    "산출물과 결과 해석이 약하면 다음 학년으로 이어지는 흐름이 흐려집니다.",
+                    evidence_note,
+                ],
+                next_flow=next_flow,
+                section_linkage="세특-창체-독서-진로 기록을 같은 질문으로 연결해 학년별 서사를 구성합니다.",
+                guidance_tone=tone,
+            )
+        )
+    return stories
+
+
+def _has_repeated_sentences(sections: list[ConsultantDiagnosisSection], topics: list[ConsultantResearchTopicRecommendation]) -> bool:
+    counts: dict[str, int] = {}
+    texts = [section.body_markdown for section in sections] + [topic.title for topic in topics]
+    for text in texts:
+        for sentence in re.split(r"[.!?\n。]+", str(text or "")):
+            normalized = re.sub(r"\s+", " ", sentence).strip()
+            if len(normalized) < 18:
+                continue
+            counts[normalized] = counts.get(normalized, 0) + 1
+            if counts[normalized] >= 3:
+                return True
+    return False
+
+
+def _build_report_quality_gates(
+    *,
+    report_mode: str,
+    evidence_bank: list[dict[str, Any]],
+    subject_analyses: list[ConsultantSubjectSpecialtyAnalysis],
+    record_network: ConsultantRecordNetwork,
+    research_topics: list[ConsultantResearchTopicRecommendation],
+    interview_questions: list[ConsultantInterviewQuestionFrame],
+    sections: list[ConsultantDiagnosisSection],
+    reanalysis_required: bool,
+) -> list[ConsultantReportQualityGate]:
+    spec = _mode_spec(report_mode)
+    unique_anchor_ids = {
+        str(item.get("anchor_id") or "").strip()
+        for item in evidence_bank
+        if str(item.get("anchor_id") or "").strip()
+    }
+    unique_pages = _unique_evidence_pages(evidence_bank)
+    min_topics = 8 if report_mode in {"premium", "consultant"} else 3
+    min_questions = 12 if report_mode in {"premium", "consultant"} else 5
+    return [
+        ConsultantReportQualityGate(
+            key="page_count",
+            label="페이지 구성",
+            passed=True,
+            message=f"{spec['label']} 기준 {spec['min_pages']}~{spec['max_pages']}쪽 범위로 렌더링합니다.",
+        ),
+        ConsultantReportQualityGate(
+            key="evidence",
+            label="근거 밀도",
+            passed=not reanalysis_required and (len(unique_anchor_ids) >= 8 or len(unique_pages) >= 5),
+            message=(
+                f"확인 가능한 근거가 {len(unique_anchor_ids)}개, 페이지 분산이 {len(unique_pages)}쪽입니다."
+                if evidence_bank
+                else "원문 근거가 부족해 일부 해석은 보수적으로 표시합니다."
+            ),
+        ),
+        ConsultantReportQualityGate(
+            key="topics",
+            label="추천 탐구 수",
+            passed=len(research_topics) >= min_topics,
+            message=f"추천 탐구 {len(research_topics)}개를 생성했습니다.",
+        ),
+        ConsultantReportQualityGate(
+            key="interview",
+            label="면접 질문 수",
+            passed=len(interview_questions) >= min_questions,
+            message=f"면접 질문 {len(interview_questions)}개를 전공 적합성/탐구 검증/약점 방어로 나눴습니다.",
+        ),
+        ConsultantReportQualityGate(
+            key="subjects",
+            label="과목별 세특",
+            passed=len(subject_analyses) >= 5 and all(item.score >= 0 for item in subject_analyses),
+            message=f"과목/영역 {len(subject_analyses)}개를 점수와 해석으로 분석했습니다.",
+        ),
+        ConsultantReportQualityGate(
+            key="network",
+            label="연결망 분석",
+            passed=len(record_network.nodes) >= 8 and len(record_network.edges) >= 10,
+            message=f"노드 {len(record_network.nodes)}개, 연결 {len(record_network.edges)}개를 추출했습니다.",
+        ),
+        ConsultantReportQualityGate(
+            key="repetition",
+            label="반복 문장",
+            passed=not _has_repeated_sentences(sections, research_topics),
+            message="동일 문장이 3회 이상 반복되지 않도록 카드형 문장을 분산했습니다.",
+        ),
+    ]
 
 
 def _build_score_blocks(*, result: DiagnosisResultPayload) -> list[ConsultantDiagnosisScoreBlock]:
@@ -718,6 +1478,15 @@ def _collect_evidence_bank(documents: list[Any]) -> list[dict[str, Any]]:
             seen.add(dedupe_key)
             collected.append(item)
     return collected
+
+
+def _unique_evidence_pages(evidence_bank: list[dict[str, Any]]) -> set[int]:
+    pages: set[int] = set()
+    for item in evidence_bank:
+        page = _coerce_positive_int(item.get("page"))
+        if page is not None:
+            pages.add(page)
+    return pages
 
 
 def _bounded_score(value: float) -> int:
@@ -855,11 +1624,7 @@ def _build_score_groups(
         for item in evidence_bank
         if str(item.get("anchor_id") or "").strip()
     }
-    unique_anchor_pages = {
-        int(item.get("page") or 0)
-        for item in evidence_bank
-        if int(item.get("page") or 0) > 0
-    }
+    unique_anchor_pages = _unique_evidence_pages(evidence_bank)
     unique_citation_pages = {int(item.page_number or 0) for item in evidence_items if int(item.page_number or 0) > 0}
     unique_quotes = {
         str(item.get("quote") or "").strip()
@@ -1338,6 +2103,9 @@ def _collect_student_record_structure(documents: list[Any]) -> dict[str, Any]:
     continuity_signals: list[str] = []
     process_signals: list[str] = []
     uncertain_items: list[str] = []
+    priority_interventions: list[str] = []
+    diagnostic_questions: list[str] = []
+    consulting_summaries: list[str] = []
     coverage_check: dict[str, Any] = {
         "required_sections": [],
         "missing_required_sections": [],
@@ -1356,6 +2124,11 @@ def _collect_student_record_structure(documents: list[Any]) -> dict[str, Any]:
             alignment_signals.extend(_extract_canonical_values(canonical.get("major_alignment_hints"), "hint"))
             weak_sections.extend(_extract_canonical_values(canonical.get("weak_or_missing_sections"), "section"))
             uncertain_items.extend(_extract_canonical_values(canonical.get("uncertainties"), "message"))
+            priority_interventions.extend([str(item).strip() for item in canonical.get("priority_interventions", []) if str(item).strip()] if isinstance(canonical.get("priority_interventions"), list) else [])
+            diagnostic_questions.extend([str(item).strip() for item in canonical.get("diagnostic_questions", []) if str(item).strip()] if isinstance(canonical.get("diagnostic_questions"), list) else [])
+            consulting_summary = str(canonical.get("consulting_summary") or "").strip()
+            if consulting_summary:
+                consulting_summaries.append(consulting_summary)
             activity_clusters.extend(_extract_canonical_values(canonical.get("extracurricular"), "label"))
             process_signals.extend(_extract_canonical_values(canonical.get("subject_special_notes"), "label"))
             career_signals = _extract_canonical_values(canonical.get("career_signals"), "label")
@@ -1426,6 +2199,11 @@ def _collect_student_record_structure(documents: list[Any]) -> dict[str, Any]:
             continuity_signals.extend([str(item).strip() for item in structure.get("continuity_signals", []) if str(item).strip()])
             process_signals.extend([str(item).strip() for item in structure.get("process_reflection_signals", []) if str(item).strip()])
             uncertain_items.extend([str(item).strip() for item in structure.get("uncertain_items", []) if str(item).strip()])
+            priority_interventions.extend([str(item).strip() for item in structure.get("priority_interventions", []) if str(item).strip()])
+            diagnostic_questions.extend([str(item).strip() for item in structure.get("diagnostic_questions", []) if str(item).strip()])
+            consulting_summary = str(structure.get("consulting_summary") or "").strip()
+            if consulting_summary:
+                consulting_summaries.append(consulting_summary)
             coverage_candidate = structure.get("coverage_check")
             if isinstance(coverage_candidate, dict):
                 coverage_check["coverage_score"] = max(
@@ -1484,6 +2262,9 @@ def _collect_student_record_structure(documents: list[Any]) -> dict[str, Any]:
         "continuity_signals": _dedupe(continuity_signals, limit=10),
         "process_reflection_signals": _dedupe(process_signals, limit=10),
         "uncertain_items": _dedupe(uncertain_items, limit=12),
+        "priority_interventions": _dedupe(priority_interventions, limit=10),
+        "diagnostic_questions": _dedupe(diagnostic_questions, limit=10),
+        "consulting_summaries": _dedupe(consulting_summaries, limit=4),
         "coverage_check": coverage_check,
         "contradiction_check": contradiction_check,
     }
@@ -1544,6 +2325,18 @@ def _canonical_to_structure_candidate(canonical: dict[str, Any]) -> dict[str, An
         "continuity_signals": _extract_canonical_values(canonical.get("career_signals"), "label"),
         "process_reflection_signals": _extract_canonical_values(canonical.get("subject_special_notes"), "label"),
         "uncertain_items": _extract_canonical_values(canonical.get("uncertainties"), "message"),
+        "evidence_bank": canonical.get("evidence_bank") if isinstance(canonical.get("evidence_bank"), list) else [],
+        "section_priority_map": canonical.get("section_priority_map")
+        if isinstance(canonical.get("section_priority_map"), list)
+        else [],
+        "priority_interventions": canonical.get("priority_interventions")
+        if isinstance(canonical.get("priority_interventions"), list)
+        else [],
+        "diagnostic_questions": canonical.get("diagnostic_questions")
+        if isinstance(canonical.get("diagnostic_questions"), list)
+        else [],
+        "record_stage": canonical.get("record_stage") or "unknown",
+        "consulting_summary": canonical.get("consulting_summary") or "",
         "coverage_check": {
             "required_sections": list((canonical.get("section_coverage") or {}).get("section_counts", {}).keys())
             if isinstance((canonical.get("section_coverage") or {}).get("section_counts"), dict)
@@ -1739,11 +2532,7 @@ def _build_diagnosis_intelligence(
         for item in evidence_bank
         if str(item.get("anchor_id") or "").strip()
     }
-    unique_pages = {
-        int(item.get("page") or 0)
-        for item in evidence_bank
-        if int(item.get("page") or 0) > 0
-    }
+    unique_pages = _unique_evidence_pages(evidence_bank)
     citation_pages = {int(item.page_number or 0) for item in evidence_items if int(item.page_number or 0) > 0}
     unique_quotes = {
         str(item.get("quote") or "").strip()
@@ -1917,13 +2706,16 @@ def _build_section_semantics(*, report_mode: DiagnosisReportMode) -> dict[str, s
     premium = {
         "cover_title_summary": "meta",
         "executive_verdict": "action",
+        "admissions_positioning_snapshot": "inferred",
         "record_baseline_dashboard": "verified",
         "student_evaluation_matrix": "verified",
+        "consulting_priority_map": "action",
         "system_quality_reliability": "verified",
         "strength_analysis": "verified",
         "weakness_risk_analysis": "uncertainty",
         "section_by_section_diagnosis": "verified",
         "major_fit_interpretation": "inferred",
+        "student_record_upgrade_blueprint": "action",
         "recommended_report_directions": "action",
         "avoid_repetition_topics": "uncertainty",
         "evidence_cards": "verified",
@@ -1935,6 +2727,7 @@ def _build_section_semantics(*, report_mode: DiagnosisReportMode) -> dict[str, s
     compact = {
         "executive_verdict": "action",
         "record_baseline_dashboard": "verified",
+        "consulting_priority_brief": "action",
         "strength_analysis": "verified",
         "risk_analysis": "uncertainty",
         "recommended_report_direction": "action",
@@ -1942,7 +2735,7 @@ def _build_section_semantics(*, report_mode: DiagnosisReportMode) -> dict[str, s
         "uncertainty_verification_note": "uncertainty",
         "citation_appendix": "verified",
     }
-    return premium if report_mode == "premium_10p" else compact
+    return premium if _canonical_report_mode(report_mode) in {"premium", "consultant"} else compact
 
 
 async def _generate_narratives(
@@ -1954,13 +2747,9 @@ async def _generate_narratives(
 ) -> _NarrativeGenerationResult:
     fallback_summary = _build_fallback_executive_summary(result=result)
     fallback_memo = _build_fallback_final_memo(result=result)
-    settings = get_settings()
-    requested_provider = (settings.llm_provider or "gemini").strip().lower()
-    requested_model = (
-        (settings.ollama_render_model or settings.ollama_model or "gemma4").strip()
-        if requested_provider == "ollama"
-        else "gemini-1.5-pro"
-    )
+    resolution = resolve_llm_runtime(profile="render", concern="render")
+    requested_provider = resolution.attempted_provider
+    requested_model = resolution.attempted_model
     fallback_execution = {
         "requested_llm_provider": requested_provider,
         "requested_llm_model": requested_model,
@@ -2030,27 +2819,36 @@ async def _generate_narratives(
         )
 
     try:
-        llm = get_llm_client(profile="render")
+        llm = resolution.client or get_llm_client(profile="render", concern="render")
         if heartbeat_callback:
             await heartbeat_callback()
         response = await llm.generate_json(
             prompt=prompt,
             response_model=_ConsultantNarrativePayload,
             system_instruction=system_instruction,
-            temperature=get_llm_temperature(profile="render"),
+            temperature=get_llm_temperature(profile="render", concern="render", resolution=resolution),
         )
         if heartbeat_callback:
             await heartbeat_callback()
-        actual_provider = "ollama" if isinstance(llm, OllamaClient) else "gemini" if isinstance(llm, GeminiClient) else requested_provider
-        actual_model = (
-            llm.model
-            if isinstance(llm, OllamaClient)
-            else llm.model_name
-            if isinstance(llm, GeminiClient)
-            else requested_model
+        invocation = get_last_llm_invocation(llm)
+        actual_provider = (
+            str(invocation.get("last_provider_used") or "").strip()
+            or str(invocation.get("provider") or "").strip()
+            or resolution.actual_provider
+            or requested_provider
         )
-        provider_fallback_used = actual_provider != requested_provider or actual_model != requested_model
-        fallback_reason = "provider_auto_fallback" if provider_fallback_used else None
+        actual_model = (
+            str(invocation.get("last_model_used") or "").strip()
+            or str(invocation.get("model") or "").strip()
+            or resolution.actual_model
+            or requested_model
+        )
+        provider_fallback_used = bool(invocation.get("fallback_used") or resolution.fallback_used)
+        fallback_reason = (
+            str(invocation.get("fallback_reason") or "").strip()
+            or resolution.fallback_reason
+            or ("provider_auto_fallback" if provider_fallback_used else None)
+        )
         return _NarrativeGenerationResult(
             narrative=_ConsultantNarrativePayload(
                 executive_summary=response.executive_summary.strip() or fallback_summary,
@@ -2201,7 +2999,7 @@ def _enforce_section_architecture(
     *,
     report_mode: DiagnosisReportMode,
 ) -> list[ConsultantDiagnosisSection]:
-    expected = _PREMIUM_SECTION_ORDER if report_mode == "premium_10p" else _COMPACT_SECTION_ORDER
+    expected = _PREMIUM_SECTION_ORDER if _canonical_report_mode(report_mode) in {"premium", "consultant"} else _COMPACT_SECTION_ORDER
     section_map = {section.id: section for section in sections}
     ordered: list[ConsultantDiagnosisSection] = []
     for section_id in expected:
@@ -2224,11 +3022,15 @@ def _humanize_section_title(section_id: str) -> str:
     title_map = {
         "cover_title_summary": "표지 / 요약",
         "executive_verdict": "핵심 판정",
+        "admissions_positioning_snapshot": "입시 포지셔닝 스냅샷",
         "record_baseline_dashboard": "학업·기록 베이스라인 대시보드",
         "student_evaluation_matrix": "학생 평가 점수 매트릭스",
+        "consulting_priority_map": "컨설팅 우선순위 맵",
+        "consulting_priority_brief": "컨설팅 우선순위 브리프",
         "system_quality_reliability": "시스템 품질·신뢰도",
         "section_by_section_diagnosis": "섹션별 학생부 진단",
         "major_fit_interpretation": "전공 적합성 해석",
+        "student_record_upgrade_blueprint": "학생부 보완 설계서",
         "recommended_report_directions": "추천 탐구보고서 방향",
         "recommended_report_direction": "추천 탐구보고서 방향",
         "avoid_repetition_topics": "피해야 할 반복형 주제",
@@ -2331,6 +3133,17 @@ def _build_sections(
         f"{block.label}: {block.score}점 ({block.band}) | {block.uncertainty_note or block.interpretation}"
         for block in (system_score_group.blocks if system_score_group else [])
     ]
+    priority_blocks = sorted(
+        list(student_score_group.blocks if student_score_group else []),
+        key=lambda block: int(block.score),
+    )[:5]
+    priority_map_lines = [
+        (
+            f"{idx}. {block.label} {block.score}점({block.band}) - "
+            f"{block.next_best_action or block.interpretation}"
+        )
+        for idx, block in enumerate(priority_blocks, start=1)
+    ]
 
     evidence_cards = evidence_bank[:8]
     evidence_card_lines: list[str] = []
@@ -2422,9 +3235,25 @@ def _build_sections(
         target_context,
         f"분석 신뢰도(진단 게이트): {int(round(float(coverage_check.get('coverage_score', 0.0)) * 100))}%",
         f"고유 앵커 수: {len({str(item.get('anchor_id') or '').strip() for item in evidence_bank if str(item.get('anchor_id') or '').strip()})}개",
-        f"고유 페이지 수: {len({int(item.get('page') or 0) for item in evidence_bank if int(item.get('page') or 0) > 0})}개",
+        f"고유 페이지 수: {len(_unique_evidence_pages(evidence_bank))}개",
         f"필수 섹션 누락: {', '.join(missing_required_sections[:5]) or '없음'}",
     ]
+    positioning_lines = [
+        narratives.current_record_status_brief or one_line_verdict,
+        f"지원 포지션: {result.recommended_focus or '근거 밀도 보강'}을 먼저 안정화해야 합니다.",
+        f"강점 후보: {(result.strengths or ['검증 가능한 강점 신호가 제한적입니다.'])[0]}",
+        f"위험 후보: {(result.gaps or ['근거 부족 구간 추가 확인이 필요합니다.'])[0]}",
+        "컨설팅 판정은 합격 예측이 아니라, 현재 기록으로 방어 가능한 주장과 보완해야 할 주장을 분리한 것입니다.",
+    ]
+    upgrade_blueprint_lines = _dedupe(
+        [
+            *(f"{section}: 우선 근거 1개와 과정 설명 1개를 보강" for section in weak_sections[:4]),
+            *(f"보완 차원: {item}" for item in (diagnosis_intelligence.get("missing_dimensions") or [])[:4]),
+            *(priority_map_lines[:3]),
+            "새 활동을 만들기보다 기존 기록의 문제의식·방법·한계·개선을 재정렬하세요.",
+        ],
+        limit=10,
+    )
 
     strength_lines = [
         *(result.strengths[:4] or ["현재 기록에서 확인되는 강점 진술이 제한적입니다."]),
@@ -2499,6 +3328,14 @@ def _build_sections(
             additional_verification_needed=uncertainty_notes[:2] if reanalysis_required else [],
         ),
         ConsultantDiagnosisSection(
+            id="admissions_positioning_snapshot",
+            title="입시 포지셔닝 스냅샷",
+            subtitle="현재 학생부가 보여주는 지원 포지션",
+            body_markdown=_bulleted(positioning_lines),
+            evidence_items=pick_evidence(3),
+            additional_verification_needed=uncertainty_notes[:2],
+        ),
+        ConsultantDiagnosisSection(
             id="record_baseline_dashboard",
             title="기록 베이스라인 대시보드",
             subtitle="근거 분산·커버리지·누락 섹션 현황",
@@ -2515,6 +3352,21 @@ def _build_sections(
             additional_verification_needed=[
                 block.missing_evidence
                 for block in (student_score_group.blocks if student_score_group else [])
+                if block.missing_evidence
+            ][:3],
+        ),
+        ConsultantDiagnosisSection(
+            id="consulting_priority_map",
+            title="컨설팅 우선순위 맵",
+            subtitle="점수 하위 축부터 실제 보완 행동으로 연결",
+            body_markdown=_bulleted(
+                priority_map_lines
+                or ["우선순위 점수 데이터가 제한적입니다. 근거 밀도와 전공 연결 문장을 먼저 점검하세요."]
+            ),
+            evidence_items=pick_evidence(2),
+            additional_verification_needed=[
+                block.missing_evidence
+                for block in priority_blocks
                 if block.missing_evidence
             ][:3],
         ),
@@ -2564,6 +3416,17 @@ def _build_sections(
                 "전공 적합성은 확정 판정이 아닌 현재 기록 기반 해석입니다.",
                 *([_clean_line(item, max_len=90) for item in continuity_signals[:2]]),
             ][:3],
+        ),
+        ConsultantDiagnosisSection(
+            id="student_record_upgrade_blueprint",
+            title="학생부 보완 설계서",
+            subtitle="기록을 고급 컨설팅 산출물로 바꾸는 실행 설계",
+            body_markdown=_bulleted(
+                upgrade_blueprint_lines
+                or ["보완 설계 데이터가 제한적입니다. 기존 기록의 근거-과정-한계 문장을 먼저 정리하세요."]
+            ),
+            evidence_items=pick_evidence(3),
+            additional_verification_needed=missing_required_sections[:3],
         ),
         ConsultantDiagnosisSection(
             id="recommended_report_directions",
@@ -2654,6 +3517,20 @@ def _build_sections(
                 ]
             ),
             evidence_items=pick_evidence(2),
+        ),
+        ConsultantDiagnosisSection(
+            id="consulting_priority_brief",
+            title="컨설팅 우선순위 브리프",
+            subtitle="바로 실행할 보완 순서",
+            body_markdown=_bulleted(
+                [
+                    *priority_map_lines[:5],
+                    *(upgrade_blueprint_lines[:3]),
+                ]
+                or ["근거 밀도와 전공 연결 문장을 우선 점검하세요."]
+            ),
+            evidence_items=pick_evidence(2),
+            additional_verification_needed=uncertainty_notes[:2] if reanalysis_required else [],
         ),
         ConsultantDiagnosisSection(
             id="strength_analysis",

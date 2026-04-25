@@ -8,10 +8,10 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from '
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { RuntimeProvider } from './contexts/RuntimeContext';
-import { Layout } from './components/Layout';
 import { GlobalErrorBoundary } from './components/GlobalErrorBoundary';
 
 const PublicLayout = lazy(() => import('./components/PublicLayout').then(m => ({ default: m.PublicLayout })));
+const Layout = lazy(() => import('./components/Layout').then(m => ({ default: m.Layout })));
 const Auth = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
 const AuthCallback = lazy(() => import('./pages/AuthCallback').then(m => ({ default: m.AuthCallback })));
 const Landing = lazy(() => import('./pages/Landing').then(m => ({ default: m.Landing })));

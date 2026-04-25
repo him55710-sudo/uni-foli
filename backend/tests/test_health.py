@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from unifoli_api.api.routes import health as health_route
-from unifoli_api.core.config import get_settings
+from unifoli_api.core.config import Settings, get_settings
 from unifoli_api.core.runtime_diagnostics import build_health_payload, snapshot_settings_from_env
 from unifoli_api.main import app, create_app
 
@@ -272,6 +272,48 @@ def test_health_payload_reads_firebase_bootstrap_flags_from_loaded_settings(tmp_
 
     assert payload["auth"]["firebase_project_configured"] is True
     assert payload["auth"]["firebase_service_account_configured"] is True
+
+
+def test_health_payload_exposes_concern_specific_llm_resolution() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="production",
+        app_debug=False,
+        auth_allow_local_dev_bypass=False,
+        llm_provider="gemini",
+        guided_chat_llm_provider="ollama",
+        render_llm_provider="ollama",
+        gemini_api_key=None,
+        gemini_model="gemini-health",
+        ollama_base_url="https://ollama.example.com/v1",
+        ollama_model="gemma4-main",
+        ollama_fast_model="gemma4-fast",
+        ollama_render_model="gemma4-render",
+        pdf_analysis_llm_provider="ollama",
+        pdf_analysis_ollama_base_url="https://pdf-ollama.example.com/v1",
+        pdf_analysis_ollama_model="gemma4-pdf",
+    )
+    app_state = SimpleNamespace(
+        runtime_boot_stage="ready",
+        runtime_boot_ready=True,
+        runtime_boot_error_message=None,
+        runtime_boot_error_code=None,
+    )
+
+    payload = build_health_payload(settings, app_state=app_state)
+    concerns = payload["llm"]["concerns"]
+
+    assert set(concerns) >= {"default", "guided_chat", "diagnosis", "render", "pdf_analysis"}
+    assert concerns["guided_chat"]["requested_provider"] == "ollama"
+    assert concerns["guided_chat"]["requested_model"] == "gemma4-fast"
+    assert concerns["guided_chat"]["actual_provider"] == "ollama"
+    assert concerns["guided_chat"]["fallback_used"] is False
+    assert concerns["guided_chat"]["client_available"] is True
+    assert concerns["render"]["requested_provider"] == "ollama"
+    assert concerns["render"]["requested_model"] == "gemma4-render"
+    assert concerns["pdf_analysis"]["requested_provider"] == "ollama"
+    assert concerns["pdf_analysis"]["requested_model"] == "gemma4-pdf"
+    assert payload["llm"]["gemini_api_key_configured"] is False
 
 
 def test_snapshot_settings_from_env_accepts_google_api_key_alias(monkeypatch) -> None:

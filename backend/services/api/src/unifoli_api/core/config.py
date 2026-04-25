@@ -153,6 +153,7 @@ class Settings(BaseSettings):
 
     # LLM Settings
     llm_provider: str = Field(default="gemini", description="LLM provider: 'gemini' or 'ollama'")
+    llm_provider_fallback_enabled: bool = True
     guided_chat_llm_provider: str | None = None
     diagnosis_llm_provider: str | None = None
     render_llm_provider: str | None = None
@@ -165,7 +166,7 @@ class Settings(BaseSettings):
             "GEMINI_KEY",
         ),
     )
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-2.5-flash-lite"
     ollama_base_url: str = "http://localhost:11434/v1"
     ollama_model: str = "gemma4"
     ollama_timeout_seconds: float = 90.0

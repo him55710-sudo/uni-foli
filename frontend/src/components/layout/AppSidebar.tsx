@@ -78,29 +78,11 @@ export function AppSidebar({
   };
 
   const sectionToneClass = (sectionKey: string) => {
-    switch (sectionKey) {
-      case 'setup':
-        return 'text-sky-700';
-      case 'analyze':
-        return 'text-violet-700';
-      case 'execute':
-        return 'text-emerald-700';
-      default:
-        return 'text-amber-700';
-    }
+    return 'text-indigo-700';
   };
 
   const sectionActiveItemClass = (sectionKey: string) => {
-    switch (sectionKey) {
-      case 'setup':
-        return 'bg-gradient-to-br from-sky-500 to-cyan-500 text-white shadow-lg shadow-cyan-200/60';
-      case 'analyze':
-        return 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-200/60';
-      case 'execute':
-        return 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200/60';
-      default:
-        return 'bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-200/60';
-    }
+    return 'bg-indigo-600 text-white shadow-lg shadow-indigo-200/60';
   };
 
   return (

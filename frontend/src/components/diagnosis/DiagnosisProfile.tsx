@@ -35,7 +35,7 @@ export function DiagnosisProfile() {
       className="mx-auto max-w-2xl space-y-8"
     >
       <div className="flex gap-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#004aad]/5 text-[#004aad]">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
           <User size={32} />
         </div>
         <div>
@@ -57,7 +57,7 @@ export function DiagnosisProfile() {
             <select
               value={profile.grade}
               onChange={(e) => setProfile({ grade: e.target.value })}
-              className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 font-bold outline-none focus:border-[#004aad]"
+              className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 font-bold outline-none focus:border-indigo-600 focus:bg-white"
             >
               <option value="">{TEXT.choose}</option>
               {[TEXT.grade1, TEXT.grade2, TEXT.grade3, TEXT.nStudent].map((o) => (
@@ -70,7 +70,7 @@ export function DiagnosisProfile() {
             <select
               value={profile.track}
               onChange={(e) => setProfile({ track: e.target.value })}
-              className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 font-bold outline-none focus:border-[#004aad]"
+              className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 font-bold outline-none focus:border-indigo-600 focus:bg-white"
             >
               <option value="">{TEXT.choose}</option>
               {[TEXT.humanities, TEXT.natural, TEXT.arts, TEXT.other].map((o) => (
@@ -87,7 +87,7 @@ export function DiagnosisProfile() {
             value={profile.career}
             onChange={(e) => setProfile({ career: e.target.value })}
             placeholder={TEXT.careerPlaceholder}
-            className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 font-bold outline-none focus:border-[#004aad]"
+            className="w-full rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 font-bold outline-none focus:border-indigo-600 focus:bg-white"
           />
         </div>
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import fitz
 import pytest
 from pypdf import PdfWriter
 
@@ -134,6 +135,29 @@ def test_parse_pdf_document_rejects_encrypted_pdf(tmp_path: Path) -> None:
         )
 
     assert excinfo.value.code == "pdf_encrypted"
+
+
+def test_parse_pdf_document_keeps_layout_blocks_without_extra_pipeline(tmp_path: Path) -> None:
+    path = tmp_path / "layout.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=400, height=400)
+    page.insert_text((60, 80), "학생명 홍길동")
+    page.insert_text((60, 120), "세부능력 및 특기사항 탐구 활동")
+    doc.save(path)
+    doc.close()
+
+    parsed = parse_pdf_document(
+        path,
+        chunk_size_chars=600,
+        overlap_chars=80,
+        neis_ensemble_enabled=False,
+    )
+
+    raw_page = parsed.raw_artifact["pages"][0]
+    assert raw_page["blocks"]
+    assert raw_page["layout_profile"]["extraction_strategy"] == "blocks"
+    assert parsed.analysis_artifact["layout_mode"] == "pymupdf_text_blocks"
+    assert parsed.masked_artifact["pages"][0]["layout_profile"]["text_block_count"] >= 1
 
 
 def test_inspect_pdf_route_marks_image_heavy_scans_for_ocr(monkeypatch: pytest.MonkeyPatch) -> None:

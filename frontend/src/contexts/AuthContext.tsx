@@ -31,6 +31,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const GUEST_SESSION_KEY = 'uni_foli_guest_session';
 type SocialProvider = 'google' | 'kakao' | 'naver';
+const allowLocalBackendBypass = Boolean(import.meta.env.DEV);
 
 const POPUP_FALLBACK_ERROR_CODES = new Set([
   'auth/popup-blocked',
@@ -83,6 +84,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void useAuthStore.getState().fetchProfile().finally(() => setLoading(false));
         return;
       }
+      if (allowLocalBackendBypass) {
+        void useAuthStore.getState().fetchProfile().finally(() => setLoading(false));
+        return;
+      }
       useAuthStore.getState().setUser(null);
       setLoading(false);
       return;
@@ -106,6 +111,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setGuestSessionActive(false);
         localStorage.removeItem(GUEST_SESSION_KEY);
         if (hasAppAccessToken()) {
+          await useAuthStore.getState().fetchProfile();
+          useOnboardingStore.getState().syncWithUser(useAuthStore.getState().user);
+        } else if (allowLocalBackendBypass) {
           await useAuthStore.getState().fetchProfile();
           useOnboardingStore.getState().syncWithUser(useAuthStore.getState().user);
         } else {
@@ -248,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
       }}
     >
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }

@@ -73,7 +73,7 @@ class DiagnosisRunResponse(BaseModel):
     report_error_message: str | None = None
 
 
-DiagnosisReportMode = Literal["compact", "premium_10p"]
+DiagnosisReportMode = Literal["basic", "premium", "consultant", "compact", "premium_10p"]
 DiagnosisReportStatus = Literal["READY", "FAILED"]
 
 
@@ -113,6 +113,106 @@ class ConsultantDiagnosisRoadmapItem(BaseModel):
     caution_notes: list[str] = Field(default_factory=list)
 
 
+class ConsultantSubjectMetricScores(BaseModel):
+    academic_concept_density: int = Field(ge=0, le=100)
+    inquiry_process: int = Field(ge=0, le=100)
+    student_agency: int = Field(ge=0, le=100)
+    major_connection: int = Field(ge=0, le=100)
+    expansion_potential: int = Field(ge=0, le=100)
+    differentiation: int = Field(ge=0, le=100)
+    interview_defense: int = Field(ge=0, le=100)
+
+
+class ConsultantSubjectSpecialtyAnalysis(BaseModel):
+    subject: str
+    core_record_summary: str
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    score: int = Field(ge=0, le=100)
+    metric_scores: ConsultantSubjectMetricScores
+    level: Literal["매우 강함", "강함", "보통", "약함", "위험"]
+    admissions_meaning: str
+    major_connection: str
+    sentence_to_improve: str
+    recommended_follow_up: str
+    interview_question: str
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class ConsultantRecordNetworkNode(BaseModel):
+    id: str
+    label: str
+    category: str
+    evidence_summary: str
+    weight: int = Field(ge=1, le=5)
+
+
+class ConsultantRecordNetworkEdge(BaseModel):
+    source: str
+    target: str
+    label: str
+    strength: Literal["Strong", "Moderate", "Weak", "Artificial"]
+    rationale: str
+
+
+class ConsultantRecordNetwork(BaseModel):
+    central_theme: str
+    evaluation: dict[str, str] = Field(default_factory=dict)
+    nodes: list[ConsultantRecordNetworkNode] = Field(default_factory=list)
+    edges: list[ConsultantRecordNetworkEdge] = Field(default_factory=list)
+    matrix: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ConsultantResearchTopicRecommendation(BaseModel):
+    title: str
+    classification: Literal["강력 추천", "확장 가능 주제"]
+    connected_evidence: str
+    inquiry_question: str
+    subject_concepts: list[str] = Field(default_factory=list)
+    method: str
+    expected_output: str
+    record_sentence: str
+    interview_use: str
+    difficulty: Literal["상", "중", "하"]
+    priority: int = Field(ge=1, le=12)
+
+
+class ConsultantInterviewQuestionFrame(BaseModel):
+    category: Literal["전공 적합성", "탐구 과정 검증", "약점 방어"]
+    question: str
+    intent: str
+    answer_frame: str
+    connected_evidence: str
+    good_direction: str
+    avoid: str
+
+
+class ConsultantBeforeAfterRewrite(BaseModel):
+    original_summary: str
+    problem: str
+    improved_sentence: str
+    why_better: str
+    exaggeration_risk: str
+
+
+class ConsultantGradeStoryAnalysis(BaseModel):
+    grade_label: str
+    stage_role: str
+    core_activities: list[str] = Field(default_factory=list)
+    visible_competencies: list[str] = Field(default_factory=list)
+    weak_connections: list[str] = Field(default_factory=list)
+    next_flow: str
+    section_linkage: str
+    guidance_tone: str
+
+
+class ConsultantReportQualityGate(BaseModel):
+    key: str
+    label: str
+    passed: bool
+    message: str
+
+
 class ConsultantDiagnosisSection(BaseModel):
     id: str
     title: str
@@ -132,10 +232,20 @@ class ConsultantDiagnosisReport(BaseModel):
     subtitle: str
     student_target_context: str
     generated_at: datetime
+    report_mode_label: str | None = None
+    expected_page_range: str | None = None
+    actual_page_count: int | None = None
     score_blocks: list[ConsultantDiagnosisScoreBlock] = Field(default_factory=list)
     score_groups: list[ConsultantDiagnosisScoreGroup] = Field(default_factory=list)
     sections: list[ConsultantDiagnosisSection] = Field(default_factory=list)
     roadmap: list[ConsultantDiagnosisRoadmapItem] = Field(default_factory=list)
+    subject_specialty_analyses: list[ConsultantSubjectSpecialtyAnalysis] = Field(default_factory=list)
+    record_network: ConsultantRecordNetwork | None = None
+    research_topics: list[ConsultantResearchTopicRecommendation] = Field(default_factory=list)
+    interview_questions: list[ConsultantInterviewQuestionFrame] = Field(default_factory=list)
+    before_after_examples: list[ConsultantBeforeAfterRewrite] = Field(default_factory=list)
+    grade_story_analyses: list[ConsultantGradeStoryAnalysis] = Field(default_factory=list)
+    quality_gates: list[ConsultantReportQualityGate] = Field(default_factory=list)
     citations: list[ConsultantDiagnosisEvidenceItem] = Field(default_factory=list)
     uncertainty_notes: list[str] = Field(default_factory=list)
     final_consultant_memo: str
@@ -145,7 +255,7 @@ class ConsultantDiagnosisReport(BaseModel):
 
 
 class DiagnosisReportCreateRequest(BaseModel):
-    report_mode: DiagnosisReportMode = "premium_10p"
+    report_mode: DiagnosisReportMode = "premium"
     template_id: str | None = Field(default=None, min_length=1, max_length=80)
     include_appendix: bool = True
     include_citations: bool = True

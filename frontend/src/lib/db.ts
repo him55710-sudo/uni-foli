@@ -1,4 +1,4 @@
-import { db, auth, isFirebaseConfigured } from './firebase';
+import { app, auth, firestoreDatabaseId, isFirebaseConfigured } from './firebase';
 import { 
   collection, 
   doc, 
@@ -13,6 +13,7 @@ import {
   onSnapshot,
   Timestamp
 } from 'firebase/firestore';
+import { getFirestore, type Firestore } from 'firebase/firestore';
 
 export enum OperationType {
   CREATE = 'create',
@@ -22,6 +23,13 @@ export enum OperationType {
   GET = 'get',
   WRITE = 'write',
 }
+
+const db: Firestore | null =
+  app && isFirebaseConfigured
+    ? firestoreDatabaseId
+      ? getFirestore(app, firestoreDatabaseId)
+      : getFirestore(app)
+    : null;
 
 interface FirestoreErrorInfo {
   error: string;

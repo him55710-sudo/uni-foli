@@ -58,7 +58,7 @@ export function SectionCard({
           aria-label={isCollapsed ? '섹션 펼치기' : '섹션 접기'}
           aria-expanded={!isCollapsed}
           onClick={handleToggleCollapsed}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/70 bg-white/82 text-[#476192] shadow-[0_10px_24px_rgba(42,64,132,0.08)] transition-colors hover:bg-[#f5f8ff] hover:text-[#23458f]"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200"
         >
           {isCollapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
         </button>
@@ -67,21 +67,21 @@ export function SectionCard({
   );
 
   return (
-    <Card className={cn('flex flex-col rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(245,248,255,0.88)_100%)] shadow-[0_18px_40px_rgba(42,64,132,0.1)] backdrop-blur-xl', className)} {...props}>
+    <Card className={cn('flex flex-col border-none bg-white p-6 sm:p-10 shadow-sm rounded-[2rem]', className)} {...props}>
       {(title || description || eyebrow || actions || collapsible) ? (
-        <header className="mb-5 flex shrink-0 flex-col gap-4 sm:mb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+        <header className="mb-8 flex shrink-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2.5">
-              {eyebrow ? <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#6278aa]">{eyebrow}</p> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {eyebrow ? <p className="text-xs font-bold uppercase tracking-wider text-indigo-500">{eyebrow}</p> : null}
               {badge ? (
-                <span className="inline-flex items-center rounded-full bg-[linear-gradient(135deg,#ecf1ff_0%,#eefaff_100%)] px-3 py-1 text-[10px] font-black text-[#2350b8] ring-1 ring-inset ring-[#2350b8]/12">
+                <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-600">
                   {badge}
                 </span>
               ) : null}
             </div>
-            {title ? <h2 className="mt-1.5 text-xl font-black tracking-tight text-slate-900 sm:text-[1.7rem]">{title}</h2> : null}
+            {title ? <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{title}</h2> : null}
             {(description || subtitle) ? (
-              <p className="mt-2.5 max-w-3xl text-sm font-medium leading-6 text-slate-500 sm:text-base sm:leading-7">
+              <p className="mt-3 max-w-3xl text-sm font-medium leading-relaxed text-slate-500 sm:text-base">
                 {description || subtitle}
               </p>
             ) : null}
@@ -91,7 +91,7 @@ export function SectionCard({
           ) : null}
         </header>
       ) : null}
-      {!isCollapsed ? <div className={cn('min-h-0 flex-1 space-y-6', bodyClassName)}>{children}</div> : null}
+      {!isCollapsed ? <div className={cn('min-h-0 flex-1', bodyClassName)}>{children}</div> : null}
     </Card>
   );
 }

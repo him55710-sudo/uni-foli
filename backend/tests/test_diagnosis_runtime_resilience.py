@@ -7,12 +7,38 @@ import pytest
 
 from unifoli_api.services.diagnosis_runtime_service import (
     SEMANTIC_EXTRACTION_TIMEOUT_SECONDS,
+    _apply_llm_invocation_metadata,
     run_diagnosis_run,
 )
 
 
 def test_semantic_timeout_budget_is_expanded() -> None:
     assert SEMANTIC_EXTRACTION_TIMEOUT_SECONDS >= 60.0
+
+
+def test_diagnosis_invocation_metadata_reads_runtime_tracking_keys() -> None:
+    strategy = {
+        "actual_llm_provider": "gemini",
+        "actual_llm_model": "gemini-requested",
+        "fallback_used": False,
+        "fallback_reason": None,
+    }
+
+    model = _apply_llm_invocation_metadata(
+        strategy,
+        {
+            "last_provider_used": "ollama",
+            "last_model_used": "gemma4-fallback",
+            "fallback_used": True,
+            "fallback_reason": "primary_failed:TimeoutError",
+        },
+    )
+
+    assert model == "gemma4-fallback"
+    assert strategy["actual_llm_provider"] == "ollama"
+    assert strategy["actual_llm_model"] == "gemma4-fallback"
+    assert strategy["fallback_used"] is True
+    assert strategy["fallback_reason"] == "primary_failed:TimeoutError"
 
 
 def test_runtime_marks_run_failed_when_unhandled_error_occurs(monkeypatch) -> None:
@@ -83,7 +109,7 @@ def test_runtime_marks_run_failed_when_unhandled_error_occurs(monkeypatch) -> No
         )
 
     assert run.status == "FAILED"
-    assert run.status_message == "筌욊쑬????쎈뻬????쎈솭??됰뮸??덈뼄."
+    assert run.status_message == "진단 실행이 실패했습니다."
     assert run.error_message
     assert fake_db.commit_count >= 1
     assert fake_db.rollback_count >= 1

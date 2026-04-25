@@ -449,15 +449,15 @@ export function Record() {
         eyebrow="Record"
         title="학생부 PDF 업로드"
         description="파일 1개 업로드 후 바로 분석이 시작됩니다."
-        className="border-slate-200 bg-[linear-gradient(130deg,rgba(255,255,255,0.95)_0%,rgba(243,247,255,0.9)_52%,rgba(238,252,250,0.92)_100%)]"
+        className="border-slate-200 bg-white"
         actions={(
           <button
             type="button"
             onClick={() => navigate('/app/help/student-record-pdf')}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+            className="inline-flex h-11 items-center gap-2 rounded-2xl border border-[#e5e8eb] bg-white px-5 text-[14px] font-bold text-[#4e5968] transition hover:bg-[#f2f4f6]"
           >
             업로드 도움말
-            <ArrowRight size={14} />
+            <ArrowRight size={16} strokeWidth={2.5} />
           </button>
         )}
         evidence={(
@@ -465,7 +465,7 @@ export function Record() {
             <StatusBadge status={document?.status === 'failed' ? 'danger' : document && SUCCESS_STATUSES.has(document.status) ? 'success' : 'active'}>
               {document ? formatStatusLabel(document.status) : '업로드 대기'}
             </StatusBadge>
-            <StatusBadge status="neutral">PDF 1개 · 50MB 이하</StatusBadge>
+            <StatusBadge status="neutral">PDF Only</StatusBadge>
             {document ? (
               <StatusBadge status="neutral">
                 분석 시도 {document.parse_attempts}회
@@ -482,7 +482,7 @@ export function Record() {
           title="문서 업로드"
           description="드래그하거나 파일을 선택하세요."
           eyebrow="Upload"
-          className="border-white/70 bg-white/84 shadow-[0_24px_46px_-34px_rgba(15,23,42,0.55)] backdrop-blur-sm"
+          className="border-slate-200 bg-white shadow-sm"
         >
           <div className="space-y-6">
             <CatalogAutocompleteInput
@@ -501,7 +501,7 @@ export function Record() {
               {UPLOAD_READY_CHECKLIST.map((item, idx) => (
                 <span
                   key={idx}
-                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700"
+                  className="rounded-full border border-blue-100 bg-blue-50 px-4 py-1.5 text-[12px] font-black text-[#3182f6]"
                 >
                   {item}
                 </span>
@@ -522,12 +522,12 @@ export function Record() {
               <input {...getInputProps({ 'aria-label': '학생부 PDF 업로드' })} />
 
               <div className="flex flex-col items-center text-center">
-                <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-2xl transition-all ${
+                <div className={`mb-6 flex h-16 w-16 items-center justify-center rounded-[1.4rem] transition-all ${
                   isBusy
                     ? 'bg-slate-100 text-slate-400'
-                    : 'bg-white text-violet-600 shadow-[0_14px_28px_-18px_rgba(124,58,237,0.5)] group-hover:-translate-y-0.5'
+                    : 'bg-blue-50 text-[#3182f6] shadow-[0_14px_28px_-18px_rgba(49,130,246,0.3)] group-hover:-translate-y-0.5'
                 }`}>
-                  <FileUp size={28} />
+                  <FileUp size={28} strokeWidth={2.5} />
                 </div>
 
                 <h2 className="text-xl font-black text-slate-900 sm:text-2xl">PDF 업로드</h2>
@@ -541,10 +541,10 @@ export function Record() {
                     handleOpenFileDialog();
                   }}
                   disabled={isBusy}
-                  className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-black text-white transition hover:bg-slate-800 disabled:opacity-50"
+                  className="mt-6 inline-flex h-11 items-center gap-2 rounded-2xl bg-[#333d4b] px-6 text-[14px] font-black text-white transition hover:bg-[#191f28] disabled:opacity-50"
                 >
                   파일 선택
-                  <ArrowRight size={14} />
+                  <ArrowRight size={16} strokeWidth={2.5} />
                 </button>
               </div>
 
@@ -573,12 +573,12 @@ export function Record() {
             <div className="flex flex-wrap items-center gap-3">
               <PrimaryButton
                 size="lg"
-                className="px-6 shadow-lg shadow-indigo-200"
+                className="px-6 h-12 rounded-2xl shadow-lg shadow-blue-100 bg-[#3182f6] hover:bg-[#1b64da]"
                 onClick={() => navigate(diagnosisPath)}
                 disabled={!canContinue}
               >
                 기록 진단 시작
-                <ArrowRight size={16} />
+                <ArrowRight size={18} strokeWidth={2.5} />
               </PrimaryButton>
 
               <SecondaryButton

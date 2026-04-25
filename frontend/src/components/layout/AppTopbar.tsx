@@ -1,11 +1,11 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Menu, X } from 'lucide-react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
+import { ArrowLeft, Menu, X, LogOut, User } from 'lucide-react';
 import { UniFoliLogo } from '../UniFoliLogo';
 import { UniversityLogo } from '../UniversityLogo';
 import { Button } from '../ui';
 import { Topbar } from '../primitives';
-import { WorkflowContextHeader } from './WorkflowContextHeader';
+import { appNavSections, isNavItemActive } from './nav-config';
 import { cn } from '../../lib/cn';
 
 interface GoalItem {
@@ -16,39 +16,27 @@ interface GoalItem {
 interface AppTopbarProps {
   currentSectionLabel: string;
   summary: string;
-  isSidebarOpen: boolean;
-  onToggleSidebar: () => void;
   primaryGoal?: GoalItem | null;
   rankedGoals?: GoalItem[];
+  userName?: string;
+  userPhotoUrl?: string | null;
+  isGuestSession?: boolean;
+  onLogout?: () => void;
 }
-
-const goalToneClasses = [
-  {
-    shell: 'border-fuchsia-200/60 bg-fuchsia-50/80 text-fuchsia-700 shadow-lg shadow-fuchsia-100/50',
-    rank: 'text-fuchsia-600',
-    logo: 'bg-white',
-  },
-  {
-    shell: 'border-cyan-200/60 bg-cyan-50/80 text-cyan-700 shadow-lg shadow-cyan-100/50',
-    rank: 'text-cyan-600',
-    logo: 'bg-white',
-  },
-  {
-    shell: 'border-amber-200/60 bg-amber-50/80 text-amber-700 shadow-lg shadow-amber-100/50',
-    rank: 'text-amber-600',
-    logo: 'bg-white',
-  },
-];
 
 export function AppTopbar({
   currentSectionLabel,
   summary,
-  isSidebarOpen,
-  onToggleSidebar,
   primaryGoal,
   rankedGoals,
+  userName,
+  userPhotoUrl,
+  isGuestSession,
+  onLogout,
 }: AppTopbarProps) {
-  const visibleGoals = (rankedGoals?.length ? rankedGoals : primaryGoal ? [primaryGoal] : []).slice(0, 6);
+  const location = useLocation();
+  const visibleGoals = (rankedGoals?.length ? rankedGoals : primaryGoal ? [primaryGoal] : []).slice(0, 3);
+  const allNavItems = appNavSections.flatMap(section => section.items);
 
   return (
     <>
@@ -56,74 +44,74 @@ export function AppTopbar({
         <Link to="/app">
           <UniFoliLogo size="sm" subtitle={null} />
         </Link>
-        <Button variant="ghost" size="icon" aria-label={isSidebarOpen ? '사이드바 닫기' : '사이드바 열기'} onClick={onToggleSidebar}>
-          {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        <Button variant="ghost" size="icon" aria-label="메뉴">
+          <Menu size={20} />
         </Button>
       </Topbar>
 
-      {visibleGoals.length ? (
-        <div className="border-b border-white/70 bg-[linear-gradient(180deg,rgba(248,250,255,0.84)_0%,rgba(241,246,255,0.8)_100%)] px-3 py-2.5 md:hidden">
-          <div className="flex gap-2.5 overflow-x-auto pb-0.5">
-            {visibleGoals.map((goal, index) => {
-              const tone = goalToneClasses[index % goalToneClasses.length];
+      <Topbar>
+        <div className="flex items-center gap-10 flex-1">
+          <Link to="/app" className="flex items-center transition-transform active:scale-95">
+            <UniFoliLogo size="sm" subtitle={null} />
+          </Link>
 
+          {/* Navigation Links */}
+          <nav className="hidden lg:flex items-center gap-1.5">
+            {allNavItems.map(item => {
+              const active = isNavItemActive(location.pathname, item.path);
+              const Icon = item.icon;
               return (
-                <div
-                  key={`${goal.university}-${goal.major ?? ''}-${index}`}
-                  className={cn('flex min-w-[156px] items-center gap-2.5 rounded-2xl border px-3 py-2 sm:min-w-[176px]', tone.shell)}
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    'flex items-center gap-2.5 px-5 h-11 rounded-2xl text-[14px] font-bold transition-all duration-200 active:scale-95',
+                    active
+                      ? 'bg-blue-50 text-[#3182f6]'
+                      : 'text-[#6b7684] hover:bg-[#f2f4f6] hover:text-[#333d4b]'
+                  )}
                 >
-                  <UniversityLogo
-                    universityName={goal.university}
-                    className={cn('h-8 w-8 rounded-xl object-contain p-1.5', tone.logo)}
-                    fallbackClassName="border border-[#d6e4ff]"
-                  />
-                  <div className="min-w-0">
-                    <p className={cn('truncate text-[11px] font-black', tone.rank)}>{index + 1}순위</p>
-                    <p className="truncate text-xs font-black text-slate-900">{goal.university}</p>
-                  </div>
-                </div>
+                  <Icon size={18} strokeWidth={active ? 2.5 : 2} className={cn(active ? 'text-[#3182f6]' : 'text-[#b0b8c1]')} />
+                  {item.label}
+                </NavLink>
               );
             })}
-          </div>
+          </nav>
         </div>
-      ) : null}
 
-      <Topbar>
-        <WorkflowContextHeader sectionLabel={currentSectionLabel} summary={summary} />
-
-        <div className="flex items-center gap-3">
-          {visibleGoals.length ? (
-            <div className="hidden max-w-[620px] items-center gap-2.5 overflow-x-auto rounded-[1.6rem] border border-white/70 bg-white/68 px-3.5 py-2.5 shadow-[0_14px_30px_rgba(42,64,132,0.08)] backdrop-blur-xl lg:flex">
-              {visibleGoals.map((goal, index) => {
-                const tone = goalToneClasses[index % goalToneClasses.length];
-
-                return (
-                  <div
-                    key={`${goal.university}-${goal.major ?? ''}-${index}`}
-                    className={cn('flex min-w-[186px] items-center gap-2.5 rounded-2xl border px-3 py-2', tone.shell)}
-                  >
-                    <UniversityLogo
-                      universityName={goal.university}
-                      className={cn('h-8 w-8 rounded-xl object-contain p-1.5', tone.logo)}
-                      fallbackClassName="border border-[#d6e4ff]"
-                    />
-                    <div className="min-w-0">
-                      <p className={cn('truncate text-[11px] font-black', tone.rank)}>{index + 1}순위</p>
-                      <p className="truncate text-xs font-black text-slate-900">{goal.university}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
-
+        <div className="flex items-center gap-4">
           <Link
             to="/"
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/70 bg-white/84 px-3.5 py-2.5 text-sm font-bold text-violet-700 shadow-[0_12px_26px_rgba(42,64,132,0.08)] backdrop-blur-md transition-colors hover:bg-[#f7f9ff]"
+            className="hidden sm:inline-flex items-center gap-2 rounded-2xl bg-[#f2f4f6] px-5 h-11 text-[14px] font-bold text-[#4e5968] transition-all hover:bg-[#e5e8eb] active:scale-95"
           >
-            <ArrowLeft size={14} />
-            공개 페이지
+            <ArrowLeft size={16} strokeWidth={2.5} />
+            홈으로
           </Link>
+          
+          {userName && (
+             <div className="flex items-center gap-4 pl-6 border-l border-[#e5e8eb]">
+               <div className="flex flex-col items-end hidden sm:flex">
+                 <span className="text-[14px] font-black text-[#191f28] leading-none mb-1">{userName}</span>
+                 {isGuestSession && <span className="text-[10px] font-black text-[#3182f6] bg-blue-50 px-2 py-0.5 rounded-lg uppercase tracking-wider">Guest</span>}
+               </div>
+               <div className="h-11 w-11 overflow-hidden rounded-[14px] border border-[#f2f4f6] bg-white shadow-sm flex items-center justify-center transition-transform active:scale-95 ring-1 ring-slate-200/50">
+                 {userPhotoUrl ? (
+                   <img src={userPhotoUrl} alt="프로필" className="h-full w-full object-cover" />
+                 ) : (
+                   <User size={20} className="text-[#b0b8c1]" strokeWidth={2.5} />
+                 )}
+               </div>
+               {onLogout && (
+                 <button 
+                  onClick={onLogout} 
+                  className="flex h-11 w-11 items-center justify-center text-[#b0b8c1] hover:text-[#f04452] transition-all rounded-[14px] hover:bg-red-50 active:scale-90"
+                  aria-label="로그아웃"
+                 >
+                   <LogOut size={20} strokeWidth={2.5} />
+                 </button>
+               )}
+             </div>
+          )}
         </div>
       </Topbar>
     </>

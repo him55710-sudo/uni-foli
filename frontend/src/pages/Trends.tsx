@@ -1,6 +1,6 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowRight, Compass, Lightbulb, Link2, Sparkles, Target } from 'lucide-react';
+import { ArrowRight, Compass, Lightbulb, Link2, Sparkles, Target, Search, BookOpen } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { DIAGNOSIS_STORAGE_KEY } from '../lib/diagnosis';
@@ -14,8 +14,7 @@ import {
   type TrendLens,
   type TrendMajorKey,
 } from '../lib/trendCopilot';
-import orbitIllustration from '../assets/illustration-orbit.svg';
-import depthIllustration from '../assets/illustration-depth-grid.svg';
+
 
 interface TrendLocationState {
   major?: string;
@@ -103,6 +102,41 @@ const majorPalette: Record<TrendMajorKey, { chip: string; chipIdle: string; pane
     button: 'bg-pink-600 hover:bg-pink-700',
     tag: 'text-pink-700 bg-pink-50 border-pink-200',
   },
+  국어: {
+    chip: 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-[0_10px_20px_rgba(20,184,166,0.28)]',
+    chipIdle: 'border-teal-200 text-teal-800 hover:bg-teal-50',
+    panel: 'from-teal-500/90 via-emerald-500/85 to-cyan-500/75',
+    button: 'bg-teal-600 hover:bg-teal-700',
+    tag: 'text-teal-700 bg-teal-50 border-teal-200',
+  },
+  수학: {
+    chip: 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-[0_10px_20px_rgba(59,130,246,0.28)]',
+    chipIdle: 'border-blue-200 text-blue-800 hover:bg-blue-50',
+    panel: 'from-blue-500/90 via-indigo-500/85 to-violet-500/75',
+    button: 'bg-blue-600 hover:bg-blue-700',
+    tag: 'text-blue-700 bg-blue-50 border-blue-200',
+  },
+  영어: {
+    chip: 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-[0_10px_20px_rgba(249,115,22,0.28)]',
+    chipIdle: 'border-orange-200 text-orange-800 hover:bg-orange-50',
+    panel: 'from-orange-500/90 via-red-500/85 to-rose-500/75',
+    button: 'bg-orange-600 hover:bg-orange-700',
+    tag: 'text-orange-700 bg-orange-50 border-orange-200',
+  },
+  과학탐구: {
+    chip: 'bg-gradient-to-r from-lime-500 to-green-500 text-white shadow-[0_10px_20px_rgba(132,204,22,0.28)]',
+    chipIdle: 'border-lime-200 text-lime-800 hover:bg-lime-50',
+    panel: 'from-lime-500/90 via-green-500/85 to-emerald-500/75',
+    button: 'bg-lime-600 hover:bg-lime-700',
+    tag: 'text-lime-700 bg-lime-50 border-lime-200',
+  },
+  사회탐구: {
+    chip: 'bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white shadow-[0_10px_20px_rgba(168,85,247,0.28)]',
+    chipIdle: 'border-purple-200 text-purple-800 hover:bg-purple-50',
+    panel: 'from-purple-500/90 via-fuchsia-500/85 to-pink-500/75',
+    button: 'bg-purple-600 hover:bg-purple-700',
+    tag: 'text-purple-700 bg-purple-50 border-purple-200',
+  },
 };
 
 export function Trends() {
@@ -135,6 +169,8 @@ export function Trends() {
   const [selectedMajor, setSelectedMajor] = useState<string>(majorChips[0] || '컴공');
   const [activeLens, setActiveLens] = useState<TrendLens>('flow');
   const [showRecordConnection, setShowRecordConnection] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [subjectKeyword, setSubjectKeyword] = useState('');
 
   useEffect(() => {
     if (!majorChips.length) return;
@@ -144,8 +180,28 @@ export function Trends() {
   }, [majorChips, selectedMajor]);
 
   const majorKey = resolveTrendMajorKey(selectedMajor);
-  const trendTopics = MAJOR_TREND_PLAYBOOK[majorKey];
-  const palette = majorPalette[majorKey];
+  const palette = majorPalette[majorKey] || majorPalette['컴공'];
+  
+  // Aggregate all topics or filter by selected major
+  const allTopics = useMemo(() => {
+    let result: (MajorTrendTopic & { major: string })[] = [];
+    Object.entries(MAJOR_TREND_PLAYBOOK).forEach(([major, topics]) => {
+      topics.forEach(t => result.push({ ...t, major }));
+    });
+    return result;
+  }, []);
+
+  const displayedTopics = useMemo(() => {
+    if (searchKeyword.trim()) {
+      const keyword = searchKeyword.toLowerCase();
+      return allTopics.filter(t => 
+        t.title.toLowerCase().includes(keyword) || 
+        t.flow.toLowerCase().includes(keyword) || 
+        t.question.toLowerCase().includes(keyword)
+      );
+    }
+    return MAJOR_TREND_PLAYBOOK[majorKey] || [];
+  }, [allTopics, searchKeyword, majorKey]);
 
   const diagnosisSummary = asRecord(storedDiagnosisPayload?.diagnosis_summary_json) ?? null;
   const diagnosisContext = asRecord(storedDiagnosisPayload?.chatbot_context_json) ?? null;
@@ -198,8 +254,7 @@ export function Trends() {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-[0_26px_52px_-36px_rgba(15,23,42,0.55)] backdrop-blur-md sm:p-7"
       >
-        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-fuchsia-200/45 blur-3xl" />
-        <div className="pointer-events-none absolute -left-12 bottom-2 h-44 w-44 rounded-full bg-cyan-200/45 blur-3xl" />
+
 
         <div className="grid items-center gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
@@ -272,13 +327,47 @@ export function Trends() {
             </div>
           </div>
 
-          <div className="tilt-3d relative rounded-[1.8rem] border border-white/70 bg-white/84 p-3 shadow-[0_22px_40px_-28px_rgba(15,23,42,0.55)]">
-            <img src={orbitIllustration} alt="전공 트렌드 일러스트" className="h-auto w-full rounded-2xl" />
-            <img
-              src={depthIllustration}
-              alt="전공 탐색 레이어 일러스트"
-              className="absolute -bottom-5 right-4 w-[48%] rounded-2xl border border-white/70 bg-white/84 shadow-[0_16px_30px_-22px_rgba(15,23,42,0.45)]"
+          <div className="flex flex-col gap-4 rounded-[1.8rem] border border-slate-200 bg-white/84 p-6 shadow-sm">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Search size={20} className="text-slate-400" />
+              키워드로 탐구주제 찾기
+            </h2>
+            <p className="text-sm text-slate-500">관심있는 키워드를 검색하여 전공에 얽매이지 않는 다양한 주제를 찾아보세요.</p>
+            <input 
+              type="text" 
+              placeholder="예: 인공지능, 기후변화, 고령화..."
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
+
+            <hr className="my-2 border-slate-100" />
+
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <BookOpen size={20} className="text-slate-400" />
+              교과목별 탐구주제 찾기
+            </h2>
+            <p className="text-sm text-slate-500">학습 중인 과목과 연계된 심화 탐구주제를 추천받으세요.</p>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="예: 생명과학, 확률과 통계..."
+                value={subjectKeyword}
+                onChange={(e) => setSubjectKeyword(e.target.value)}
+                className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <button 
+                onClick={() => {
+                  if (subjectKeyword.trim()) {
+                    setSearchKeyword(subjectKeyword);
+                    toast.success(`'${subjectKeyword}' 관련 교과목 탐구주제를 검색합니다.`);
+                  }
+                }}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 transition"
+              >
+                검색
+              </button>
+            </div>
           </div>
         </div>
       </motion.section>
@@ -301,8 +390,17 @@ export function Trends() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {trendTopics.map((topic, index) => {
+          {displayedTopics.map((topic, index) => {
             const topicLine = activeLens === 'flow' ? topic.flow : activeLens === 'question' ? topic.question : topic.activity;
+            const topicMajorLabel =
+              typeof (topic as { major?: unknown }).major === 'string'
+                ? (topic as { major: string }).major
+                : selectedMajor;
+            // Determine palette based on the topic's major if search is active
+            const topicPalette = searchKeyword.trim()
+              ? majorPalette[resolveTrendMajorKey(topicMajorLabel)] || palette
+              : palette;
+
             return (
               <motion.article
                 key={topic.id}
@@ -312,9 +410,9 @@ export function Trends() {
                 transition={{ duration: 0.35, delay: index * 0.05 }}
                 className="tilt-3d flex h-full flex-col overflow-hidden rounded-3xl border border-white/70 bg-white/86 shadow-[0_22px_40px_-30px_rgba(15,23,42,0.55)]"
               >
-                <div className={`relative h-28 bg-gradient-to-br ${palette.panel}`}>
+                <div className={`relative h-28 bg-gradient-to-br ${topicPalette.panel}`}>
                   <div className="absolute left-4 top-4 rounded-full bg-white/20 px-3 py-1 text-xs font-black text-white">
-                    {selectedMajor}
+                    {topicMajorLabel}
                   </div>
                   <div className="absolute bottom-4 right-4 text-xs font-black text-white/85">0{index + 1}</div>
                 </div>
@@ -336,7 +434,7 @@ export function Trends() {
                     <button
                       type="button"
                       onClick={() => handleStartWorkshop(topic)}
-                      className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-extrabold text-white transition ${palette.button}`}
+                      className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-extrabold text-white transition ${topicPalette.button}`}
                     >
                       이 주제로 설계하기
                       <ArrowRight size={14} />
@@ -371,7 +469,7 @@ export function Trends() {
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => handleStartWorkshop(trendTopics[0])}
+              onClick={() => handleStartWorkshop(displayedTopics[0])}
               className="rounded-full bg-emerald-600 px-3 py-1.5 text-sm font-extrabold text-white transition hover:bg-emerald-700"
             >
               주제 계획 시작

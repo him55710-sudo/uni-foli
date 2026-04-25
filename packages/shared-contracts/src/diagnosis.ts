@@ -12,7 +12,7 @@ export const DIAGNOSIS_GAP_AXIS_VALUES = [
 export const DIAGNOSIS_AXIS_SEVERITY_VALUES = ['strong', 'watch', 'weak'] as const;
 export const DIAGNOSIS_DIRECTION_COMPLEXITY_VALUES = ['lighter', 'balanced', 'deeper'] as const;
 export const DIAGNOSIS_EXPORT_FORMAT_VALUES = ['pdf', 'pptx', 'hwpx'] as const;
-export const DIAGNOSIS_REPORT_MODE_VALUES = ['compact', 'premium_10p'] as const;
+export const DIAGNOSIS_REPORT_MODE_VALUES = ['basic', 'premium', 'consultant', 'compact', 'premium_10p'] as const;
 export const DIAGNOSIS_ADMISSION_AXIS_VALUES = [
   'universal_rigor',
   'universal_specificity',
@@ -375,6 +375,106 @@ export interface ConsultantDiagnosisRoadmapItem {
   caution_notes: string[];
 }
 
+export interface ConsultantSubjectMetricScores {
+  academic_concept_density: number;
+  inquiry_process: number;
+  student_agency: number;
+  major_connection: number;
+  expansion_potential: number;
+  differentiation: number;
+  interview_defense: number;
+}
+
+export interface ConsultantSubjectSpecialtyAnalysis {
+  subject: string;
+  core_record_summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  score: number;
+  metric_scores: ConsultantSubjectMetricScores;
+  level: '매우 강함' | '강함' | '보통' | '약함' | '위험';
+  admissions_meaning: string;
+  major_connection: string;
+  sentence_to_improve: string;
+  recommended_follow_up: string;
+  interview_question: string;
+  evidence_refs: string[];
+}
+
+export interface ConsultantRecordNetworkNode {
+  id: string;
+  label: string;
+  category: string;
+  evidence_summary: string;
+  weight: number;
+}
+
+export interface ConsultantRecordNetworkEdge {
+  source: string;
+  target: string;
+  label: string;
+  strength: 'Strong' | 'Moderate' | 'Weak' | 'Artificial';
+  rationale: string;
+}
+
+export interface ConsultantRecordNetwork {
+  central_theme: string;
+  evaluation: Record<string, string>;
+  nodes: ConsultantRecordNetworkNode[];
+  edges: ConsultantRecordNetworkEdge[];
+  matrix: Array<Record<string, unknown>>;
+}
+
+export interface ConsultantResearchTopicRecommendation {
+  title: string;
+  classification: '강력 추천' | '확장 가능 주제';
+  connected_evidence: string;
+  inquiry_question: string;
+  subject_concepts: string[];
+  method: string;
+  expected_output: string;
+  record_sentence: string;
+  interview_use: string;
+  difficulty: '상' | '중' | '하';
+  priority: number;
+}
+
+export interface ConsultantInterviewQuestionFrame {
+  category: '전공 적합성' | '탐구 과정 검증' | '약점 방어';
+  question: string;
+  intent: string;
+  answer_frame: string;
+  connected_evidence: string;
+  good_direction: string;
+  avoid: string;
+}
+
+export interface ConsultantBeforeAfterRewrite {
+  original_summary: string;
+  problem: string;
+  improved_sentence: string;
+  why_better: string;
+  exaggeration_risk: string;
+}
+
+export interface ConsultantGradeStoryAnalysis {
+  grade_label: string;
+  stage_role: string;
+  core_activities: string[];
+  visible_competencies: string[];
+  weak_connections: string[];
+  next_flow: string;
+  section_linkage: string;
+  guidance_tone: string;
+}
+
+export interface ConsultantReportQualityGate {
+  key: string;
+  label: string;
+  passed: boolean;
+  message: string;
+}
+
 export interface ConsultantDiagnosisSection {
   id: string;
   title: string;
@@ -394,10 +494,20 @@ export interface ConsultantDiagnosisReport {
   subtitle: string;
   student_target_context: string;
   generated_at: string;
+  report_mode_label?: string | null;
+  expected_page_range?: string | null;
+  actual_page_count?: number | null;
   score_blocks: ConsultantDiagnosisScoreBlock[];
   score_groups: ConsultantDiagnosisScoreGroup[];
   sections: ConsultantDiagnosisSection[];
   roadmap: ConsultantDiagnosisRoadmapItem[];
+  subject_specialty_analyses?: ConsultantSubjectSpecialtyAnalysis[];
+  record_network?: ConsultantRecordNetwork | null;
+  research_topics?: ConsultantResearchTopicRecommendation[];
+  interview_questions?: ConsultantInterviewQuestionFrame[];
+  before_after_examples?: ConsultantBeforeAfterRewrite[];
+  grade_story_analyses?: ConsultantGradeStoryAnalysis[];
+  quality_gates?: ConsultantReportQualityGate[];
   citations: ConsultantDiagnosisEvidenceItem[];
   uncertainty_notes: string[];
   final_consultant_memo: string;

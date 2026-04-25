@@ -14,6 +14,10 @@ function isDesktopViewport() {
   return typeof window !== 'undefined' && window.innerWidth >= 768;
 }
 
+function getDesktopMediaQuery() {
+  return typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)') : null;
+}
+
 export function Layout() {
   const location = useLocation();
   const { user, isGuestSession, logout } = useAuth();
@@ -23,13 +27,16 @@ export function Layout() {
   const [isPartnershipModalOpen, setIsPartnershipModalOpen] = useState(false);
 
   useEffect(() => {
-    const syncSidebarByViewport = () => {
-      setIsSidebarOpen(isDesktopViewport());
+    const mediaQuery = getDesktopMediaQuery();
+    if (!mediaQuery) return;
+
+    const syncSidebarByViewport = (event: MediaQueryListEvent | MediaQueryList) => {
+      setIsSidebarOpen(event.matches);
     };
 
-    syncSidebarByViewport();
-    window.addEventListener('resize', syncSidebarByViewport);
-    return () => window.removeEventListener('resize', syncSidebarByViewport);
+    syncSidebarByViewport(mediaQuery);
+    mediaQuery.addEventListener('change', syncSidebarByViewport);
+    return () => mediaQuery.removeEventListener('change', syncSidebarByViewport);
   }, []);
 
   useEffect(() => {
@@ -63,38 +70,14 @@ export function Layout() {
             <AppTopbar
               currentSectionLabel={currentSection.label}
               summary={workflowSummary}
-              isSidebarOpen={isSidebarOpen}
-              onToggleSidebar={() => setIsSidebarOpen(open => !open)}
               primaryGoal={primaryGoal}
               rankedGoals={rankedGoals}
-            />
-          )
-        }
-        sidebar={
-          hideGlobalChrome ? null : (
-            <AppSidebar
-              pathname={location.pathname}
-              isOpen={isSidebarOpen}
-              onToggle={() => setIsSidebarOpen(open => !open)}
-              onCloseMobile={() => {
-                if (!isDesktopViewport()) setIsSidebarOpen(false);
-              }}
               userName={userName}
               userPhotoUrl={user?.photoURL}
               isGuestSession={isGuestSession}
               onLogout={logout}
             />
           )
-        }
-        overlay={
-          !hideGlobalChrome && isSidebarOpen && !isDesktopViewport() ? (
-            <button
-              type="button"
-              aria-label="메뉴 닫기"
-              onClick={() => setIsSidebarOpen(false)}
-              className="absolute inset-0 z-20 bg-slate-900/30 backdrop-blur-[1px]"
-            />
-          ) : null
         }
         footer={shouldShowFooter ? <AppFooter onOpenPartnership={() => setIsPartnershipModalOpen(true)} /> : null}
         contentClassName={isEditorRoute ? 'p-0 pb-0' : undefined}

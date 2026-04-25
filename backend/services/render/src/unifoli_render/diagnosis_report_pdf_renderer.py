@@ -67,6 +67,24 @@ def render_consultant_diagnosis_pdf(
         color_tokens=color_tokens,
     )
 
+    if bool(render_hints.get("structured_premium_renderer")):
+        story = _build_structured_report_story(
+            report_payload=report_payload,
+            doc=doc,
+            style_tokens=style_tokens,
+            font_name=font_name,
+            font_bold=font_bold,
+            color_tokens=color_tokens,
+            report_mode=report_mode,
+            render_hints=render_hints,
+        )
+        doc.build(
+            story,
+            onFirstPage=lambda canvas, doc_obj: _draw_page_chrome(canvas, doc_obj, template_id, font_name, font_bold, color_tokens),
+            onLaterPages=lambda canvas, doc_obj: _draw_page_chrome(canvas, doc_obj, template_id, font_name, font_bold, color_tokens),
+        )
+        return
+
     story: list[Any] = []
 
     # Cover page
@@ -81,7 +99,7 @@ def render_consultant_diagnosis_pdf(
 
     cover_meta_rows = [
         ["대상 프로젝트", _escape(str(report_payload.get("student_target_context") or "-"))],
-        ["리포트 모드", "프리미엄 10페이지" if report_mode == "premium_10p" else "컴팩트 요약"],
+        ["리포트 모드", "Premium Report" if _canonical_report_mode(report_mode) == "premium" else "Basic Report"],
         ["템플릿", "내부 고정 템플릿"],
         [
             "핵심 판정",
@@ -303,6 +321,691 @@ def render_consultant_diagnosis_pdf(
         onFirstPage=lambda canvas, doc_obj: _draw_page_chrome(canvas, doc_obj, template_id, font_name, font_bold, color_tokens),
         onLaterPages=lambda canvas, doc_obj: _draw_page_chrome(canvas, doc_obj, template_id, font_name, font_bold, color_tokens),
     )
+
+
+def _canonical_report_mode(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"compact", "basic"}:
+        return "basic"
+    if normalized in {"premium_10p", "premium", ""}:
+        return "premium"
+    if normalized == "consultant":
+        return "consultant"
+    return "premium"
+
+
+def _build_structured_report_story(
+    *,
+    report_payload: dict[str, Any],
+    doc: SimpleDocTemplate,
+    style_tokens: dict[str, Any],
+    font_name: str,
+    font_bold: str,
+    color_tokens: dict[str, Any],
+    report_mode: str,
+    render_hints: dict[str, Any],
+) -> list[Any]:
+    mode = _canonical_report_mode(str(report_payload.get("report_mode") or report_mode))
+    target_pages = int(render_hints.get("target_pages") or (9 if mode == "basic" else 32 if mode == "consultant" else 22))
+    pages = _structured_page_definitions(report_payload=report_payload, mode=mode, target_pages=target_pages)
+    story: list[Any] = []
+    for page_index, page in enumerate(pages[:target_pages]):
+        if page_index:
+            story.append(PageBreak())
+        story.extend(
+            _render_structured_page(
+                page=page,
+                page_index=page_index,
+                report_payload=report_payload,
+                doc=doc,
+                style_tokens=style_tokens,
+                font_name=font_name,
+                font_bold=font_bold,
+                color_tokens=color_tokens,
+                render_hints=render_hints,
+            )
+        )
+    return story
+
+
+def _structured_page_definitions(*, report_payload: dict[str, Any], mode: str, target_pages: int) -> list[dict[str, Any]]:
+    if mode == "basic":
+        pages = [
+            {"kind": "cover", "title": "Cover"},
+            {"kind": "summary", "title": "Executive Summary"},
+            {"kind": "dashboard", "title": "Overall Dashboard"},
+            {"kind": "subject_table", "title": "과목별 세특 핵심 점검"},
+            {"kind": "strengths", "title": "강점 분석"},
+            {"kind": "risks", "title": "약점 및 리스크"},
+            {"kind": "topics", "title": "추천 탐구보고서"},
+            {"kind": "roadmap", "title": "실행 로드맵"},
+            {"kind": "appendix", "title": "근거 및 검증 메모"},
+        ]
+    else:
+        pages = [
+            {"kind": "cover", "title": "Cover"},
+            {"kind": "summary", "title": "Executive Summary"},
+            {"kind": "dashboard", "title": "Overall Dashboard"},
+            {"kind": "record_structure", "title": "생기부 전체 구조 분석"},
+            {"kind": "subject_table", "title": "과목별 세특 점수표"},
+            {"kind": "subject_cards", "title": "과목별 세특 상세 분석 1", "slice": (0, 4)},
+            {"kind": "subject_cards", "title": "과목별 세특 상세 분석 2", "slice": (4, 8)},
+            {"kind": "competency", "title": "전공 역량 매핑"},
+            {"kind": "network", "title": "생기부 연결망 분석"},
+            {"kind": "growth", "title": "학년별 성장 서사 분석"},
+            {"kind": "strengths", "title": "강점 분석"},
+            {"kind": "risks", "title": "약점 및 리스크 분석"},
+            {"kind": "topics", "title": "추천 탐구보고서 방향 1", "slice": (0, 6)},
+            {"kind": "topics", "title": "추천 탐구보고서 방향 2", "slice": (6, 12)},
+            {"kind": "avoid", "title": "피해야 할 탐구 주제"},
+            {"kind": "rewrites", "title": "학생부 문장 Before/After"},
+            {"kind": "interviews", "title": "면접 예상 질문 1: 전공 적합성", "category": "전공 적합성"},
+            {"kind": "interviews", "title": "면접 예상 질문 2: 탐구 과정 검증", "category": "탐구 과정 검증"},
+            {"kind": "interviews", "title": "면접 예상 질문 3: 약점 방어", "category": "약점 방어"},
+            {"kind": "roadmap", "title": "실행 로드맵"},
+            {"kind": "action_plan", "title": "우선순위 액션 플랜"},
+            {"kind": "appendix", "title": "근거 및 검증 부록"},
+        ]
+        if mode == "consultant":
+            pages.extend(
+                [
+                    {"kind": "subject_cards", "title": "과목별 세특 상세 진단 3", "slice": (0, 3)},
+                    {"kind": "subject_cards", "title": "과목별 세특 상세 진단 4", "slice": (3, 6)},
+                    {"kind": "subject_cards", "title": "과목별 세특 상세 진단 5", "slice": (5, 8)},
+                    {"kind": "network", "title": "생기부 서사 네트워크 정밀 진단"},
+                    {"kind": "competency", "title": "전공 역량별 근거 매핑 상세"},
+                    {"kind": "topics", "title": "탐구보고서 기획서 상세 제안", "slice": (0, 4)},
+                    {"kind": "interviews", "title": "면접 답변 초안", "category": "전공 적합성"},
+                    {"kind": "rewrites", "title": "자기소개/세특 보완 문장 샘플"},
+                    {"kind": "action_plan", "title": "생기부 전체 리디자인 전략"},
+                    {"kind": "appendix", "title": "컨설턴트 검증 부록"},
+                ]
+            )
+    while len(pages) < target_pages:
+        pages.append({"kind": "action_plan", "title": "추가 실행 전략"})
+    return pages
+
+
+def _render_structured_page(
+    *,
+    page: dict[str, Any],
+    page_index: int,
+    report_payload: dict[str, Any],
+    doc: SimpleDocTemplate,
+    style_tokens: dict[str, Any],
+    font_name: str,
+    font_bold: str,
+    color_tokens: dict[str, Any],
+    render_hints: dict[str, Any],
+) -> list[Any]:
+    kind = str(page.get("kind") or "")
+    title = str(page.get("title") or "Report")
+    flowables: list[Any] = []
+    if kind == "cover":
+        return _render_structured_cover(
+            report_payload=report_payload,
+            doc=doc,
+            style_tokens=style_tokens,
+            font_name=font_name,
+            font_bold=font_bold,
+            color_tokens=color_tokens,
+            render_hints=render_hints,
+        )
+
+    flowables.append(Paragraph(_escape(title), style_tokens["h2"]))
+    mode_label = str(report_payload.get("report_mode_label") or render_hints.get("report_mode_label") or "Premium Report")
+    flowables.append(Paragraph(_escape(f"{mode_label} | Uni-Foli Admissions Diagnosis"), style_tokens["subtitle"]))
+    flowables.append(Spacer(1, 5))
+
+    if kind == "summary":
+        flowables.extend(_summary_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "dashboard":
+        flowables.extend(_dashboard_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
+    elif kind == "record_structure":
+        flowables.extend(_record_structure_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "subject_table":
+        flowables.extend(_subject_table_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
+    elif kind == "subject_cards":
+        flowables.extend(_subject_card_flowables(report_payload, doc, style_tokens, color_tokens, page.get("slice")))
+    elif kind == "competency":
+        flowables.extend(_competency_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
+    elif kind == "network":
+        flowables.extend(_network_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
+    elif kind == "growth":
+        flowables.extend(_growth_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "strengths":
+        flowables.extend(_strength_risk_flowables(report_payload, doc, style_tokens, color_tokens, strengths=True))
+    elif kind == "risks":
+        flowables.extend(_strength_risk_flowables(report_payload, doc, style_tokens, color_tokens, strengths=False))
+    elif kind == "topics":
+        flowables.extend(_topics_flowables(report_payload, doc, style_tokens, color_tokens, page.get("slice")))
+    elif kind == "avoid":
+        flowables.extend(_avoid_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "rewrites":
+        flowables.extend(_rewrite_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "interviews":
+        flowables.extend(_interview_flowables(report_payload, doc, style_tokens, color_tokens, str(page.get("category") or "")))
+    elif kind == "roadmap":
+        flowables.extend(_roadmap_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
+    elif kind == "appendix":
+        flowables.extend(_appendix_flowables(report_payload, doc, style_tokens, color_tokens))
+    else:
+        flowables.extend(_action_plan_flowables(report_payload, doc, style_tokens, color_tokens))
+
+    if len(flowables) < 5:
+        flowables.append(
+            _structured_card(
+                "밀도 보강 메모",
+                "이 페이지는 핵심 판단, 근거, 다음 행동이 함께 보이도록 카드형 보조 분석을 추가했습니다.",
+                doc.width,
+                style_tokens,
+                color_tokens,
+                tone="action",
+            )
+        )
+    return flowables
+
+
+def _render_structured_cover(
+    *,
+    report_payload: dict[str, Any],
+    doc: SimpleDocTemplate,
+    style_tokens: dict[str, Any],
+    font_name: str,
+    font_bold: str,
+    color_tokens: dict[str, Any],
+    render_hints: dict[str, Any],
+) -> list[Any]:
+    mode_label = str(report_payload.get("report_mode_label") or render_hints.get("report_mode_label") or "Premium Report")
+    context = str(report_payload.get("student_target_context") or "")
+    student = _extract_context_value(context, ["학생:", "?숈깮:"]) or "학생명 비공개"
+    if "미확인" in student or "誘" in student:
+        student = "학생명 비공개"
+    target_major = _extract_context_value(context, ["목표 전공:", "목표 학과:", "紐⑺몴 ?꾧났:"]) or "목표 학과 미설정"
+    target_university = _extract_context_value(context, ["목표 대학:", "紐⑺몴 ???"]) or "목표 대학 미설정"
+    confidence = int(round(float(render_hints.get("analysis_confidence_score", 0.72)) * 100))
+    verdict = str(render_hints.get("one_line_verdict") or "학생부 전체 기록을 전공 적합성, 탐구 심화도, 연결망 관점에서 진단했습니다.")
+    rows = [
+        ["학생", student],
+        ["목표", f"{target_university} / {target_major}"],
+        ["리포트 모드", mode_label],
+        ["진단일", datetime.now(timezone.utc).strftime("%Y-%m-%d")],
+        ["종합 판정", _truncate_plain(verdict, 90)],
+        ["분석 신뢰도", f"{confidence}%"],
+    ]
+    table = _structured_table(rows, doc.width, [0.24, 0.76], style_tokens, font_name, font_bold, color_tokens)
+    return [
+        Spacer(1, 20),
+        Paragraph("UNI-FOLI CONSULTANT DIAGNOSIS", style_tokens["cover_label"]),
+        Paragraph(_escape(str(report_payload.get("title") or "입시 진단 프리미엄 리포트")), style_tokens["cover_title"]),
+        Paragraph(_escape(str(report_payload.get("subtitle") or "학생부 전체 연결망 기반 고급 입시 컨설팅 리포트")), style_tokens["cover_subtitle"]),
+        Spacer(1, 18),
+        table,
+        Spacer(1, 16),
+        _structured_card(
+            "진단 범위",
+            "이 보고서는 교과 세특, 창체, 독서, 진로, 행동특성, 탐구 활동이 목표 학과 서사로 연결되는 방식을 분석합니다.",
+            doc.width,
+            style_tokens,
+            color_tokens,
+            tone="evidence",
+        ),
+        Spacer(1, 10),
+        _chip_row(["핵심 키워드: 전공 적합성", "세특 밀도", "서사 연결망"], doc.width, style_tokens, color_tokens),
+    ]
+
+
+def _summary_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    sections = [item for item in report_payload.get("sections", []) if isinstance(item, dict)]
+    executive = next((item for item in sections if str(item.get("id")) == "executive_verdict"), None)
+    body = str((executive or {}).get("body_markdown") or report_payload.get("final_consultant_memo") or "")
+    strengths = _first_lines(report_payload.get("sections"), "strength_analysis", 3) or ["근거가 있는 강점을 전공 역량 언어로 재정리할 수 있습니다."]
+    risks = _first_lines(report_payload.get("sections"), "weakness_risk_analysis", 3) or ["산출물과 과정 기록이 약하면 면접에서 추가 질문을 받을 수 있습니다."]
+    actions = [item.get("message") for item in report_payload.get("quality_gates", []) if isinstance(item, dict)]
+    return [
+        _structured_card("전체 인상", _truncate_plain(body, 420), doc.width, style_tokens, color_tokens, tone="evidence"),
+        Spacer(1, 8),
+        _two_column_cards("가장 강한 강점 3개", strengths[:3], "가장 위험한 약점 3개", risks[:3], doc, style_tokens, color_tokens),
+        Spacer(1, 8),
+        _structured_card("최우선 보완 액션", " / ".join(str(item) for item in actions[:5]) or "탐구 산출물, 세특 문장, 면접 답변을 같은 질문으로 연결하세요.", doc.width, style_tokens, color_tokens, tone="action"),
+    ]
+
+
+def _dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> list[Any]:
+    blocks = [item for item in report_payload.get("score_blocks", []) if isinstance(item, dict)]
+    if not blocks:
+        blocks = [
+            {"label": "종합 점수", "score": 72, "interpretation": "현재 기록의 강점은 보이지만 산출물 근거 보강이 필요합니다."},
+            {"label": "전공 적합성", "score": 68, "interpretation": "목표 학과와 직접 연결되는 질문을 강화해야 합니다."},
+            {"label": "탐구 심화도", "score": 64, "interpretation": "방법과 결과 해석을 더 구체화할 필요가 있습니다."},
+        ]
+    rows = [["항목", "점수", "시각화", "해석"]]
+    for block in blocks[:8]:
+        score = _safe_int(block.get("score"), 0)
+        rows.append([
+            str(block.get("label") or block.get("key") or "-"),
+            f"{score}",
+            _score_bar_text(score),
+            _truncate_plain(str(block.get("interpretation") or block.get("next_best_action") or "-"), 80),
+        ])
+    table = _structured_table(rows, doc.width, [0.22, 0.10, 0.22, 0.46], style_tokens, font_name, font_bold, color_tokens)
+    return [table, Spacer(1, 8), _structured_card("위험도 해석", "점수는 합격 가능성 예측이 아니라 학생부 근거의 밀도, 과정성, 전공 연결성, 면접 방어력을 종합한 컨설팅 지표입니다.", doc.width, style_tokens, color_tokens, tone="warning")]
+
+
+def _record_structure_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    intelligence = report_payload.get("diagnosis_intelligence") if isinstance(report_payload.get("diagnosis_intelligence"), dict) else {}
+    metrics = intelligence.get("evidence_metrics") if isinstance(intelligence.get("evidence_metrics"), dict) else {}
+    cards = [
+        ("기록이 풍부한 영역", ", ".join(str(item) for item in intelligence.get("strong_sections_to_avoid_repeating", [])[:4]) or "교과/활동 근거 확인 필요"),
+        ("입시적으로 비어 보이는 영역", ", ".join(str(item) for item in intelligence.get("weak_sections_to_complement", [])[:4]) or "누락 섹션은 원문 재확인 필요"),
+        ("근거 분산", f"고유 근거 {metrics.get('unique_anchor_count', 0)}개, 페이지 분산 {metrics.get('unique_page_count', 0)}쪽"),
+        ("보완 방향", "세특, 창체, 독서, 진로가 같은 질문으로 이어지도록 연결 문장을 추가합니다."),
+    ]
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _subject_table_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> list[Any]:
+    subjects = [item for item in report_payload.get("subject_specialty_analyses", []) if isinstance(item, dict)]
+    rows = [["과목명", "핵심 기록 요약", "강점", "약점", "점수", "개선 방향", "전공 연결"]]
+    for item in subjects[:8]:
+        rows.append([
+            str(item.get("subject") or "-"),
+            _truncate_plain(str(item.get("core_record_summary") or "-"), 58),
+            _truncate_plain(" / ".join(str(v) for v in item.get("strengths", [])[:1]), 42),
+            _truncate_plain(" / ".join(str(v) for v in item.get("weaknesses", [])[:1]), 42),
+            str(item.get("score") or "-"),
+            _truncate_plain(str(item.get("recommended_follow_up") or "-"), 52),
+            _truncate_plain(str(item.get("major_connection") or "-"), 54),
+        ])
+    return [_structured_table(rows, doc.width, [0.10, 0.20, 0.13, 0.13, 0.07, 0.18, 0.19], style_tokens, font_name, font_bold, color_tokens)]
+
+
+def _subject_card_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any], slice_value: Any) -> list[Any]:
+    subjects = [item for item in report_payload.get("subject_specialty_analyses", []) if isinstance(item, dict)]
+    start, end = _slice_tuple(slice_value, 0, 4)
+    selected = subjects[start:end] or subjects[:4]
+    cards = []
+    for item in selected:
+        cards.append(
+            (
+                f"{item.get('subject')} | {item.get('score')}점 | {item.get('level')}",
+                f"요약: {_truncate_plain(str(item.get('core_record_summary') or '-'), 95)}\n"
+                f"입시적 의미: {_truncate_plain(str(item.get('admissions_meaning') or '-'), 95)}\n"
+                f"후속 탐구: {_truncate_plain(str(item.get('recommended_follow_up') or '-'), 95)}",
+            )
+        )
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _competency_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> list[Any]:
+    subjects = [item for item in report_payload.get("subject_specialty_analyses", []) if isinstance(item, dict)]
+    competencies = ["공간 이해력", "구조적 사고", "수학/물리 기반 분석력", "미적 감각과 표현력", "도시/사회/환경 문제의식", "탐구 설계 능력", "협업 및 커뮤니케이션", "자기주도 문제 해결력"]
+    rows = [["핵심 역량", "연결 근거", "근거 강도", "부족한 증거", "보완 활동", "면접 가능성"]]
+    for idx, competency in enumerate(competencies):
+        item = subjects[idx % max(1, len(subjects))] if subjects else {}
+        rows.append([
+            competency,
+            _truncate_plain(str(item.get("core_record_summary") or "근거 확인 필요"), 46),
+            str(item.get("level") or "보통"),
+            "산출물/방법/한계 문장",
+            _truncate_plain(str(item.get("recommended_follow_up") or "후속 탐구 설계"), 42),
+            "높음" if idx < 5 else "보통",
+        ])
+    return [_structured_table(rows, doc.width, [0.15, 0.24, 0.10, 0.16, 0.23, 0.12], style_tokens, font_name, font_bold, color_tokens)]
+
+
+def _network_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> list[Any]:
+    network = report_payload.get("record_network") if isinstance(report_payload.get("record_network"), dict) else {}
+    nodes = [item for item in network.get("nodes", []) if isinstance(item, dict)]
+    edges = [item for item in network.get("edges", []) if isinstance(item, dict)]
+    rows = [["연결", "강도", "해석"]]
+    for edge in edges[:10]:
+        rows.append([
+            str(edge.get("label") or "-"),
+            str(edge.get("strength") or "-"),
+            _truncate_plain(str(edge.get("rationale") or "-"), 82),
+        ])
+    node_text = " / ".join(str(item.get("label") or "") for item in nodes[:8])
+    return [
+        _structured_card("중심 주제", str(network.get("central_theme") or "전공 적합성 연결망"), doc.width, style_tokens, color_tokens, tone="evidence"),
+        Spacer(1, 7),
+        _structured_card("네트워크 노드", node_text, doc.width, style_tokens, color_tokens, tone="action"),
+        Spacer(1, 7),
+        _structured_table(rows, doc.width, [0.26, 0.14, 0.60], style_tokens, font_name, font_bold, color_tokens),
+        Spacer(1, 8),
+        _card_grid(
+            [
+                ("중심 주제 존재 여부", "동일 관심사가 과목과 활동에서 반복되는지 확인합니다."),
+                ("학년 간 흐름", "관심 출발, 개념 심화, 전공 수렴 순서로 재배열합니다."),
+                ("과목 간 융합성", "인문 과목은 문제의식, 이공 과목은 검증 도구로 역할을 나눕니다."),
+                ("억지 연결 위험도", "산출물이 없는 연결은 강력 추천이 아니라 확장 가능 주제로 낮춰 표기합니다."),
+            ],
+            doc,
+            style_tokens,
+            color_tokens,
+        ),
+    ]
+
+
+def _growth_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    grade_stories = [item for item in report_payload.get("grade_story_analyses", []) if isinstance(item, dict)]
+    cards: list[tuple[str, str]] = []
+    for item in grade_stories[:3]:
+        title = f"{item.get('grade_label')}: {item.get('stage_role')}"
+        core = " / ".join(str(value) for value in item.get("core_activities", [])[:2])
+        competencies = " / ".join(str(value) for value in item.get("visible_competencies", [])[:2])
+        weak = " / ".join(str(value) for value in item.get("weak_connections", [])[:2])
+        body = (
+            f"핵심 활동: {core or '-'}\n"
+            f"드러나는 역량: {competencies or '-'}\n"
+            f"부족한 연결: {weak or '-'}\n"
+            f"다음 흐름: {item.get('next_flow') or '-'}"
+        )
+        cards.append((title, body))
+    if not cards:
+        grade_profile = report_payload.get("render_hints", {}).get("grade_profile") if isinstance(report_payload.get("render_hints"), dict) else {}
+        current_grade = _safe_int((grade_profile or {}).get("current_grade"), 0) if isinstance(grade_profile, dict) else 0
+        if current_grade == 1:
+            cards = [
+                ("1학년: 현재 관심의 출발점", "전공을 단정하기보다 문제의식, 독서, 발표 경험을 넓게 확보합니다.\n다음 흐름: 2학년에 같은 관심사를 교과 개념과 작은 산출물로 연결합니다."),
+                ("2학년: 다음 심화 설계", "아직 기록이 없을 수 있으므로 로드맵 관점으로 표시합니다.\n다음 흐름: 탐구 질문, 방법, 결과 해석이 남는 활동을 설계합니다."),
+                ("3학년: 최종 수렴 계획", "장기 목표 카드입니다.\n다음 흐름: 면접에서 설명 가능한 전공 서사로 정리합니다."),
+            ]
+        elif current_grade == 2:
+            cards = [
+                ("1학년: 이전 근거 회수", "초기 관심과 독서/발표 경험을 현재 탐구의 출발점으로 회수합니다."),
+                ("2학년: 현재 개념적 심화", "수업 개념을 탐구 질문으로 바꾸고 산출물과 결과 해석을 남깁니다."),
+                ("3학년: 다음 전공 수렴", "목표 학과 면접 답변과 최종 탐구로 이어질 연결 문장을 준비합니다."),
+            ]
+        elif current_grade == 3:
+            cards = [
+                ("1학년: 출발점 근거 정리", "초기 관심을 현재 전공 선택의 배경으로 압축합니다."),
+                ("2학년: 심화 과정 회수", "개념 심화와 탐구 과정성을 보여주는 근거를 선별합니다."),
+                ("3학년: 현재 전공 수렴", "새 활동보다 기존 기록의 역할, 결과 해석, 한계를 면접 답변으로 정리합니다."),
+            ]
+        else:
+            cards = [
+                ("1학년: 관심의 출발점", "전공 키워드를 직접 선언하기보다 문제의식, 독서, 발표 경험에서 관심의 씨앗을 찾습니다."),
+                ("2학년: 개념적 심화", "수업 개념을 탐구 질문으로 바꾸고 산출물과 결과 해석을 남기는 단계입니다."),
+                ("3학년: 전공 방향 수렴", "교과-창체-독서-진로 기록을 목표 학과 언어로 모아 면접 답변 구조로 정리합니다."),
+            ]
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _strength_risk_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any], *, strengths: bool) -> list[Any]:
+    section_id = "strength_analysis" if strengths else "weakness_risk_analysis"
+    lines = _first_lines(report_payload.get("sections"), section_id, 5)
+    if not lines:
+        lines = [
+            "학생부 근거를 전공 역량 언어로 바꾸는 작업이 필요합니다.",
+            "면접에서 설명 가능한 활동 과정과 산출물 근거를 보강해야 합니다.",
+            "동일 키워드 반복보다 질문의 진화가 보이도록 재배열해야 합니다.",
+            "교과와 창체의 연결 문장을 추가하면 서사 응집도가 올라갑니다.",
+            "추가 검증이 필요한 기록은 보수적으로 표기해야 합니다.",
+        ]
+    cards = []
+    for idx, line in enumerate(lines[:5], start=1):
+        title = f"{'강점' if strengths else '리스크'} {idx}"
+        detail = (
+            f"근거 요약: {_truncate_plain(line, 95)}\n"
+            "입시적 의미: 목표 학과 관점에서 설명 가능한 역량 언어로 전환합니다.\n"
+            "면접 활용: 활동 배경, 본인 역할, 결과 해석 순서로 답변합니다."
+        )
+        cards.append((title, detail))
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _topics_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any], slice_value: Any) -> list[Any]:
+    topics = [item for item in report_payload.get("research_topics", []) if isinstance(item, dict)]
+    start, end = _slice_tuple(slice_value, 0, 6)
+    selected = topics[start:end] or topics[:6]
+    featured = selected[:2]
+    compact = selected[2:8]
+    flowables: list[Any] = []
+    for topic in featured:
+        flowables.append(
+            _structured_card(
+                f"{topic.get('priority')}. {topic.get('title')} ({topic.get('classification')})",
+                f"질문: {topic.get('inquiry_question')}\n방법: {topic.get('method')}\n산출물: {topic.get('expected_output')}\n세특 문장: {topic.get('record_sentence')}",
+                doc.width,
+                style_tokens,
+                color_tokens,
+                tone="evidence",
+            )
+        )
+        flowables.append(Spacer(1, 6))
+    if compact:
+        flowables.append(_card_grid([(str(item.get("title")), str(item.get("interview_use"))) for item in compact[:6]], doc, style_tokens, color_tokens))
+    return flowables
+
+
+def _avoid_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    cards = [
+        ("전공 키워드만 붙인 주제", "위험한 이유: 실제 탐구 과정 없이 전공 관련성만 선언하면 억지 연결로 보입니다.\n안전한 대체: 학생부에 있는 교과 개념과 산출물을 먼저 두고 전공 문제로 확장합니다."),
+        ("결과를 과장하는 주제", "위험한 이유: 검증하지 않은 효과를 단정하면 면접에서 근거 공격을 받습니다.\n안전한 대체: 비교 기준과 한계를 분명히 둔 소규모 탐구로 조정합니다."),
+        ("활동 반복형 요약 주제", "위험한 이유: 기존 세특 문장을 다시 쓰는 수준이면 심화도가 낮아 보입니다.\n안전한 대체: 같은 활동에서 새 변수, 새 자료, 새 해석을 추가합니다."),
+    ]
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _rewrite_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    examples = [item for item in report_payload.get("before_after_examples", []) if isinstance(item, dict)]
+    cards = []
+    for item in examples[:8]:
+        cards.append(
+            (
+                "Before/After",
+                f"기존 요약: {_truncate_plain(str(item.get('original_summary') or '-'), 72)}\n"
+                f"문제점: {_truncate_plain(str(item.get('problem') or '-'), 72)}\n"
+                f"개선 문장: {_truncate_plain(str(item.get('improved_sentence') or '-'), 98)}\n"
+                f"과장 위험: {_truncate_plain(str(item.get('exaggeration_risk') or '-'), 72)}",
+            )
+        )
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _interview_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any], category: str) -> list[Any]:
+    questions = [item for item in report_payload.get("interview_questions", []) if isinstance(item, dict)]
+    selected = [item for item in questions if str(item.get("category")) == category] or questions[:5]
+    cards = []
+    for item in selected[:6]:
+        cards.append(
+            (
+                str(item.get("question") or "면접 질문"),
+                f"의도: {_truncate_plain(str(item.get('intent') or '-'), 70)}\n"
+                f"답변 프레임: {_truncate_plain(str(item.get('answer_frame') or '-'), 85)}\n"
+                f"연결 근거: {_truncate_plain(str(item.get('connected_evidence') or '-'), 80)}\n"
+                f"피해야 할 답변: {_truncate_plain(str(item.get('avoid') or '-'), 70)}",
+            )
+        )
+    while len(cards) < 6:
+        cards.append(
+            (
+                "답변 구조 보강",
+                "학생부 근거 1개를 고르고 활동 배경 - 선택한 개념 - 본인 역할 - 결과 해석 - 다음 질문 순서로 60초 답변을 만듭니다.",
+            )
+        )
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _roadmap_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> list[Any]:
+    roadmap = [item for item in report_payload.get("roadmap", []) if isinstance(item, dict)]
+    rows = [["단계", "목표", "해야 할 일", "산출물/완료 기준"]]
+    for item in roadmap[:3]:
+        rows.append([
+            str(item.get("horizon") or "-"),
+            str(item.get("title") or "-"),
+            _truncate_plain(" / ".join(str(v) for v in item.get("actions", [])[:3]), 95),
+            _truncate_plain(" / ".join(str(v) for v in item.get("success_signals", [])[:2]), 80),
+        ])
+    return [_structured_table(rows, doc.width, [0.13, 0.22, 0.40, 0.25], style_tokens, font_name, font_bold, color_tokens)]
+
+
+def _action_plan_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    gates = [item for item in report_payload.get("quality_gates", []) if isinstance(item, dict)]
+    cards = []
+    for idx, gate in enumerate(gates[:6], start=1):
+        cards.append((f"{idx}. {gate.get('label')}", str(gate.get("message") or "")))
+    if not cards:
+        cards = [("1. 세특 보완", "질문-방법-결과-한계가 드러나는 문장으로 고칩니다."), ("2. 탐구 산출물", "보고서와 발표 자료를 면접 답변 근거로 정리합니다.")]
+    return [_card_grid(cards, doc, style_tokens, color_tokens)]
+
+
+def _appendix_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    gates = [item for item in report_payload.get("quality_gates", []) if isinstance(item, dict)]
+    cards = []
+    for gate in gates:
+        status = "충족" if gate.get("passed") else "보완 권장"
+        cards.append((f"{gate.get('label')} - {status}", str(gate.get("message") or "")))
+    cards.append(("표기 원칙", "확인된 근거, 가능성이 높은 해석, 추가 확인이 필요한 항목을 자연어로 구분해 과장 위험을 줄였습니다."))
+    return [_card_grid(cards[:8], doc, style_tokens, color_tokens)]
+
+
+def _structured_card(
+    title: str,
+    body: str,
+    width: float,
+    style_tokens: dict[str, Any],
+    color_tokens: dict[str, Any],
+    *,
+    tone: str = "panel",
+) -> Table:
+    tone_map = {
+        "evidence": ("line_evidence", "surface_evidence"),
+        "warning": ("line_warning", "surface_warning"),
+        "action": ("line_action", "surface_action"),
+        "panel": ("line_soft", "surface_panel"),
+    }
+    border_key, fill_key = tone_map.get(tone, tone_map["panel"])
+    content = [
+        Paragraph(_escape(title), style_tokens["meta_strong"]),
+        Paragraph(_escape(body).replace("\n", "<br/>"), style_tokens["meta"]),
+    ]
+    table = Table([[content]], colWidths=[width], hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), _hex(color_tokens.get(fill_key), "#F8FAFC")),
+                ("BOX", (0, 0), (-1, -1), 0.7, _hex(color_tokens.get(border_key), "#E5E7EB")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return table
+
+
+def _card_grid(cards: list[tuple[str, str]], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> Table:
+    cleaned = cards or [("보완 메모", "추가 원문 확인 후 세부 카드가 채워집니다.")]
+    rows: list[list[Any]] = []
+    col_width = (doc.width - 8) / 2
+    for idx in range(0, len(cleaned), 2):
+        row_cards = cleaned[idx: idx + 2]
+        row = [
+            _structured_card(title, body, col_width, style_tokens, color_tokens, tone="panel")
+            for title, body in row_cards
+        ]
+        if len(row) == 1:
+            row.append("")
+        rows.append(row)
+    table = Table(rows, colWidths=[col_width, col_width], hAlign="LEFT")
+    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    return table
+
+
+def _two_column_cards(left_title: str, left_items: list[str], right_title: str, right_items: list[str], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> Table:
+    left = "\n".join(f"- {item}" for item in left_items)
+    right = "\n".join(f"- {item}" for item in right_items)
+    return _card_grid([(left_title, left), (right_title, right)], doc, style_tokens, color_tokens)
+
+
+def _structured_table(rows: list[list[Any]], width: float, fractions: list[float], style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> Table:
+    prepared: list[list[Any]] = []
+    for row in rows:
+        prepared.append([Paragraph(_escape(str(cell)), style_tokens["meta_strong"] if len(prepared) == 0 else style_tokens["meta"]) for cell in row])
+    table = Table(prepared, colWidths=[width * fraction for fraction in fractions], repeatRows=1, hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), _hex(color_tokens.get("surface_panel"), "#F3F4F6")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), _hex(color_tokens.get("text_primary"), "#111827")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [_hex(color_tokens.get("surface_soft"), "#FBFCFE"), _hex(color_tokens.get("surface_panel"), "#F3F4F6")]),
+                ("GRID", (0, 0), (-1, -1), 0.35, _hex(color_tokens.get("line_soft"), "#E5E7EB")),
+                ("FONTNAME", (0, 0), (-1, 0), font_bold),
+                ("FONTNAME", (0, 1), (-1, -1), font_name),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    return table
+
+
+def _chip_row(labels: list[str], width: float, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> Table:
+    col_width = width / max(1, len(labels))
+    table = Table([[Paragraph(_escape(label), style_tokens["meta_strong"]) for label in labels]], colWidths=[col_width] * len(labels))
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), _hex(color_tokens.get("surface_panel"), "#F3F4F6")),
+                ("BOX", (0, 0), (-1, -1), 0.5, _hex(color_tokens.get("premium_gold"), "#C9A227")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, _hex(color_tokens.get("line_soft"), "#E5E7EB")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    return table
+
+
+def _first_lines(sections_value: Any, section_id: str, limit: int) -> list[str]:
+    sections = [item for item in sections_value or [] if isinstance(item, dict)]
+    section = next((item for item in sections if str(item.get("id")) == section_id), None)
+    text = str((section or {}).get("body_markdown") or "")
+    lines = []
+    for line in _markdown_to_lines(text):
+        cleaned = line.strip().lstrip("-").strip()
+        if cleaned:
+            lines.append(cleaned)
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _extract_context_value(context: str, prefixes: list[str]) -> str | None:
+    for prefix in prefixes:
+        if prefix in context:
+            return context.split(prefix, 1)[1].split("|", 1)[0].strip()
+    return None
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _score_bar_text(score: int) -> str:
+    clamped = max(0, min(100, int(score)))
+    filled = round(clamped / 10)
+    return f"{'#' * filled}{'-' * (10 - filled)} {clamped}%"
+
+
+def _slice_tuple(value: Any, default_start: int, default_end: int) -> tuple[int, int]:
+    if isinstance(value, tuple) and len(value) == 2:
+        return int(value[0]), int(value[1])
+    if isinstance(value, list) and len(value) == 2:
+        return int(value[0]), int(value[1])
+    return default_start, default_end
 
 
 def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> dict[str, Any]:

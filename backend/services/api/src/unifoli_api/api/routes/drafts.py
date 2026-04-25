@@ -188,15 +188,16 @@ def _build_streaming_response(
         limited_mode = False
         limited_reason: str | None = None
         profile = "standard"
+        concern = "guided_chat"
 
         yield f"data: {json.dumps({'meta': {'profile': profile, 'limited_mode': False, 'limited_reason': None}}, ensure_ascii=False)}\n\n"
 
         try:
-            llm = get_llm_client(profile="standard")
+            llm = get_llm_client(profile=profile, concern=concern)
             async for token in llm.stream_chat(
                 prompt=f"[학생 메시지]\n{payload.message}",
                 system_instruction=system_instruction,
-                temperature=get_llm_temperature(profile="standard"),
+                temperature=get_llm_temperature(profile=profile, concern=concern),
             ):
                 full_response += token
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"

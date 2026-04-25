@@ -115,266 +115,159 @@ export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ 
   return (
     <motion.div
       key="result"
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      className="space-y-8"
+      exit={{ opacity: 0, y: -30 }}
+      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      className="mx-auto max-w-5xl space-y-12 pb-20"
     >
-      {/* 1. Header Area: Hybrid Overview & Total Score */}
-      <div className="grid gap-6 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <SectionCard
-            title={sanitizeKoreanText(diagnosisResult.headline, '진단 결과')}
-            description="인공지능이 분석한 나의 입시 경쟁력 요약 리포트입니다."
-            eyebrow="인공지능 정밀 진단"
-            className="h-full border-none bg-white shadow-xl ring-1 ring-slate-200/50"
-            actions={
-              <div className="flex flex-wrap items-center gap-2">
-                <div
-                  className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-black shadow-lg ${
-                    diagnosisResult.risk_level === 'safe'
-                      ? 'bg-emerald-500 text-white shadow-emerald-500/20'
-                      : diagnosisResult.risk_level === 'warning'
-                        ? 'bg-amber-500 text-white shadow-amber-500/20'
-                        : 'bg-rose-500 text-white shadow-rose-500/20'
-                  }`}
-                >
-                  {formatRiskLevel(diagnosisResult.risk_level)}
-                </div>
-                {completionState && (
-                  <StatusBadge status="neutral">
-                    {completionState}
-                  </StatusBadge>
-                )}
-                {summaryJson?.completion_state === 'finalized' && projectId && (
-                  <PrimaryButton
-                    size="sm"
-                    className="h-8 rounded-full bg-[#004aad] text-[10px] font-black shadow-lg shadow-[#004aad]/20"
-                    onClick={() => navigate(`/app/interview/${projectId}`)}
-                  >
-                    <Mic size={12} className="mr-1" />
-                    AI 실전 면접 연습
-                  </PrimaryButton>
-                )}
-              </div>
-            }
-          >
-            {diagnosisResult.overview && (
-              <div className="rounded-2xl bg-slate-50/80 p-6">
-                <p className="text-base font-bold leading-relaxed text-slate-700">
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    종합 분석 의견
-                  </span>
-                  {sanitizeKoreanText(diagnosisResult.overview)}
-                </p>
-              </div>
-            )}
-          </SectionCard>
-        </div>
-
-        <div className="lg:col-span-4">
-          <SurfaceCard className="flex h-full flex-col items-center justify-center border-none bg-[linear-gradient(135deg,#004aad_0%,#00214d_100%)] p-8 text-white shadow-2xl">
-            <div className="mb-2 flex items-center gap-2 opacity-60">
-              <Gauge size={16} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Total Diagnostic Score</span>
+      {/* 1. Header Overview Card */}
+      <section className="relative overflow-hidden rounded-[32px] bg-white p-8 sm:p-14 shadow-sm ring-1 ring-slate-200/50">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-10">
+          <div className="flex-1 space-y-6">
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 bg-blue-50 text-[#3182f6] rounded-full text-[11px] font-black uppercase tracking-widest">AI 진단 리포트</span>
+              {completionState && <span className="px-3 py-1 bg-[#f2f4f6] text-[#6b7684] rounded-full text-[11px] font-black">{completionState}</span>}
             </div>
-            {totalScore !== null ? (
-              <div className="flex flex-col items-center">
-                <span className="text-7xl font-black tracking-tighter leading-none">{Math.round(totalScore)}</span>
-                <div className="mt-6">
-                  <StatusBadge status={scoreBadgeStatus(normalizeScoreLabel(scoreLabelsRaw?.['총점']))}>
-                    {normalizeScoreLabel(scoreLabelsRaw?.['총점'])}
-                  </StatusBadge>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center opacity-30">
-                <Clock size={48} />
-                <p className="mt-4 text-xs font-bold uppercase tracking-widest">Calculation Pending</p>
-              </div>
-            )}
-          </SurfaceCard>
+            <h1 className="text-4xl sm:text-5xl font-black text-[#191f28] leading-[1.2] tracking-tight">
+              {sanitizeKoreanText(diagnosisResult.headline, '진단 결과')}
+            </h1>
+            <p className="text-xl text-[#4e5968] font-medium leading-relaxed max-w-3xl">
+              {sanitizeKoreanText(diagnosisResult.overview)}
+            </p>
+          </div>
+          
+          <div className="flex flex-col items-center justify-center bg-[#3182f6] rounded-[40px] p-10 text-white min-w-[240px] shadow-2xl shadow-blue-200/50">
+            <span className="text-[13px] font-black opacity-90 mb-2 tracking-widest uppercase">종합 역량 지수</span>
+            <span className="text-7xl font-black tracking-tight">{totalScore !== null ? Math.round(totalScore) : '--'}</span>
+            <div className="mt-6 px-5 py-2 bg-white/20 backdrop-blur-md rounded-full text-[13px] font-black">
+               {normalizeScoreLabel(scoreLabelsRaw?.['총점'])}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. Key Metrics Grid */}
+      <div className="grid gap-6 grid-cols-2 lg:grid-cols-4">
+        {categoryScores.map(({ name, score }) => (
+          <div key={name} className="bg-white p-8 rounded-[32px] shadow-sm ring-1 ring-slate-200/50 group hover:ring-[#3182f6]/30 transition-all duration-300">
+            <p className="text-[13px] font-black text-[#8b95a1] uppercase mb-4 tracking-wider">{sanitizeKoreanText(name, '항목')}</p>
+            <div className="flex items-end gap-1 mb-4">
+              <span className="text-4xl font-black text-[#191f28]">{Math.round(score)}</span>
+              <span className="text-sm font-black text-[#b0b8c1] mb-1.5">/ 100</span>
+            </div>
+            <div className="h-2 w-full bg-[#f2f4f6] rounded-full overflow-hidden">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: `${score}%` }}
+                transition={{ duration: 1.2, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                className="h-full bg-[#3182f6] rounded-full"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 3. Strengths & Challenges */}
+      <div className="grid gap-8 md:grid-cols-2">
+        <div className="bg-white p-10 rounded-[40px] shadow-sm ring-1 ring-slate-200/50">
+          <div className="flex items-center gap-4 mb-10">
+            <div className="h-12 w-12 bg-[#e8f3ff] rounded-2xl flex items-center justify-center">
+              <CheckCircle2 size={28} className="text-[#3182f6]" strokeWidth={2.5} />
+            </div>
+            <h3 className="text-2xl font-black text-[#191f28]">핵심 역량 강점</h3>
+          </div>
+          <ul className="space-y-6">
+            {strengths.map((item, i) => (
+              <li key={i} className="flex gap-4 text-[#4e5968] font-bold text-[17px] leading-relaxed">
+                <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#3182f6]" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="bg-white p-10 rounded-[40px] shadow-sm ring-1 ring-slate-200/50">
+          <div className="flex items-center gap-4 mb-10">
+            <div className="h-12 w-12 bg-[#fff0f1] rounded-2xl flex items-center justify-center">
+              <AlertTriangle size={28} className="text-[#f04452]" strokeWidth={2.5} />
+            </div>
+            <h3 className="text-2xl font-black text-[#191f28]">보완 과제</h3>
+          </div>
+          <ul className="space-y-6">
+            {gaps.map((item, i) => (
+              <li key={i} className="flex gap-4 text-[#4e5968] font-bold text-[17px] leading-relaxed">
+                <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#f04452]" />
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
 
-      {/* 2. Category Intelligence Cards */}
-      {categoryScores.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {categoryScores.map(({ name, score }) => (
-            <SurfaceCard key={name} className="group border-none bg-white p-5 shadow-sm ring-1 ring-slate-200/70 hover:shadow-md hover:ring-[#004aad]/20 transition-all">
-              <div className="flex items-start justify-between mb-3">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{sanitizeKoreanText(name, '항목')}</span>
-                <StatusBadge status={scoreBadgeStatus(normalizeScoreLabel(scoreLabelsRaw?.[name]))}>
-                  {normalizeScoreLabel(scoreLabelsRaw?.[name])}
-                </StatusBadge>
-              </div>
-              <div className="flex items-end gap-1">
-                <span className="text-3xl font-black text-slate-900 group-hover:text-[#004aad] transition-colors">{Math.round(score)}</span>
-                <span className="mb-1 text-xs font-bold text-slate-400 italic">/ 100</span>
-              </div>
-              {scoreExplanationsRaw?.[name] && (
-                <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-500 border-t border-slate-50 pt-3">
-                  {sanitizeKoreanText(scoreExplanationsRaw[name], '')}
-                </p>
-              )}
-            </SurfaceCard>
-          ))}
-        </div>
-      )}
-
-      {/* 3. Major Discovery Top 3 */}
+      {/* 4. AI Recommendations */}
       {majorDirections.length > 0 && (
-        <div className="relative overflow-hidden rounded-[2.5rem] bg-[#0f172a] p-8 text-white shadow-2xl sm:p-12">
-          {/* Decorative Elements */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[#004aad] rounded-full blur-[120px] opacity-20 -mr-32 -mt-32" />
-          
+        <section className="bg-[#191f28] rounded-[48px] p-12 sm:p-20 text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#3182f6]/20 blur-[120px] -mr-64 -mt-64" />
           <div className="relative z-10">
-            <div className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <div className="mb-2 flex items-center gap-2 text-cyan-400">
-                  <Compass size={18} />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Career Intelligence</span>
-                </div>
-                <h3 className="text-2xl font-black text-white sm:text-3xl">AI 권장 전공 트랙 <span className="text-cyan-400">Top 3</span></h3>
-              </div>
-              <p className="max-w-xs text-sm font-bold leading-relaxed text-slate-400 sm:text-right">현재 생기부의 탐구 흐름을 분석하여 합격 확률이 가장 높은 전공 계열을 제안합니다.</p>
+            <div className="mb-14 flex flex-col gap-2">
+               <span className="text-[#3182f6] font-black tracking-widest text-xs uppercase">Future Path</span>
+               <h3 className="text-3xl font-black">AI 추천 전공 트랙</h3>
             </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              {majorDirections.map((direction, index) => (
-                <SurfaceCard key={`${direction.label}-${index}`} className="group relative overflow-hidden border-none bg-white/5 p-6 ring-1 ring-white/10 hover:bg-white/10 transition-all duration-300">
-                  <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <Target size={48} />
-                  </div>
-                  <div className="relative z-10">
-                    <div className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/10 text-xs font-black text-cyan-400 ring-1 ring-cyan-500/20">
-                      0{index + 1}
-                    </div>
-                    <p className="mb-2 text-lg font-black text-white group-hover:text-cyan-300 transition-colors">{direction.label}</p>
-                    {direction.summary && (
-                      <p className="text-sm font-medium leading-relaxed text-slate-400 group-hover:text-slate-200 transition-colors">
-                        {direction.summary}
-                      </p>
-                    )}
-                  </div>
-                </SurfaceCard>
+            <div className="grid gap-8 md:grid-cols-3">
+              {majorDirections.map((dir, i) => (
+                <div key={i} className="group bg-white/5 border border-white/10 p-8 rounded-[32px] hover:bg-white/10 hover:border-white/20 transition-all duration-300">
+                  <span className="text-[11px] font-black text-[#3182f6] mb-3 block uppercase tracking-widest">Track 0{i+1}</span>
+                  <p className="text-xl font-black mb-4 group-hover:text-white transition-colors">{dir.label}</p>
+                  <p className="text-[15px] text-[#8b95a1] font-medium leading-relaxed">{dir.summary}</p>
+                </div>
               ))}
             </div>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* 4. Narrative Sections: Strengths & Challenges */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <SurfaceCard className="border-none bg-emerald-50/30 p-8 shadow-sm ring-1 ring-emerald-100/50">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/20">
-              <CheckCircle2 size={24} />
+      {/* 5. Strategic Actions */}
+      <section className="bg-white rounded-[48px] p-12 sm:p-20 shadow-sm ring-1 ring-slate-200/50">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-10 mb-14">
+          <div className="flex items-center gap-6">
+            <div className="h-16 w-16 bg-[#3182f6] rounded-[24px] flex items-center justify-center shadow-xl shadow-blue-200">
+              <Zap size={32} className="text-white" fill="white" />
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600/60">Success Markers</p>
-              <h4 className="text-xl font-black text-slate-800">합격을 지탱하는 핵심 강점</h4>
+              <h3 className="text-3xl font-black text-[#191f28]">전략적 실행 가이드</h3>
+              <p className="text-[#3182f6] font-black text-sm mt-1">합격 확률을 높이는 즉시 실행 리스트</p>
             </div>
           </div>
-          <ul className="space-y-4">
-            {strengths.map((item: string, index: number) => (
-              <li key={index} className="flex gap-4 text-base font-bold leading-relaxed text-slate-700">
-                <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </SurfaceCard>
-
-        <SurfaceCard className="border-none bg-rose-50/30 p-8 shadow-sm ring-1 ring-rose-100/50">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500 text-white shadow-lg shadow-rose-500/20">
-              <AlertTriangle size={24} />
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-rose-600/60">Risk Management</p>
-              <h4 className="text-xl font-black text-slate-800">우선 보완이 필요한 지점</h4>
-            </div>
-          </div>
-          <ul className="space-y-4">
-            {gaps.map((item: string, index: number) => (
-              <li key={index} className="flex gap-4 text-base font-bold leading-relaxed text-slate-700">
-                <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </SurfaceCard>
-      </div>
-
-      {/* 5. Visualization */}
-      {diagnosisResult.relational_graph && (
-        <div className="py-2">
-          <DiagnosisRelationalGraph graph={diagnosisResult.relational_graph} />
-        </div>
-      )}
-
-      {/* 6. Strategic Action Plan */}
-      {(diagnosisResult.next_actions?.length > 0 || diagnosisResult.recommended_focus) && (
-        <div className="relative overflow-hidden rounded-[3rem] bg-slate-900 p-8 text-white shadow-2xl sm:p-12">
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#004aad] rounded-full blur-[100px] opacity-10 -ml-32 -mb-32" />
           
-          <div className="relative z-10">
-            <div className="mb-12 flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#004aad] text-white shadow-lg shadow-[#004aad]/40">
-                <Zap size={24} fill="currentColor" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#004aad]">Strategic Roadmap</span>
-                  {stageModeNote && (
-                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-300 ring-1 ring-white/10 uppercase italic">
-                       {stageModeNote} mode
-                    </span>
-                  )}
-                </div>
-                <h4 className="text-2xl font-black">합격을 위한 최적화 실행 과제</h4>
-              </div>
-            </div>
+          <button 
+            onClick={() => navigate(`/app/workshop/${projectId}`)}
+            className="bg-[#3182f6] text-white px-10 h-16 rounded-[20px] font-black text-lg shadow-2xl shadow-blue-200/50 hover:bg-[#1b64da] hover:-translate-y-1 transition-all active:scale-95 flex items-center gap-3"
+          >
+             워크숍에서 작성하기
+             <Compass size={22} strokeWidth={3} />
+          </button>
+        </div>
 
-            <div className="grid gap-10 lg:grid-cols-12">
-              <div className="lg:col-span-8">
-                <ul className="space-y-6">
-                  {nextActions.map((item: string, index: number) => (
-                    <motion.li
-                      key={index}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.1 + index * 0.1 }}
-                      className="flex items-start gap-5 rounded-[1.5rem] bg-white/5 p-6 ring-1 ring-white/10 hover:bg-white/10 transition-colors"
-                    >
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-black text-cyan-400 ring-1 ring-cyan-500/20">
-                        {index + 1}
-                      </span>
-                      <p className="text-base font-bold leading-relaxed text-slate-300">{item}</p>
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-              
-              {(diagnosisResult.recommended_focus || stageModeNote) && (
-                <div className="lg:col-span-4">
-                  <div className="h-full rounded-[2rem] bg-[linear-gradient(135deg,rgba(0,74,173,0.2)_0%,rgba(0,74,173,0.05)_100%)] p-8 ring-1 ring-[#004aad]/30">
-                    <h5 className="mb-6 flex items-center gap-2 text-sm font-black text-[#004aad] uppercase tracking-widest">
-                      <Target size={16} />
-                      Priority Focus
-                    </h5>
-                    <p className="text-2xl font-black italic leading-tight text-white">
-                      {sanitizeKoreanText(diagnosisResult.recommended_focus || stageModeNote)}
-                    </p>
-                    <p className="mt-6 text-sm font-medium leading-relaxed text-slate-400">
-                      현재 데이터상에서 가장 빠른 변화를 만들어낼 수 있는 핵심 성공 경로입니다.
-                    </p>
-                  </div>
-                </div>
-              )}
+        <div className="grid gap-6 md:grid-cols-2">
+          {nextActions.map((action, i) => (
+            <div key={i} className="bg-[#f9fafb] p-8 rounded-[32px] flex items-start gap-5 group hover:bg-[#f2f4f6] transition-colors duration-200">
+              <span className="h-10 w-10 rounded-2xl bg-white text-[#3182f6] flex items-center justify-center font-black text-sm shrink-0 shadow-sm ring-1 ring-slate-200/50">{i+1}</span>
+              <p className="text-[#333d4b] font-bold text-[17px] leading-relaxed">{action}</p>
             </div>
-          </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 6. Visualization */}
+      {diagnosisResult.relational_graph && (
+        <div className="bg-white rounded-[40px] p-10 shadow-sm ring-1 ring-slate-200/50">
+           <h3 className="text-2xl font-black text-[#191f28] mb-10 flex items-center gap-4">
+             <Target size={28} className="text-[#3182f6]" strokeWidth={2.5} />
+             역량 키워드 구조
+           </h3>
+           <div className="rounded-[24px] bg-[#f9fafb] p-6 ring-1 ring-slate-200/50">
+             <DiagnosisRelationalGraph graph={diagnosisResult.relational_graph} />
+           </div>
         </div>
       )}
     </motion.div>

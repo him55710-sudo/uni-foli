@@ -132,7 +132,7 @@ export const DiagnosisGoals: React.FC = () => {
                   value={univInput}
                   onChange={(event) => setUnivInput(event.target.value)}
                   placeholder="예: 서울대학교"
-                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-12 text-sm font-semibold shadow-sm transition-all outline-none focus:border-[#004aad] focus:ring-4 focus:ring-[#004aad]/10"
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-12 text-sm font-semibold shadow-sm transition-all outline-none focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100"
                 />
                 {univPreviewName.length >= 2 ? (
                   <UniversityLogo
@@ -155,7 +155,7 @@ export const DiagnosisGoals: React.FC = () => {
                           setCurrentMajor('');
                           setUnivInput('');
                         }}
-                        className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-[#004aad]/5"
+                        className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-indigo-50"
                       >
                         <UniversityLogo
                           universityName={suggestion.label}
@@ -169,8 +169,8 @@ export const DiagnosisGoals: React.FC = () => {
               </div>
 
               {currentUniv ? (
-                <div className="mt-8 space-y-5 rounded-3xl border border-[#004aad]/10 bg-gradient-to-br from-[#004aad]/5 to-transparent p-6">
-                  <div className="flex items-center justify-between gap-2 border-b border-[#004aad]/10 pb-4">
+                <div className="mt-8 space-y-5 rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-transparent p-6">
+                  <div className="flex items-center justify-between gap-2 border-b border-indigo-100 pb-4">
                     <div className="flex items-center gap-3">
                       <UniversityLogo
                         universityName={currentUniv}
@@ -239,7 +239,7 @@ export const DiagnosisGoals: React.FC = () => {
                   >
                     <SurfaceCard
                       padding="sm"
-                      className="flex items-center justify-between gap-4 border-slate-100 shadow-sm transition-all hover:border-[#004aad]/20"
+                      className="flex items-center justify-between gap-4 border-slate-100 shadow-sm transition-all hover:border-indigo-200"
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <div className="flex cursor-grab items-center text-slate-300 hover:text-slate-400">
@@ -264,7 +264,7 @@ export const DiagnosisGoals: React.FC = () => {
                               onClick={() => moveGoal(index, 'up')}
                               disabled={index === 0}
                               className={`rounded-lg p-1.5 transition-colors ${
-                                index === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:bg-slate-100 hover:text-[#004aad]'
+                                index === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600'
                               }`}
                             >
                               <ChevronUp size={16} />
@@ -274,7 +274,7 @@ export const DiagnosisGoals: React.FC = () => {
                               onClick={() => moveGoal(index, 'down')}
                               disabled={index === goalList.length - 1}
                               className={`rounded-lg p-1.5 transition-colors ${
-                                index === goalList.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:bg-slate-100 hover:text-[#004aad]'
+                                index === goalList.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600'
                               }`}
                             >
                               <ChevronDown size={16} />
@@ -282,7 +282,7 @@ export const DiagnosisGoals: React.FC = () => {
                           </>
                         )}
                         {index === 0 ? (
-                          <div className="rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-black text-[#004aad]">
+                          <div className="rounded-full bg-indigo-100 px-2.5 py-1 text-[10px] font-black text-indigo-600">
                             대표
                           </div>
                         ) : null}
@@ -312,7 +312,7 @@ export const DiagnosisGoals: React.FC = () => {
                     <UniversityLogo universityName={goal.university} className="h-full w-full object-contain" />
                   </div>
                   {index === 0 ? (
-                    <span className="rounded-full bg-blue-600 px-3 py-1 text-[10px] font-black text-white shadow-lg shadow-blue-500/20">
+                    <span className="rounded-full bg-indigo-600 px-3 py-1 text-[10px] font-black text-white shadow-lg shadow-indigo-500/20">
                       대표 목표
                     </span>
                   ) : (
@@ -320,7 +320,7 @@ export const DiagnosisGoals: React.FC = () => {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-base font-black text-slate-900 group-hover:text-[#004aad] transition-colors">
+                  <p className="truncate text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors">
                     {goal.university}
                   </p>
                   <p className="mt-0.5 truncate text-sm font-bold text-slate-500">{goal.major}</p>
@@ -344,15 +344,15 @@ export const DiagnosisGoals: React.FC = () => {
         </div>
       ) : goalList.length > 0 && goalList.every(hasValidGoalSelection) ? (
         <div className="flex flex-col items-center gap-6 pt-4">
-          <div className="inline-flex items-center gap-3 rounded-2xl bg-[#004aad]/5 px-6 py-3 text-sm font-bold text-[#004aad]">
-            <CheckCircle2 size={20} className="text-[#004aad]" />
+          <div className="inline-flex items-center gap-3 rounded-2xl bg-indigo-50 px-6 py-3 text-sm font-bold text-indigo-600">
+            <CheckCircle2 size={20} className="text-indigo-600" />
             <span>{goalList.length}개의 목표가 성공적으로 설정되었습니다.</span>
           </div>
           <PrimaryButton
             data-testid="diagnosis-goals-continue"
             onClick={() => setDiagnosisStep('UPLOAD')}
             size="lg"
-            className="h-14 px-10 text-lg shadow-2xl shadow-blue-500/20"
+            className="h-14 px-10 text-lg shadow-2xl shadow-indigo-500/20"
           >
             다음: 생기부 등록하기
             <ArrowRight size={22} className="ml-2" />

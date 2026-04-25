@@ -66,11 +66,18 @@ from unifoli_shared.paths import get_export_root, resolve_project_path
 
 router = APIRouter()
 logger = logging.getLogger("unifoli.api.diagnosis")
-INTERNAL_REPORT_MODE = "premium_10p"
+INTERNAL_REPORT_MODE = "premium"
 
 
 def _normalize_report_mode(value: str | None) -> str:
     # 보고??는 ???? ???? ??플???구조(??리미엄 10???로만 ??성??다.
+    normalized = str(value or "").strip().lower()
+    if normalized in {"compact", "basic"}:
+        return "basic"
+    if normalized in {"premium_10p", "premium", ""}:
+        return "premium"
+    if normalized == "consultant":
+        return "consultant"
     return INTERNAL_REPORT_MODE
 
 
@@ -109,7 +116,7 @@ def _build_run_response(db: Session, run: DiagnosisRun) -> DiagnosisRunResponse:
     latest_report = get_latest_report_artifact_for_run(
         db,
         diagnosis_run_id=run.id,
-        report_mode="premium_10p",
+        report_mode=INTERNAL_REPORT_MODE,
     )
 
     report_status: str | None = None
@@ -158,7 +165,7 @@ def _ensure_default_report_bootstrap(db: Session, run: DiagnosisRun) -> None:
             owner_user_id=None,
             fallback_target_university=None,
             fallback_target_major=None,
-            report_mode="premium_10p",
+            report_mode=INTERNAL_REPORT_MODE,
             include_appendix=True,
             include_citations=True,
         )
@@ -276,7 +283,7 @@ async def trigger_diagnosis(
             "fallback_target_university": current_user.target_university or project.target_university,
             "fallback_target_major": current_user.target_major or project.target_major,
             "interest_universities": payload.interest_universities or current_user.interest_universities,
-            "auto_report_mode": "premium_10p",
+            "auto_report_mode": INTERNAL_REPORT_MODE,
             "auto_report_include_appendix": True,
             "auto_report_include_citations": True,
         },
@@ -476,7 +483,7 @@ async def get_consultant_report_route(
 async def download_consultant_report_pdf_route(
     diagnosis_id: str,
     artifact_id: str | None = Query(default=None),
-    report_mode: str = Query(default="premium_10p"),
+    report_mode: str = Query(default=INTERNAL_REPORT_MODE),
     template_id: str | None = Query(default=None),
     include_appendix: bool = Query(default=True),
     include_citations: bool = Query(default=True),

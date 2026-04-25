@@ -26,8 +26,8 @@ class InterviewService:
         """
         # In a real scenario, this would use a dedicated prompt from registry.
         # For Phase 1, we use a robust system instruction here.
-        client = get_llm_client()
-        runtime = resolve_llm_runtime()
+        runtime = resolve_llm_runtime(profile="standard", concern="diagnosis")
+        client = runtime.client or get_llm_client(profile="standard", concern="diagnosis")
         
         system_instruction = (
             "당신은 입격 가능성을 극대화하는 전문 입시 컨설턴트입니다. "
@@ -41,7 +41,7 @@ class InterviewService:
             # Note: In a production environment, we should use a schema-validated prompt.
             # Here we simulate the logic with the client.
             response = await client.generate_content(
-                model=runtime.model_name,
+                model=runtime.actual_model or runtime.attempted_model,
                 contents=[system_instruction, user_content],
                 # In actual implementation, we would use response_schema=List[InterviewQuestion]
                 # for production-grade reliability.

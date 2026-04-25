@@ -23,10 +23,15 @@ export const WorkshopProgress: React.FC<WorkshopProgressProps> = ({
     missing
   } = requirements;
 
+  const progressFor = (current: number, required: number) => {
+    if (required <= 0) return 100;
+    return Math.min(100, Math.max(0, (current / required) * 100));
+  };
+
   // Calculate progress percentages
-  const contextProgress = Math.min(100, (current_context_score / required_context_score) * 100);
-  const turnProgress = Math.min(100, (current_turn_count / minimum_turn_count) * 100);
-  const referenceProgress = Math.min(100, (current_reference_count / minimum_reference_count) * 100);
+  const contextProgress = progressFor(current_context_score, required_context_score);
+  const turnProgress = progressFor(current_turn_count, minimum_turn_count);
+  const referenceProgress = progressFor(current_reference_count, minimum_reference_count);
 
   // Overall progress is roughly the average of these three
   const overallProgress = Math.round((contextProgress + turnProgress + referenceProgress) / 3);

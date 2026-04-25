@@ -1,6 +1,5 @@
 import { initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
 
 const viteEnv = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ??
   {}) as Record<string, string | undefined>;
@@ -15,7 +14,7 @@ const firebaseConfig: FirebaseOptions = {
   measurementId: viteEnv.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-const firestoreDatabaseId = viteEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
+export const firestoreDatabaseId = viteEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
 // Guest mode is now restricted and should not mimic real authenticated state for protected routes.
 export const isGuestModeAllowed = viteEnv.VITE_ALLOW_GUEST_MODE === 'true';
 
@@ -46,13 +45,11 @@ export function getFirebaseMissingKeys(): string[] {
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
-let db: Firestore | null = null;
 let googleProvider: GoogleAuthProvider | null = null;
 
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
-  db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
   googleProvider = new GoogleAuthProvider();
   googleProvider.setCustomParameters({ prompt: 'select_account' });
 } else {
@@ -63,4 +60,4 @@ if (isFirebaseConfigured) {
   );
 }
 
-export { app, auth, db, googleProvider };
+export { app, auth, googleProvider };

@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from unifoli_api.core.config import _is_local_host_url
 from unifoli_api.core.errors import UniFoliErrorCode
+from unifoli_api.core.llm import resolve_llm_runtime, resolve_pdf_analysis_llm_resolution
 from unifoli_shared.paths import resolve_runtime_path
 
 
@@ -61,6 +62,26 @@ def _read_first_env(*keys: str) -> str | None:
     return None
 
 
+def _read_float_env(key: str, default: float | None) -> float | None:
+    value = (os.getenv(key) or "").strip()
+    if not value:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _read_int_env(key: str, default: int | None) -> int | None:
+    value = (os.getenv(key) or "").strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 def snapshot_settings_from_env(api_prefix: str | None = None) -> Any:
     llm_provider = (os.getenv("LLM_PROVIDER") or "gemini").strip().lower() or "gemini"
     pdf_provider = (os.getenv("PDF_ANALYSIS_LLM_PROVIDER") or "ollama").strip().lower() or "ollama"
@@ -71,12 +92,26 @@ def snapshot_settings_from_env(api_prefix: str | None = None) -> Any:
         unifoli_storage_provider=(os.getenv("UNIFOLI_STORAGE_PROVIDER") or os.getenv("OBJECT_STORAGE_PROVIDER") or "local").strip().lower() or "local",
         s3_bucket_name=(os.getenv("S3_BUCKET_NAME") or os.getenv("OBJECT_STORAGE_BUCKET") or "").strip() or None,
         llm_provider=llm_provider,
+        llm_provider_fallback_enabled=(os.getenv("LLM_PROVIDER_FALLBACK_ENABLED") or "true").strip().lower() != "false",
         guided_chat_llm_provider=(os.getenv("GUIDED_CHAT_LLM_PROVIDER") or "").strip().lower() or None,
         diagnosis_llm_provider=(os.getenv("DIAGNOSIS_LLM_PROVIDER") or "").strip().lower() or None,
         render_llm_provider=(os.getenv("RENDER_LLM_PROVIDER") or "").strip().lower() or None,
         gemini_api_key=_read_first_env("GEMINI_API_KEY", "GOOGLE_API_KEY", "GENAI_API_KEY", "GEMINI_KEY"),
-        gemini_model=(os.getenv("GEMINI_MODEL") or "gemini-2.0-flash").strip() or "gemini-2.0-flash",
+        gemini_model=(os.getenv("GEMINI_MODEL") or "gemini-2.5-flash-lite").strip()
+        or "gemini-2.5-flash-lite",
         ollama_base_url=(os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434/v1").strip() or "http://localhost:11434/v1",
+        ollama_model=(os.getenv("OLLAMA_MODEL") or "gemma4").strip() or "gemma4",
+        ollama_fast_model=(os.getenv("OLLAMA_FAST_MODEL") or "").strip() or None,
+        ollama_standard_model=(os.getenv("OLLAMA_STANDARD_MODEL") or "").strip() or None,
+        ollama_render_model=(os.getenv("OLLAMA_RENDER_MODEL") or "").strip() or None,
+        ollama_timeout_seconds=_read_float_env("OLLAMA_TIMEOUT_SECONDS", 90.0),
+        ollama_fast_timeout_seconds=_read_float_env("OLLAMA_FAST_TIMEOUT_SECONDS", None),
+        ollama_standard_timeout_seconds=_read_float_env("OLLAMA_STANDARD_TIMEOUT_SECONDS", None),
+        ollama_render_timeout_seconds=_read_float_env("OLLAMA_RENDER_TIMEOUT_SECONDS", None),
+        ollama_keep_alive=(os.getenv("OLLAMA_KEEP_ALIVE") or "30m").strip() or "30m",
+        ollama_num_ctx=_read_int_env("OLLAMA_NUM_CTX", 2048),
+        ollama_num_predict=_read_int_env("OLLAMA_NUM_PREDICT", 512),
+        ollama_num_thread=_read_int_env("OLLAMA_NUM_THREAD", None),
         pdf_analysis_llm_provider=pdf_provider,
         pdf_analysis_gemini_api_key=_read_first_env(
             "PDF_ANALYSIS_GEMINI_API_KEY",
@@ -85,7 +120,14 @@ def snapshot_settings_from_env(api_prefix: str | None = None) -> Any:
             "GENAI_API_KEY",
             "GEMINI_KEY",
         ),
+        pdf_analysis_gemini_model=(os.getenv("PDF_ANALYSIS_GEMINI_MODEL") or "").strip() or None,
         pdf_analysis_ollama_base_url=(os.getenv("PDF_ANALYSIS_OLLAMA_BASE_URL") or "").strip() or None,
+        pdf_analysis_ollama_model=(os.getenv("PDF_ANALYSIS_OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL") or "gemma4").strip() or "gemma4",
+        pdf_analysis_timeout_seconds=_read_float_env("PDF_ANALYSIS_TIMEOUT_SECONDS", 60.0),
+        pdf_analysis_keep_alive=(os.getenv("PDF_ANALYSIS_KEEP_ALIVE") or "15m").strip() or "15m",
+        pdf_analysis_num_ctx=_read_int_env("PDF_ANALYSIS_NUM_CTX", 3072),
+        pdf_analysis_num_predict=_read_int_env("PDF_ANALYSIS_NUM_PREDICT", 512),
+        pdf_analysis_num_thread=_read_int_env("PDF_ANALYSIS_NUM_THREAD", None),
         auth_social_login_enabled=(os.getenv("AUTH_SOCIAL_LOGIN_ENABLED") or "").strip().lower() == "true",
         auth_jwt_secret=(os.getenv("AUTH_JWT_SECRET") or "").strip() or None,
         auth_jwt_public_key=(os.getenv("AUTH_JWT_PUBLIC_KEY") or "").strip() or None,
@@ -93,6 +135,63 @@ def snapshot_settings_from_env(api_prefix: str | None = None) -> Any:
         allow_production_sqlite=(os.getenv("ALLOW_PRODUCTION_SQLITE") or "").strip().lower() == "true",
         database_auto_create_tables=(os.getenv("DATABASE_AUTO_CREATE_TABLES") or "").strip().lower() != "false",
     )
+
+
+def _llm_resolution_payload(
+    *,
+    requested_provider: str,
+    requested_model: str,
+    actual_provider: str | None,
+    actual_model: str | None,
+    fallback_used: bool,
+    fallback_reason: str | None,
+    client_available: bool,
+) -> dict[str, Any]:
+    return {
+        "requested_provider": requested_provider,
+        "requested_model": requested_model,
+        "resolved_actual_provider": actual_provider,
+        "resolved_actual_model": actual_model,
+        "actual_provider": actual_provider,
+        "actual_model": actual_model,
+        "fallback_in_effect": bool(fallback_used),
+        "fallback_used": bool(fallback_used),
+        "fallback_reason": fallback_reason,
+        "client_available": bool(client_available),
+    }
+
+
+def _build_llm_concern_resolutions(settings: Any) -> dict[str, dict[str, Any]]:
+    profiles = {
+        "default": "standard",
+        "guided_chat": "fast",
+        "diagnosis": "standard",
+        "render": "render",
+    }
+    resolutions: dict[str, dict[str, Any]] = {}
+    for concern, profile in profiles.items():
+        resolution = resolve_llm_runtime(profile=profile, concern=concern, settings=settings)
+        resolutions[concern] = _llm_resolution_payload(
+            requested_provider=resolution.attempted_provider,
+            requested_model=resolution.attempted_model,
+            actual_provider=resolution.actual_provider,
+            actual_model=resolution.actual_model,
+            fallback_used=resolution.fallback_used,
+            fallback_reason=resolution.fallback_reason,
+            client_available=resolution.client is not None,
+        )
+
+    pdf_resolution = resolve_pdf_analysis_llm_resolution(settings=settings)
+    resolutions["pdf_analysis"] = _llm_resolution_payload(
+        requested_provider=pdf_resolution.attempted_provider,
+        requested_model=pdf_resolution.attempted_model,
+        actual_provider=pdf_resolution.actual_provider,
+        actual_model=pdf_resolution.actual_model,
+        fallback_used=pdf_resolution.fallback_used,
+        fallback_reason=pdf_resolution.fallback_reason,
+        client_available=pdf_resolution.client is not None,
+    )
+    return resolutions
 
 
 def build_health_payload(
@@ -144,11 +243,13 @@ def build_health_payload(
         or getattr(settings, "ollama_base_url", None)
         or ""
     )
+    concern_resolutions = _build_llm_concern_resolutions(settings)
     llm_info: dict[str, Any] = {
         "default_provider": getattr(settings, "llm_provider", "gemini"),
         "guided_chat_provider": getattr(settings, "guided_chat_llm_provider", None) or getattr(settings, "llm_provider", "gemini"),
         "diagnosis_provider": getattr(settings, "diagnosis_llm_provider", None) or getattr(settings, "llm_provider", "gemini"),
         "render_provider": getattr(settings, "render_llm_provider", None) or getattr(settings, "llm_provider", "gemini"),
+        "provider_fallback_enabled": bool(getattr(settings, "llm_provider_fallback_enabled", True)),
         "gemini_api_key_configured": bool(getattr(settings, "gemini_api_key", None)),
         "gemini_model": getattr(settings, "gemini_model", None),
         "ollama_base_url": getattr(settings, "ollama_base_url", None),
@@ -159,6 +260,8 @@ def build_health_payload(
         ),
         "pdf_analysis_ollama_base_url": resolved_pdf_ollama or None,
         "pdf_analysis_ollama_localhost_only": _is_local_host_url(resolved_pdf_ollama),
+        "concerns": concern_resolutions,
+        "runtime_resolution": concern_resolutions,
     }
 
     if check_llm and ollama_probe:

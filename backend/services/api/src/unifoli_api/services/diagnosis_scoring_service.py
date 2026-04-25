@@ -9,6 +9,14 @@ from unifoli_api.services.student_record_feature_service import StudentRecordFea
 
 RiskLevel = Literal["safe", "warning", "danger"]
 
+_SECTION_CONSULTING_LABELS: dict[str, str] = {
+    "교과학습발달상황": "교과 성취·세특 기반",
+    "창의적 체험활동": "창체 활동 서사",
+    "행동특성 및 종합의견": "행특·종합의견 신뢰도",
+    "독서활동": "독서/지적 확장성",
+    "수상경력": "수상·성과 근거",
+}
+
 
 class AxisSemanticGrade(BaseModel):
     score: int = Field(ge=0, le=100, description="0~100점 사이의 정량 점수")
@@ -106,7 +114,7 @@ async def normalize_major_name(major_name: str | None) -> str | None:
 
     from unifoli_api.core.llm import get_llm_client
     try:
-        llm = get_llm_client(profile="fast") # 빠른 응답을 위해 fast 프로필 사용
+        llm = get_llm_client(profile="fast", concern="diagnosis") # 빠른 응답을 위해 fast 프로필 사용
     except Exception:
         return major_name
 
@@ -253,16 +261,19 @@ def _build_section_analysis(features: StudentRecordFeatures) -> list[SectionAnal
     for key in keys[:6]:
         present = bool(features.section_presence.get(key))
         count = int(features.section_record_counts.get(key) or 0)
-        if present and count >= 3:
-            note = "기록이 충분해 심화 근거로 활용 가능합니다."
+        label = _SECTION_CONSULTING_LABELS.get(str(key), str(key))
+        if present and count >= 5:
+            note = "근거 총량이 좋아 대표 사례 2개를 선별해 강점 축으로 전환할 수 있습니다."
+        elif present and count >= 3:
+            note = "활용 가능한 기록은 있으나 전공 연결 문장과 과정 설명을 붙이면 설득력이 올라갑니다."
         elif present:
-            note = "기록은 존재하지만 수가 적어 보강 여지가 있습니다."
+            note = "기록은 확인되지만 단독 근거로는 약합니다. 페이지 앵커와 보완 활동을 함께 묶어야 합니다."
         else:
-            note = "해당 섹션 근거가 부족해 보강이 필요합니다."
+            note = "해당 섹션 근거가 부족합니다. 원문 누락 여부를 확인하고 최소 1개 방어 가능한 문장을 확보하세요."
         rows.append(
             SectionAnalysisItem(
                 key=str(key),
-                label=str(key),
+                label=label,
                 present=present,
                 record_count=max(0, count),
                 note=note,
@@ -281,8 +292,9 @@ def _build_document_quality(features: StudentRecordFeatures) -> DocumentQualityS
         reliability_band = "주의"
 
     summary = (
-        f"{features.document_count}개 문서, 총 {features.total_records}개 기록 기준 "
-        f"파싱 신뢰도 {reliability_score}점입니다."
+        f"{features.document_count}개 문서, 총 {features.total_records}개 기록 기준 파싱 신뢰도 {reliability_score}점입니다. "
+        f"근거 밀도 {round(features.evidence_density, 2)}, 서사 밀도 {round(features.narrative_density, 2)}로 "
+        "진단서는 확인 가능한 기록과 보완 필요 기록을 분리해 해석합니다."
     )
     return DocumentQualitySummary(
         source_mode=features.source_mode,
@@ -534,21 +546,21 @@ def _build_next_action_seeds(
     )[:2]
     for axis in weakest_positive:
         if axis.key == "cluster_suitability":
-            actions.append("현재 기록 중 전공 관련 과목/활동 문장을 한 문단으로 재정리해 연결성을 명시하세요.")
+            actions.append("전공 관련 과목/활동 3개를 골라 '근거 문장-증명 역량-전공 연결' 표로 재정리하세요.")
         elif axis.key == "relational_continuity":
-            actions.append("같은 주제를 2단계 이상 이어지는 흐름(문제-시도-개선)으로 정리하세요.")
+            actions.append("학년별 활동을 같은 주제 1개로 묶고 '문제-시도-개선-다음 질문' 흐름을 작성하세요.")
         elif axis.key == "universal_specificity":
-            actions.append("주장마다 관찰 근거를 최소 1개 이상 연결하고 수치/사실 표현을 우선 배치하세요.")
+            actions.append("핵심 주장 3개마다 페이지 앵커, 관찰값, 비교 기준을 1개씩 붙여 추상 표현을 줄이세요.")
         elif axis.key == "cluster_depth":
-            actions.append("방법-한계-개선 순서로 과정 설명을 3문장 이상 고정 템플릿으로 작성하세요.")
+            actions.append("가장 강한 탐구 1개를 선택해 방법-한계-개선-후속 질문 순서로 4문장 보강안을 만드세요.")
         elif axis.key == "universal_rigor":
-            actions.append("학업 성취와 기록의 신뢰도를 높이기 위해, 사실 중심의 기술과 근거 확인을 강화하세요.")
+            actions.append("교과 개념 또는 이론어 2개를 실제 활동 결과와 연결해 학업 엄밀성 문장을 보강하세요.")
         elif axis.key == "relational_narrative":
-            actions.append("활동 간의 연결 고리를 강화하여 전체적인 성장 서사가 드러나도록 보강하세요.")
+            actions.append("활동 간 전환 이유를 한 문장씩 추가해 단순 나열이 아닌 성장 서사로 재배열하세요.")
     if features.needs_review:
         actions.append("검토 필요 문서는 원문 대조 후 핵심 문장을 보수적으로 재작성하세요.")
     if target_major:
-        actions.append(f"{target_major} 맥락에 맞는 활동 1개를 선정해 근거 중심 심화 기록을 추가하세요.")
+        actions.append(f"{target_major} 맥락에 맞는 활동 1개를 선정해 기존 근거로 방어 가능한 심화 보고서 주제를 만드세요.")
     return _dedupe_keep_order(actions)[:8]
 
 

@@ -5,7 +5,11 @@ import json
 
 from unifoli_api.core.config import Settings
 from unifoli_api.core.llm import LLMRequestError, OllamaClient, PDFAnalysisLLMResolution, get_pdf_analysis_llm_client
-from unifoli_api.services.pdf_analysis_service import build_pdf_analysis_metadata
+from unifoli_api.services.pdf_analysis_service import (
+    build_pdf_analysis_metadata,
+    build_student_record_canonical_metadata,
+    build_student_record_structure_metadata,
+)
 from unifoli_ingest.models import ParsedChunkPayload, ParsedDocumentPayload
 
 
@@ -294,6 +298,60 @@ def test_pdf_analysis_metadata_provider_model_fields(monkeypatch) -> None:
     assert metadata["actual_model"] == "gemma4-pdf"
     assert metadata["requested_pdf_analysis_provider"] == "ollama"
     assert metadata["requested_pdf_analysis_model"] == "gemma4-pdf"
+    assert metadata["attempted_pdf_analysis_provider"] == "ollama"
+    assert metadata["attempted_pdf_analysis_model"] == "gemma4-pdf"
+
+
+def test_pdf_analysis_metadata_prefers_runtime_tracking_keys(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    fake_llm = _DeterministicPdfLLM()
+    fake_llm.last_provider_used = "gemini"
+    fake_llm.last_model_used = "gemini-2.0-flash"
+    fake_llm.last_fallback_used = True
+    fake_llm.last_fallback_reason = "primary_failed:TimeoutError"
+    _patch_resolution(
+        monkeypatch,
+        fake_llm,
+        attempted_provider="ollama",
+        attempted_model="gemma4-pdf",
+        actual_provider="ollama",
+        actual_model="gemma4-pdf",
+    )
+
+    metadata = build_pdf_analysis_metadata(_build_payload())
+
+    assert metadata is not None
+    assert metadata["engine"] == "llm"
+    assert metadata["attempted_provider"] == "ollama"
+    assert metadata["attempted_model"] == "gemma4-pdf"
+    assert metadata["actual_provider"] == "gemini"
+    assert metadata["actual_model"] == "gemini-2.0-flash"
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason"] == "primary_failed:TimeoutError"
+
+
+def test_pdf_analysis_marks_provider_or_model_change_as_fallback(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    fake_llm = _DeterministicPdfLLM()
+    fake_llm.last_provider_used = "ollama"
+    fake_llm.last_model_used = "gemma:latest"
+    _patch_resolution(
+        monkeypatch,
+        fake_llm,
+        attempted_provider="ollama",
+        attempted_model="gemma4-pdf",
+        actual_provider="ollama",
+        actual_model="gemma4-pdf",
+    )
+
+    metadata = build_pdf_analysis_metadata(_build_payload())
+
+    assert metadata is not None
+    assert metadata["engine"] == "llm"
+    assert metadata["actual_provider"] == "ollama"
+    assert metadata["actual_model"] == "gemma:latest"
+    assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason"] == "provider_auto_fallback"
 
 
 def test_pdf_analysis_oversized_pdf_uses_two_stage_batches(monkeypatch) -> None:
@@ -387,3 +445,42 @@ def test_get_pdf_analysis_llm_client_uses_split_config(monkeypatch) -> None:
     assert client.options["num_ctx"] == 1111
     assert client.options["num_predict"] == 222
     assert client.options["num_thread"] == 3
+
+
+def test_student_record_metadata_builds_evidence_bank_and_consulting_aliases() -> None:
+    payload = _build_payload(page_count=3)
+    payload.content_text = (
+        "학생명 홍길동 학교 학적사항. 1학년 1학기 교과 성적과 세부능력 및 특기사항에서 "
+        "수학 탐구 과정을 기록했다. 창의적 체험활동 동아리에서 데이터 분석 프로젝트를 수행했고 "
+        "진로활동에서 컴퓨터공학 전공 관심을 밝혔다. 행동특성 및 종합의견에는 과정 성찰이 있다."
+    )
+    payload.masked_artifact = {
+        "pages": [
+            {
+                "page_number": 1,
+                "masked_text": "학생명 [NAME] 학적사항 1학년 1학기 교과 성적 수학 탐구 과정 기록",
+            },
+            {
+                "page_number": 2,
+                "masked_text": "세부능력 및 특기사항 데이터 분석 프로젝트 결과와 한계 개선",
+            },
+            {
+                "page_number": 3,
+                "masked_text": "창의적 체험활동 동아리 진로활동 컴퓨터공학 전공 관심 행동특성 종합의견",
+            },
+        ]
+    }
+
+    canonical = build_student_record_canonical_metadata(parsed=payload)
+    assert canonical is not None
+    assert canonical["evidence_bank"]
+    assert canonical["priority_interventions"]
+    assert canonical["diagnostic_questions"]
+    assert canonical["quality_gates"]["evidence_anchor_count"] >= 3
+
+    structure = build_student_record_structure_metadata(parsed=payload, canonical_schema=canonical)
+    assert structure is not None
+    assert "major_sections" in structure
+    assert "subject_major_alignment_signals" in structure
+    assert "process_reflection_signals" in structure
+    assert structure["evidence_bank"]

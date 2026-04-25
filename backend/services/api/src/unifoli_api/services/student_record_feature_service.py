@@ -248,7 +248,14 @@ def _consume_canonical_data(
         for value in extra_items:
             narrative_char_count_ref[0] += len(str(value).strip())
 
-    subj_notes = _ensure_dict(canonical.get("subject_special_notes"))
+    raw_subj_notes = canonical.get("subject_special_notes")
+    subj_notes = _ensure_dict(raw_subj_notes)
+    if isinstance(raw_subj_notes, list):
+        subj_notes = {
+            str(item.get("subject") or item.get("label") or index): item.get("label") or item.get("detail") or item
+            for index, item in enumerate(raw_subj_notes)
+            if isinstance(item, dict)
+        }
     if subj_notes:
         section_presence["교과학습발달상황"] = True
         section_record_counts["교과학습발달상황"] += len(subj_notes)
@@ -272,6 +279,8 @@ def _consume_canonical_data(
         narrative_char_count_ref[0] += len(str(behavior).strip())
 
     evidence_refs = structured_data.get("evidence_references")
+    if not isinstance(evidence_refs, list):
+        evidence_refs = canonical.get("evidence_bank")
     if isinstance(evidence_refs, list):
         evidence_reference_count_ref[0] += len(evidence_refs)
 
@@ -284,6 +293,10 @@ def _extract_structured_data(metadata: dict[str, Any]) -> dict[str, Any] | None:
     Supports the semantic pipeline (`canonical_data`) and legacy NEIS-like payloads.
     """
     candidates: list[Any] = [
+        {"canonical_data": metadata.get("student_record_canonical")}
+        if isinstance(metadata.get("student_record_canonical"), dict)
+        else None,
+        metadata.get("student_record_structure"),
         metadata.get("analysis_artifact"),
         metadata.get("student_artifact_parse"),
     ]

@@ -232,7 +232,11 @@ def test_design_contract_and_templates_keep_modes_and_ids_with_new_section_flow(
     assert compact_template.id == "consultant_diagnosis_compact"
     assert premium_template.id == "consultant_diagnosis_premium_10p"
     assert "recommended_report_direction" in compact_template.section_schema
+    assert "consulting_priority_brief" in compact_template.section_schema
+    assert "admissions_positioning_snapshot" in premium_template.section_schema
+    assert "consulting_priority_map" in premium_template.section_schema
     assert "student_evaluation_matrix" in premium_template.section_schema
+    assert "student_record_upgrade_blueprint" in premium_template.section_schema
     assert "uncertainty_verification_note" in premium_template.section_schema
 
     premium_contract = get_diagnosis_report_design_contract(
@@ -247,8 +251,11 @@ def test_design_contract_and_templates_keep_modes_and_ids_with_new_section_flow(
     )
 
     assert "recommended_report_directions" in premium_contract["section_hierarchy"]["required_order"]
+    assert "admissions_positioning_snapshot" in premium_contract["section_hierarchy"]["required_order"]
+    assert "student_record_upgrade_blueprint" in premium_contract["section_hierarchy"]["required_order"]
     assert "citation_appendix" in premium_contract["section_hierarchy"]["required_order"]
     assert "uncertainty_verification_note" in compact_contract["section_hierarchy"]["required_order"]
+    assert "consulting_priority_brief" in compact_contract["section_hierarchy"]["required_order"]
     assert "risk_analysis" in compact_contract["section_hierarchy"]["required_order"]
 
 
@@ -257,7 +264,9 @@ def test_section_semantics_map_covers_both_modes() -> None:
     compact = report_service._build_section_semantics(report_mode="compact")
 
     assert premium["system_quality_reliability"] == "verified"
+    assert premium["consulting_priority_map"] == "action"
     assert premium["uncertainty_verification_note"] == "uncertainty"
+    assert compact["consulting_priority_brief"] == "action"
     assert compact["recommended_report_direction"] == "action"
     assert compact["risk_analysis"] == "uncertainty"
 

@@ -3,48 +3,49 @@
 
 @theme {
   --font-sans: "Pretendard Variable", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --color-primary: #5b5cf0;
-  --color-primary-light: #8f6dff;
-  --color-primary-dark: #3d43b8;
-  --color-background: #ffffff;
-  --color-surface: #f8fafc;
-  --color-text-main: #0f172a;
-  --color-text-muted: #64748b;
-  --color-danger: #ef4444;
-  --color-safe: #10b981;
+  --color-primary: #3182f6;
+  --color-primary-light: #60a5fa;
+  --color-primary-dark: #1d4ed8;
+  --color-background: #f2f4f6;
+  --color-surface: #ffffff;
+  --color-text-main: #191f28;
+  --color-text-muted: #6b7684;
+  --color-danger: #f04452;
+  --color-safe: #00d082;
 }
 
 :root {
-  --ui-bg: #ffffff;
-  --ui-surface: #f8fafc;
-  --ui-surface-muted: #f1f5f9;
+  --ui-bg: #f2f4f6;
+  --ui-surface: #ffffff;
+  --ui-surface-muted: #f9fafb;
   --ui-surface-elevated: #ffffff;
-  --ui-border: #e2e8f0;
-  --ui-border-strong: #cbd5e1;
+  --ui-border: #e5e8eb;
+  --ui-border-strong: #d1d6db;
 
-  --ui-text: #0f172a;
-  --ui-text-secondary: #334155;
-  --ui-text-muted: #64748b;
+  --ui-text: #191f28;
+  --ui-text-secondary: #333d4b;
+  --ui-text-muted: #6b7684;
 
-  --ui-brand: #5b5cf0;
-  --ui-brand-soft: #eef0ff;
-  --ui-brand-strong: #3d43b8;
-  --ui-accent-a: #22c1c3;
-  --ui-accent-b: #ff6b6b;
-  --ui-accent-c: #ffb347;
-  --ui-accent-d: #8a5cf6;
+  --ui-brand: #3182f6;
+  --ui-brand-soft: #e8f3ff;
+  --ui-brand-strong: #1b64da;
+  --ui-accent-a: #3182f6;
+  --ui-accent-b: #60a5fa;
+  --ui-accent-c: #93c5fd;
+  --ui-accent-d: #dbeafe;
 
-  --ui-danger: #ef4444;
-  --ui-success: #10b981;
-  --ui-warning: #f59e0b;
+  --ui-danger: #f04452;
+  --ui-success: #00d082;
+  --ui-warning: #ffbb00;
 
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
+  --radius-sm: 0.75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
 
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --shadow-md: 0 6px 14px -4px rgb(0 0 0 / 0.12), 0 3px 8px -5px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 16px 28px -12px rgb(0 0 0 / 0.14), 0 8px 12px -10px rgb(0 0 0 / 0.12);
+  --shadow-sm: 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 8px 24px -4px rgba(24, 39, 75, 0.08), 0 6px 12px -6px rgba(24, 39, 75, 0.12);
+  --shadow-lg: 0 20px 40px -12px rgba(24, 39, 75, 0.14);
 
   --duration-fast: 150ms;
   --duration-normal: 250ms;
@@ -63,11 +64,7 @@ html,
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background:
-    radial-gradient(circle at 8% 14%, rgb(255 182 193 / 0.18) 0%, transparent 36%),
-    radial-gradient(circle at 92% 10%, rgb(103 232 249 / 0.16) 0%, transparent 38%),
-    radial-gradient(circle at 76% 78%, rgb(196 181 253 / 0.18) 0%, transparent 42%),
-    var(--ui-bg);
+  background: var(--ui-bg);
   color: var(--ui-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -102,7 +99,7 @@ li {
 }
 
 .btn-primary {
-  background-image: linear-gradient(135deg, var(--ui-brand), var(--ui-accent-d));
+  background-image: linear-gradient(135deg, var(--ui-brand), var(--ui-brand-strong));
   color: white;
   padding: 0.75rem 1.5rem;
   border-radius: var(--radius-md);

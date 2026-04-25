@@ -108,178 +108,104 @@ export const DiagnosisUpload: React.FC<DiagnosisUploadProps> = ({
   return (
     <motion.div
       key="upload"
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className="mx-auto max-w-3xl"
     >
-      <SectionCard
-        title="학생부 PDF 업로드"
-        description="PDF 1개 업로드 후 바로 분석"
-        className="overflow-hidden border-none bg-white/60 shadow-xl backdrop-blur-2xl ring-1 ring-white/50"
-        actions={(
-          <SecondaryButton
-            size="sm"
-            onClick={() => setStep('GOALS')}
-            className="border-white/50 bg-white/50 backdrop-blur-sm"
-          >
-            <Settings2 size={14} className="mr-1.5" />
-            목표 대학/전공 수정
-          </SecondaryButton>
+      <div className="text-center mb-10">
+        <h1 className="text-3xl font-black text-slate-900 mb-3">학생부 분석 시작하기</h1>
+        <p className="text-slate-500 font-medium">PDF 파일을 업로드하면 즉시 진단이 시작됩니다.</p>
+      </div>
+
+      <div
+        {...getRootProps({
+          onClick: handleOpenFileDialog,
+          onKeyDown: handleDropzoneKeyDown,
+        })}
+        className={cn(
+          'relative cursor-pointer overflow-hidden rounded-[2.5rem] border-2 border-dashed transition-all duration-300',
+          isDragActive
+            ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]'
+            : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-100/50',
+          isUploading && 'pointer-events-none opacity-60'
         )}
       >
-        <div className="flex flex-wrap gap-2">
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600">
-            PDF 1개
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600">
-            최대 50MB
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600">
-            업로드 후 자동 분석
-          </span>
+        <input {...getInputProps()} />
+        
+        <div className="flex flex-col items-center px-8 py-20 sm:py-32">
+          <div className="relative mb-10">
+            <div className="absolute inset-0 animate-ping rounded-[2rem] bg-indigo-200 opacity-20" />
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-[2rem] bg-indigo-600 text-white shadow-xl shadow-indigo-200">
+              {isUploading ? (
+                <Loader2 size={36} className="animate-spin" />
+              ) : (
+                <FileUp size={36} strokeWidth={1.5} />
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-slate-900">
+              {isDragActive ? '파일을 여기에 놓으세요' : 'PDF 파일을 마우스로 끌어오세요'}
+            </h2>
+            <div className="flex flex-wrap justify-center gap-3">
+               <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-4 py-1.5 text-sm font-bold text-slate-600">
+                <Settings2 size={14} />
+                최대 50MB
+               </span>
+               <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-4 py-1.5 text-sm font-bold text-slate-600">
+                <FileUp size={14} />
+                PDF 형식
+               </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="mt-12 rounded-2xl bg-indigo-600 px-10 py-4 text-base font-bold text-white shadow-lg shadow-indigo-200 transition-all hover:bg-indigo-700 active:scale-95"
+          >
+            내 컴퓨터에서 찾기
+          </button>
         </div>
+      </div>
 
-        <div className="rounded-[1.75rem] border border-slate-200 bg-white/85 p-5 shadow-sm">
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700">
-              업로드 전 가이드
-            </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-              목표 전공: {targetMajor?.trim() ? targetMajor : '미설정'}
-            </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-              현재 고민: {currentConcern?.trim() ? currentConcern : '미입력'}
-            </span>
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-[2rem] bg-white p-6 shadow-sm flex items-start gap-4 border border-slate-100">
+          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+            <Sparkles size={20} className="text-indigo-600" />
           </div>
-
-          <div className="mt-4 max-h-64 space-y-3 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            {guideMessages.map((message) => (
-              <div
-                key={message.id}
-                className={`rounded-xl px-3 py-2 text-sm leading-6 ${
-                  message.role === 'assistant'
-                    ? 'border border-slate-200 bg-white text-slate-700'
-                    : 'border border-violet-300/40 bg-violet-600 text-white'
-                }`}
-              >
-                <p className="mb-1 text-[11px] font-black uppercase tracking-wide opacity-70">
-                  {message.role === 'assistant' ? 'Consultant' : 'You'}
-                </p>
-                <p className="whitespace-pre-wrap">{message.text}</p>
-              </div>
-            ))}
+          <div>
+            <h4 className="font-bold text-slate-900 mb-1">AI 정밀 분석</h4>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">학생부의 텍스트를 정밀하게 추출하여 전공 적합성을 판단합니다.</p>
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {PRE_UPLOAD_GUIDE_QUICK_ACTIONS.map((action) => (
-              <button
-                key={action.id}
-                type="button"
-                onClick={() => handleQuickAction(action)}
-                disabled={isUploading}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              value={guideInput}
-              onChange={(event) => setGuideInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || event.shiftKey) return;
-                event.preventDefault();
-                handleGuideSend();
-              }}
-              placeholder="현재 고민을 한 줄로 입력하세요."
-              disabled={isUploading}
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 outline-none transition-colors placeholder:text-slate-400 focus:border-violet-400"
-            />
-            <button
-              type="button"
-              onClick={handleGuideSend}
-              disabled={!guideInput.trim() || isUploading}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-600 text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              <Send size={16} />
-            </button>
-          </div>
-
-          <p className="mt-2 text-xs font-medium text-slate-500">
-            업로드 전에는 학생부를 분석하지 않습니다. PDF 업로드 후에만 근거 기반 진단이 가능합니다.
-          </p>
         </div>
+        <div className="rounded-[2rem] bg-white p-6 shadow-sm flex items-start gap-4 border border-slate-100">
+          <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+            <Target size={20} className="text-slate-600" />
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-900 mb-1">목표 대학 맞춤</h4>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">설정하신 목표 대학과 전공의 인재상에 맞춰 분석 결과를 제공합니다.</p>
+          </div>
+        </div>
+      </div>
 
-        <div
-          {...getRootProps({
-            onClick: handleOpenFileDialog,
-            onKeyDown: handleDropzoneKeyDown,
-          })}
-          className={`group relative mt-6 cursor-pointer overflow-hidden rounded-[2rem] border-2 border-dashed transition-all duration-300 ${
-            isDragActive
-              ? 'scale-[0.99] border-violet-500 bg-violet-50'
-              : 'border-slate-200 bg-white hover:border-violet-300 hover:shadow-2xl hover:shadow-violet-200/30'
-          } ${isUploading ? 'pointer-events-none opacity-60' : ''}`}
+      <div className="mt-8 flex justify-center">
+        <button 
+          onClick={() => setStep('GOALS')}
+          className="text-sm font-bold text-slate-400 hover:text-indigo-600 transition-colors"
         >
-          <input data-testid="diagnosis-upload-input" {...getInputProps()} />
+          목표 대학/전공 수정하기
+        </button>
+      </div>
 
-          <div className="flex flex-col items-center px-6 py-12 text-center sm:py-20">
-            <div className="relative mb-8">
-              <div className="absolute inset-0 animate-ping rounded-full bg-blue-400 opacity-20" />
-              <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white shadow-lg shadow-violet-500/20">
-                {isUploading ? (
-                  <div className="w-12">
-                    <div className="h-2 overflow-hidden rounded-full bg-white/20">
-                      <motion.div
-                        className="h-full rounded-full bg-white"
-                        animate={{ x: ['-100%', '100%'] }}
-                        transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <FileUp size={42} className="transition-transform duration-300 group-hover:-translate-y-1" />
-                )}
-              </div>
-            </div>
-
-            <h3 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-              PDF를 <span className="text-violet-600">바로 올려 주세요</span>
-            </h3>
-            <p className="mt-4 max-w-md text-sm font-medium leading-6 text-slate-500 sm:text-base">
-              드래그 또는 버튼 선택 후 즉시 진단이 시작됩니다.
-            </p>
-
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                handleOpenFileDialog();
-              }}
-              disabled={isUploading}
-              className="mt-10 flex items-center gap-3 rounded-2xl bg-slate-900 px-8 py-4 text-base font-bold text-white shadow-xl shadow-slate-200 ring-offset-2 transition-all hover:bg-slate-800 hover:ring-2 hover:ring-slate-900 active:scale-95 disabled:opacity-50"
-            >
-              <Plus size={20} />
-              PDF 선택하기
-            </button>
-
-            <div className="mt-5 flex flex-wrap justify-center gap-2 text-xs font-bold text-slate-500">
-              <span className="rounded-full bg-slate-100 px-3 py-1">텍스트 추출</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">근거 정리</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">진단 생성</span>
-            </div>
-          </div>
+      {flowError && (
+        <div className="mt-8">
+          <WorkflowNotice tone="danger" title="업로드 실패" description={flowError} />
         </div>
-
-        {flowError ? (
-          <div className="mt-6">
-            <WorkflowNotice tone="danger" title="작업 중 오류 발생" description={flowError} />
-          </div>
-        ) : null}
-      </SectionCard>
+      )}
     </motion.div>
   );
 };

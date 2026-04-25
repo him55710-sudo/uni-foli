@@ -15,7 +15,7 @@ export function AppShell({ topbar, sidebar, children, footer, overlay, className
   return (
     <div
       className={cn(
-        'flex min-h-screen min-h-[100dvh] flex-col bg-[radial-gradient(circle_at_10%_8%,rgba(244,114,182,0.09)_0%,transparent_32%),radial-gradient(circle_at_92%_10%,rgba(34,211,238,0.1)_0%,transparent_34%),radial-gradient(circle_at_76%_88%,rgba(132,204,22,0.08)_0%,transparent_34%),#f8fafc]',
+        'flex min-h-screen min-h-[100dvh] flex-col bg-[#f2f4f6]',
         className,
       )}
     >

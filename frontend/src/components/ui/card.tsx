@@ -5,9 +5,9 @@ type CardTone = 'default' | 'muted' | 'strong';
 type CardPadding = 'none' | 'sm' | 'md' | 'lg';
 
 const toneClasses: Record<CardTone, string> = {
-  default: 'border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(246,249,255,0.88)_100%)] backdrop-blur-xl',
-  muted: 'border-[#dce4ff] bg-[linear-gradient(180deg,#f8faff_0%,#f1f5ff_100%)]',
-  strong: 'border-[#ccd8ff] bg-white/96 shadow-[0_18px_40px_rgba(42,64,132,0.12)] backdrop-blur-xl',
+  default: 'border-transparent bg-white shadow-md',
+  muted: 'border-transparent bg-slate-50',
+  strong: 'border-transparent bg-white shadow-lg',
 };
 
 const paddingClasses: Record<CardPadding, string> = {

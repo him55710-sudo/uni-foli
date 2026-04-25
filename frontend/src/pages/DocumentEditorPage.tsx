@@ -231,7 +231,7 @@ export function DocumentEditorPage() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        <TiptapEditor ref={editorRef} initialContent={initialContent} onUpdate={handleEditorUpdate} />
+        <TiptapEditor ref={editorRef} initialContent={initialContent} onJsonUpdate={handleEditorUpdate} />
       </main>
 
       <ExportModal

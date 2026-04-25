@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Flag, PlayCircle, School, Settings2, Sparkles, Target, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -93,21 +94,21 @@ const levelSummary = (level: string) => {
 const questToneMap = {
   high: {
     badge: 'danger' as const,
-    icon: 'bg-rose-50 text-rose-600 group-hover:bg-rose-500',
-    shell: 'border-rose-200/80',
-    action: 'bg-[linear-gradient(135deg,#ef4444_0%,#f97316_100%)] shadow-[0_10px_22px_rgba(239,68,68,0.22)]',
+    icon: 'bg-red-50 text-red-500 group-hover:bg-red-500',
+    shell: 'border-red-100',
+    action: 'bg-[#f04452] shadow-[0_10px_22px_rgba(240,68,82,0.22)]',
   },
   medium: {
     badge: 'warning' as const,
-    icon: 'bg-amber-50 text-amber-600 group-hover:bg-amber-500',
-    shell: 'border-amber-200/80',
-    action: 'bg-[linear-gradient(135deg,#f59e0b_0%,#f97316_100%)] shadow-[0_10px_22px_rgba(245,158,11,0.22)]',
+    icon: 'bg-orange-50 text-orange-500 group-hover:bg-orange-500',
+    shell: 'border-orange-100',
+    action: 'bg-[#ff9c20] shadow-[0_10px_22px_rgba(255,156,32,0.22)]',
   },
   low: {
     badge: 'success' as const,
-    icon: 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-500',
-    shell: 'border-emerald-200/80',
-    action: 'bg-[linear-gradient(135deg,#10b981_0%,#06b6d4_100%)] shadow-[0_10px_22px_rgba(16,185,129,0.22)]',
+    icon: 'bg-blue-50 text-[#3182f6] group-hover:bg-[#3182f6]',
+    shell: 'border-blue-100',
+    action: 'bg-[#3182f6] shadow-[0_10px_22px_rgba(49,130,246,0.22)]',
   },
 };
 
@@ -116,32 +117,32 @@ const QuestCard = ({ quest, onStart, isStarting }: { quest: BlueprintQuest; onSt
   const tone = questToneMap[quest.difficulty === 'high' ? 'high' : quest.difficulty === 'medium' ? 'medium' : 'low'];
 
   return (
-    <SurfaceCard className={`group relative flex flex-col justify-between overflow-hidden bg-white/90 p-6 shadow-[0_16px_34px_rgba(42,64,132,0.11)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_42px_rgba(42,64,132,0.16)] active:scale-[0.98] ${tone.shell}`}>
+    <SurfaceCard className={`group relative flex flex-col justify-between overflow-hidden bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] ${tone.shell}`}>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
-          <StatusBadge status={tone.badge} className="px-2.5 py-0.5 text-[10px] font-black">난이도 {diffLabel}</StatusBadge>
+          <StatusBadge status={tone.badge} className="px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">Level {diffLabel}</StatusBadge>
           <div className={`rounded-xl p-2 transition-colors group-hover:text-white ${tone.icon}`}>
             <Zap size={16} fill="currentColor" className="opacity-80" />
           </div>
         </div>
         <div>
-          <h4 className="line-clamp-1 text-lg font-black tracking-tight text-slate-900">{quest.title}</h4>
-          <p className="mt-2 line-clamp-2 text-sm font-medium leading-relaxed text-slate-500">{quest.summary}</p>
+          <h4 className="line-clamp-1 text-lg font-black tracking-tight text-[#191f28]">{quest.title}</h4>
+          <p className="mt-2 line-clamp-2 text-[14px] font-medium leading-relaxed text-[#4e5968]">{quest.summary}</p>
         </div>
       </div>
       
-      <div className="mt-6 flex items-center justify-between gap-4 border-t border-[#e8eefc] pt-5">
+      <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-100 pt-5">
         <div className="flex flex-col">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">관련 과목</span>
-          <span className="text-sm font-bold text-slate-700">{quest.subject}</span>
+          <span className="text-[10px] font-black uppercase tracking-wider text-[#b0b8c1]">Subject</span>
+          <span className="text-sm font-black text-[#333d4b]">{quest.subject}</span>
         </div>
         <button
           onClick={() => onStart(quest)}
           disabled={isStarting}
-          className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-black text-white transition-all hover:-translate-y-0.5 disabled:opacity-50 ${tone.action}`}
+          className={`inline-flex h-10 items-center gap-2 rounded-xl px-5 text-xs font-black text-white transition-all hover:-translate-y-0.5 disabled:opacity-50 ${tone.action}`}
         >
           {isStarting ? '준비 중...' : '시작하기'}
-          {!isStarting && <PlayCircle size={14} />}
+          {!isStarting && <ArrowRight size={14} strokeWidth={2.5} />}
         </button>
       </div>
     </SurfaceCard>
@@ -397,28 +398,34 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 space-y-8 pb-20 duration-1000 sm:space-y-12">
-      <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+    <div className="mx-auto max-w-7xl space-y-8 pb-20 sm:space-y-12">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.1 }}
+        transition={{ duration: 0.5 }}
+        className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]"
+      >
         <PageHeader
           eyebrow="Dashboard"
           title={nextAction.title}
           description={nextAction.description}
-          className="border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(243,247,255,0.92)_100%)]"
+          className="border-slate-200 bg-white"
           actions={
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={nextAction.onPrimary}
-                className="inline-flex h-11 items-center gap-2 rounded-2xl bg-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-indigo-200 transition-all hover:bg-indigo-700 hover:-translate-y-0.5"
+                className="inline-flex h-12 items-center gap-2 rounded-2xl bg-[#3182f6] px-6 text-[15px] font-black text-white shadow-lg shadow-blue-100 transition-all hover:bg-[#1b64da] hover:-translate-y-0.5 active:scale-95"
               >
                 {nextAction.primaryLabel}
-                <ArrowRight size={16} />
+                <ArrowRight size={18} strokeWidth={2.5} />
               </button>
               {hasPrimaryGoal && (
                 <button
                   onClick={() => navigate('/app/diagnosis')}
-                  className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                  className="inline-flex h-12 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-[15px] font-black text-[#4e5968] transition-all hover:bg-[#f2f4f6] active:scale-95"
                 >
-                  <Settings2 size={16} />
+                  <Settings2 size={18} />
                   목표 수정
                 </button>
               )}
@@ -466,21 +473,21 @@ export default function Dashboard() {
             </div>
           </div>
         </SectionCard>
-      </div>
+      </motion.div>
 
       <div className="grid gap-3 md:grid-cols-3">
         {quickActions.map((action) => (
           <button
             key={action.label}
             onClick={action.onClick}
-            className={`flex items-center justify-between rounded-[1.6rem] border px-5 py-4 text-left transition-all ${
+            className={`flex items-center justify-between rounded-3xl border px-6 py-5 text-left transition-all ${
               action.tone === 'primary'
-                ? 'border-indigo-500 bg-indigo-600 text-white shadow-xl shadow-indigo-200 hover:-translate-y-0.5'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-100 hover:bg-slate-50'
+                ? 'border-[#3182f6] bg-[#3182f6] text-white shadow-xl shadow-blue-100 hover:-translate-y-0.5'
+                : 'border-slate-200 bg-white text-[#333d4b] hover:border-blue-100 hover:bg-blue-50'
             }`}
           >
-            <span className="text-sm font-black">{action.label}</span>
-            <ArrowRight size={16} className={action.tone === 'primary' ? 'text-white' : 'text-slate-400'} />
+            <span className="text-[15px] font-black">{action.label}</span>
+            <ArrowRight size={18} strokeWidth={2.5} className={action.tone === 'primary' ? 'text-white' : 'text-[#b0b8c1]'} />
           </button>
         ))}
       </div>
@@ -490,9 +497,6 @@ export default function Dashboard() {
         {/* Target Card */}
         <SurfaceCard className="relative overflow-hidden border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.9)_0%,rgba(245,248,255,0.86)_100%)] p-5 shadow-[0_20px_42px_rgba(42,64,132,0.14)] sm:p-8 lg:col-span-2">
           {/* Subtle background decoration for empty state */}
-          {!hasPrimaryGoal && (
-            <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-blue-50/60 blur-3xl" />
-          )}
           
           <div className="relative z-10">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
@@ -593,10 +597,10 @@ export default function Dashboard() {
             {workflowSteps.map((step) => (
               <div key={step.key} className="flex gap-4 rounded-2xl bg-white/55 p-3">
                 <div className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
-                  step.status === 'done' ? 'bg-indigo-600 border-indigo-600 text-white' : 
-                  step.status === 'active' ? 'border-indigo-600 text-indigo-600' : 'border-slate-200 text-slate-200'
+                  step.status === 'done' ? 'bg-[#3182f6] border-[#3182f6] text-white' : 
+                  step.status === 'active' ? 'border-[#3182f6] text-[#3182f6]' : 'border-slate-200 text-slate-200'
                 }`}>
-                  {step.status === 'done' ? <CheckCircle2 size={14} /> : <div className="h-1.5 w-1.5 rounded-full bg-current" />}
+                  {step.status === 'done' ? <CheckCircle2 size={14} strokeWidth={2.5} /> : <div className="h-1.5 w-1.5 rounded-full bg-current" />}
                 </div>
                 <div>
                   <h4 className={`text-sm font-black ${step.status === 'pending' ? 'text-slate-400' : 'text-slate-900'}`}>{step.title}</h4>
@@ -609,7 +613,13 @@ export default function Dashboard() {
       </div>
 
       {/* Action Plan / Next Step Section */}
-      <div id="action-plan">
+      <motion.div
+        id="action-plan"
+        initial={{ opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.1 }}
+        transition={{ duration: 0.5 }}
+      >
         <SectionCard 
           title="맞춤형 액션 플랜" 
           subtitle="진단 기반 추천 퀘스트"
@@ -672,7 +682,7 @@ export default function Dashboard() {
             />
           )}
         </SectionCard>
-      </div>
+      </motion.div>
 
       {/* OnboardingModal Removed: Integrated into /app/diagnosis */}
     </div>
