@@ -82,8 +82,15 @@ def _ensure_schema_is_ready() -> None:
 
     has_app_tables = any(inspector.has_table(table_name) for table_name in _APPLICATION_TABLES)
     if settings.database_auto_create_tables:
-        if settings.serverless_runtime and settings.app_env != "local":
-            logger.warning("Skipping automatic migrations in serverless production to avoid race conditions. Run migrations during deployment.")
+        # Detect strict runtime (Vercel production/preview)
+        vercel_env = (os.getenv("VERCEL_ENV") or "").strip().lower()
+        is_strict_runtime = settings.serverless_runtime or vercel_env in {"production", "preview"}
+
+        if is_strict_runtime and settings.app_env != "local":
+            logger.warning(
+                "Skipping automatic migrations in strict serverless production/preview to avoid race conditions. "
+                "Run migrations during deployment or via manual admin trigger."
+            )
             return
 
         logger.info(

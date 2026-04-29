@@ -33,7 +33,11 @@ class Settings(BaseSettings):
     allow_production_sqlite: bool = False
     postgres_enable_pgvector: bool = True
     cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["http://localhost:3001"]
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "https://uni-foli.vercel.app",
+        ]
     )
     cors_origin_regex: str | None = None
     cors_allow_credentials: bool = True
@@ -383,6 +387,16 @@ class Settings(BaseSettings):
         is_sqlite = _is_sqlite_database_url(self.database_url)
         is_production_env = self.app_env not in {"local", "test"}
         
+        if strict_runtime and is_sqlite:
+            # On Vercel, the only writable path is /tmp.
+            # If we are using SQLite, we should at least try to use /tmp.
+            # This allows temporary testing with ALLOW_PRODUCTION_SQLITE.
+            if "/tmp/" not in self.database_url:
+                # Convert ./storage/runtime/unifoli.db -> /tmp/unifoli.db
+                new_url = self.database_url.replace("./storage/runtime/", "/tmp/").replace("/storage/runtime/", "/tmp/")
+                object.__setattr__(self, "database_url", new_url)
+                logger.warning(f"Redirected SQLite to /tmp for serverless write access: {new_url}")
+
         if strict_runtime and is_production_env and is_sqlite:
             if not self.allow_production_sqlite:
                 # We no longer crash here to allow readiness check to report the failure gracefully.
