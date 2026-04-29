@@ -143,33 +143,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     const canUseFirebaseGoogle = Boolean(auth && isFirebaseConfigured && googleProvider);
-    try {
-      await signInWithSocialRedirect('google');
-      return;
-    } catch (socialRedirectError) {
-      if (!canUseFirebaseGoogle) {
-        const detail = extractApiErrorMessage(socialRedirectError);
-        if (detail) {
-          throw new Error(detail);
+    if (canUseFirebaseGoogle) {
+      try {
+        await signInWithPopup(auth, googleProvider);
+        return;
+      } catch (error) {
+        const authError = error as Partial<AuthError>;
+        if (authError.code && POPUP_FALLBACK_ERROR_CODES.has(authError.code)) {
+          await signInWithRedirect(auth, googleProvider);
+          return;
         }
-        throw socialRedirectError;
+        if (authError.code && GOOGLE_SOCIAL_REDIRECT_ERROR_CODES.has(authError.code)) {
+          await signInWithSocialRedirect('google');
+          return;
+        }
+        throw error;
       }
     }
 
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      const authError = error as Partial<AuthError>;
-      if (authError.code && POPUP_FALLBACK_ERROR_CODES.has(authError.code)) {
-        await signInWithRedirect(auth, googleProvider);
-        return;
-      }
-      if (authError.code && GOOGLE_SOCIAL_REDIRECT_ERROR_CODES.has(authError.code)) {
-        await signInWithSocialRedirect('google');
-        return;
-      }
-      throw error;
-    }
+    await signInWithSocialRedirect('google');
   };
 
   const signInWithKakao = async () => {
