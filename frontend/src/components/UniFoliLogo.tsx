@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '../lib/cn';
 
 type LogoSize = 'sm' | 'md' | 'lg';
-type LogoTone = 'light' | 'dark';
+type LogoTone = 'light' | 'dark' | 'auto';
 
 interface UniFoliLogoProps {
   size?: LogoSize;
@@ -54,9 +54,9 @@ const toneStyles: Record<LogoTone, { subtitle: string; panel: string }> = {
     panel: '',
   },
   dark: {
-    subtitle: 'text-slate-200',
+    subtitle: 'text-slate-400 group-hover:text-indigo-400 transition-colors',
     panel:
-      'rounded-[1.2rem] bg-white/90 ring-1 ring-white/60 shadow-[0_14px_36px_rgba(37,99,235,0.22)] backdrop-blur-sm',
+      'rounded-2xl bg-slate-900/40 ring-1 ring-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-md px-3 py-2',
   },
 };
 
@@ -75,9 +75,11 @@ function UniFoliMark({ className }: { className?: string }) {
 
 function UniFoliWordmark({
   size,
+  tone,
   titleClassName,
 }: {
   size: LogoSize;
+  tone: LogoTone;
   titleClassName?: string;
 }) {
   return (
@@ -89,7 +91,14 @@ function UniFoliWordmark({
         aria-hidden="true"
         draggable={false}
         decoding="async"
-        className={cn('block w-auto object-contain', sizeStyles[size].wordmark, titleClassName)}
+        className={cn(
+          'block w-auto object-contain transition-all duration-500 ease-in-out',
+          tone === 'dark' && 'invert brightness-200 contrast-125',
+          tone === 'auto' && 'dark:invert dark:brightness-200 dark:contrast-125',
+          tone !== 'light' && 'hover:drop-shadow-[0_0_12px_rgba(96,165,250,0.5)]',
+          sizeStyles[size].wordmark,
+          titleClassName
+        )}
       />
     </>
   );
@@ -97,7 +106,7 @@ function UniFoliWordmark({
 
 export function UniFoliLogo({
   size = 'md',
-  tone = 'light',
+  tone = 'auto',
   markOnly = false,
   subtitle = '입시 실행 워크플로',
   className,
@@ -106,8 +115,8 @@ export function UniFoliLogo({
   subtitleClassName,
 }: UniFoliLogoProps) {
   const panelClassName = toneStyles[tone].panel
-    ? cn('inline-flex items-center justify-center', toneStyles[tone].panel, sizeStyles[size].panelPadding, markClassName)
-    : cn('inline-flex items-center justify-center', markClassName);
+    ? cn('inline-flex items-center justify-center group', toneStyles[tone].panel, markClassName)
+    : cn('inline-flex items-center justify-center group', markClassName);
 
   if (markOnly) {
     return (
@@ -124,14 +133,14 @@ export function UniFoliLogo({
   }
 
   return (
-    <div className={cn('inline-flex flex-col items-start', sizeStyles[size].root, className)}>
+    <div className={cn('inline-flex flex-col items-start group', sizeStyles[size].root, className)}>
       <span className={panelClassName}>
-        <UniFoliWordmark size={size} titleClassName={titleClassName} />
+        <UniFoliWordmark size={size} tone={tone} titleClassName={titleClassName} />
       </span>
       {subtitle ? (
         <p
           className={cn(
-            'font-semibold leading-none',
+            'font-bold leading-none tracking-tight',
             sizeStyles[size].subtitle,
             toneStyles[tone].subtitle,
             subtitleClassName,

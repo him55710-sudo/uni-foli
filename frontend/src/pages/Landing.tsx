@@ -63,11 +63,11 @@ export function Landing() {
               트렌드·진단·워크숍 코파일럿
             </div>
 
-            <h1 className="text-4xl font-black leading-[1.15] tracking-tight sm:text-6xl lg:text-7xl">
-              말은 짧게
+            <h1 className="text-[2.65rem] font-black leading-[1.1] tracking-tight sm:text-6xl lg:text-7xl">
+              막연한 불안 대신
               <br />
-              <span className="bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent">
-                실행은 빠르게
+              <span className="bg-gradient-to-r from-[#3182f6] via-[#1d4fff] to-[#6d28d9] bg-clip-text text-transparent drop-shadow-sm">
+                확인 가능한 순서
               </span>
             </h1>
 
@@ -106,21 +106,22 @@ export function Landing() {
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="relative"
           >
-            <div className="relative overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-2xl shadow-blue-50/50 sm:rounded-[3rem] sm:p-20 flex flex-col items-center justify-center h-full min-h-[320px] sm:min-h-[400px]">
+            <div className="relative overflow-hidden rounded-[2.5rem] border border-white/60 bg-white/72 p-8 shadow-[0_32px_64px_-16px_rgba(49,130,246,0.12)] backdrop-blur-xl sm:rounded-[3rem] sm:p-20 flex flex-col items-center justify-center h-full min-h-[300px] sm:min-h-[400px]">
               {/* Subtle background element */}
-              <div className="absolute top-0 right-0 -mr-16 -mt-16 h-80 w-80 rounded-full bg-blue-50/50 blur-3xl opacity-60" />
-              <div className="absolute bottom-0 left-0 -ml-16 -mb-16 h-80 w-80 rounded-full bg-indigo-50/50 blur-3xl opacity-60" />
+              <div className="absolute top-0 right-0 -mr-16 -mt-16 h-80 w-80 rounded-full bg-blue-100/30 blur-3xl opacity-60" />
+              <div className="absolute bottom-0 left-0 -ml-16 -mb-16 h-80 w-80 rounded-full bg-indigo-100/30 blur-3xl opacity-60" />
               
               <div className="relative z-10 space-y-6 sm:space-y-8 text-center">
-                <div className="mx-auto flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-[1.5rem] sm:rounded-[2rem] bg-blue-50 text-[#3182f6]">
-                  <Layers3 size={32} className="sm:w-10 sm:h-10" strokeWidth={2.5} />
+                <div className="mx-auto flex h-16 w-16 sm:h-22 sm:w-22 items-center justify-center rounded-[1.8rem] sm:rounded-[2.2rem] bg-indigo-50 text-[#1d4fff] shadow-[0_8px_16px_rgba(29,79,255,0.08)]">
+                  <Layers3 size={32} className="sm:w-12 sm:h-12" strokeWidth={2.5} />
                 </div>
-                <div className="space-y-3 sm:space-y-4">
-                  <h2 className="text-3xl font-black tracking-tight text-[#191f28] sm:text-5xl leading-tight">
+                <div className="space-y-3 sm:space-y-4 px-2">
+                  <h2 className="text-[1.75rem] font-black tracking-tight text-[#191f28] sm:text-5xl leading-tight">
                     입시 전략의<br />새로운 패러다임
                   </h2>
-                  <p className="text-xl font-medium leading-relaxed text-[#4e5968] max-w-[320px] mx-auto">
-                    여러분의 학생부 분석부터 워크숍 기획까지, <span className="font-black text-[#3182f6]">UniFoli</span>가 함께합니다.
+                  <p className="text-base sm:text-xl font-bold leading-relaxed text-[#4e5968] max-w-[280px] sm:max-w-md mx-auto opacity-80">
+                    분석부터 기획까지 <br className="sm:hidden" />
+                    <span className="text-[#3182f6]">UniFoli</span>와 함께 경험하세요.
                   </p>
                 </div>
               </div>

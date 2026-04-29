@@ -108,8 +108,8 @@ export function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc]">
-      <div className="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[1.08fr_0.92fr]">
+    <div className="min-h-screen bg-white selection:bg-indigo-100">
+      <div className="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[1.05fr_0.95fr]">
         <section className="order-2 relative overflow-hidden px-4 py-6 sm:px-8 sm:py-8 lg:order-1 lg:px-12 lg:py-10">
 
           <div className="relative flex flex-wrap items-center justify-between gap-3">
@@ -246,11 +246,12 @@ export function Auth() {
           >
             <div className="text-center">
               <div className="flex justify-center">
-                <UniFoliLogo size="md" subtitle={null} />
+                <UniFoliLogo size="lg" subtitle={null} className="mb-2" />
               </div>
-              <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-900 sm:mt-6 sm:text-3xl">로그인하고 시작하기</h2>
-              <p className="mt-2 text-sm font-medium leading-6 text-slate-500 sm:mt-3 sm:text-base">
-                소셜 로그인으로 바로 시작하거나, 게스트로 먼저 둘러볼 수 있어요.
+              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">반가워요!</h2>
+              <p className="mt-3 text-sm font-bold leading-relaxed text-slate-500 sm:text-base">
+                학생부 분석과 진단의 시작, <br className="sm:hidden" />
+                유니폴리와 함께하세요.
               </p>
             </div>
 
@@ -330,46 +331,55 @@ export function Auth() {
               </div>
             </div>
 
-            <div className="mt-6 space-y-3 sm:mt-8">
+            <div className="mt-8 space-y-3.5 sm:mt-10">
               <button
                 type="button"
                 onClick={onGoogleLogin}
                 disabled={isSigningIn !== null || !allRequiredAgreed}
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border border-[#d6e4ff] bg-white px-5 py-3.5 text-sm font-black text-[#344f85] shadow-[0_10px_20px_rgba(24,66,170,0.08)] transition-all hover:bg-[#f7faff] hover:shadow-[0_14px_24px_rgba(24,66,170,0.14)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-6 sm:py-4 sm:text-base"
+                className="group relative flex w-full items-center justify-center gap-3.5 rounded-[1.25rem] border border-slate-200 bg-white px-5 py-4 text-[15px] font-black text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <img src="https://www.google.com/favicon.ico" alt="" className="h-5 w-5" />
-                {isSigningIn === 'google' ? '로그인 중...' : 'Google로 계속하기'}
+                <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+                {isSigningIn === 'google' ? '연결 중...' : 'Google로 계속하기'}
               </button>
 
               <button
                 type="button"
                 onClick={onKakaoLogin}
                 disabled={isSigningIn !== null || !allRequiredAgreed}
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-none bg-[#FEE500] px-5 py-3.5 text-sm font-black text-[#191919] shadow-[0_10px_20px_rgba(25,25,25,0.12)] transition-all hover:bg-[#f9db16] hover:shadow-[0_14px_24px_rgba(25,25,25,0.18)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-6 sm:py-4 sm:text-base"
+                className="group relative flex w-full items-center justify-center gap-3.5 rounded-[1.25rem] border-none bg-[#FEE500] px-5 py-4 text-[15px] font-black text-[#191919] shadow-sm transition-all hover:bg-[#fbdc00] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <img src="https://upload.wikimedia.org/wikipedia/commons/e/e3/KakaoTalk_logo.svg" alt="" className="h-5 w-5" />
-                {isSigningIn === 'kakao' ? '로그인 중...' : '카카오로 계속하기'}
+                <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 fill-[#191919]" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 3c-4.97 0-9 3.185-9 7.115 0 2.558 1.712 4.8 4.32 6.031l-.81 2.97c-.113.411.39.757.734.527l3.49-2.33c.414.058.84.087 1.266.087 4.97 0 9-3.185 9-7.115S16.97 3 12 3z"/>
+                </svg>
+                {isSigningIn === 'kakao' ? '연결 중...' : '카카오톡으로 계속하기'}
               </button>
 
               <button
                 type="button"
                 onClick={onNaverLogin}
                 disabled={isSigningIn !== null || !allRequiredAgreed}
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-none bg-[#03C75A] px-5 py-3.5 text-sm font-black text-white shadow-[0_10px_20px_rgba(3,119,90,0.18)] transition-all hover:bg-[#02b351] hover:shadow-[0_14px_24px_rgba(3,119,90,0.24)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-6 sm:py-4 sm:text-base"
+                className="group relative flex w-full items-center justify-center gap-3.5 rounded-[1.25rem] border-none bg-[#03C75A] px-5 py-4 text-[15px] font-black text-white shadow-sm transition-all hover:bg-[#02b351] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <img src="https://upload.wikimedia.org/wikipedia/commons/2/21/Naver_favicon_%282021%29.svg" alt="" className="h-4 w-4" />
-                {isSigningIn === 'naver' ? '로그인 중...' : '네이버로 계속하기'}
+                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 shrink-0 fill-white" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M16.273 12.845L7.376 0H0v24h7.727V11.155L16.624 24H24V0h-7.727v12.845z"/>
+                </svg>
+                {isSigningIn === 'naver' ? '연결 중...' : '네이버로 계속하기'}
               </button>
 
               <button
                 type="button"
                 onClick={onGuestLogin}
                 disabled={isSigningIn !== null || !allRequiredAgreed}
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-3.5 text-sm font-black text-indigo-600 shadow-sm transition-all hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 sm:px-6 sm:py-4 sm:text-base"
+                className="group relative flex w-full items-center justify-center gap-3.5 rounded-[1.25rem] border border-indigo-100 bg-indigo-50/50 px-5 py-4 text-[15px] font-black text-indigo-600 transition-all hover:bg-indigo-100/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <User size={18} />
-                {isSigningIn === 'guest' ? '게스트 준비 중...' : '게스트로 둘러보기'}
-                <ArrowRight size={18} className="absolute right-5 text-indigo-600/40 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100" />
+                <User size={18} className="shrink-0" />
+                {isSigningIn === 'guest' ? '준비 중...' : '게스트로 먼저 보기'}
+                <ArrowRight size={16} className="absolute right-5 text-indigo-400 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100" />
               </button>
             </div>
 
