@@ -87,6 +87,12 @@ function resolveDiagnosisStep(user: any, hasPrimaryGoal: boolean): DiagnosisStep
   return 'UPLOAD';
 }
 
+function shouldAdvanceCompletedSetupStep(currentStep: DiagnosisStep, nextStep: DiagnosisStep): boolean {
+  if (currentStep === 'PROFILE' && nextStep !== 'PROFILE') return true;
+  if (currentStep === 'GOALS' && nextStep === 'UPLOAD') return true;
+  return false;
+}
+
 export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   diagnosisStep: 'PROFILE',
   profile: initialProfile,
@@ -236,7 +242,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
     const hasPrimaryGoal = Boolean(primaryGoal?.university && primaryGoal?.major);
     const nextStep = resolveDiagnosisStep(user, hasPrimaryGoal);
     const nextUserKey = deriveUserContextKey(user);
-    const { hasInitialized, lastSyncedUserKey } = get();
+    const { diagnosisStep, hasInitialized, lastSyncedUserKey } = get();
     const hasUserChanged = Boolean(lastSyncedUserKey && nextUserKey && lastSyncedUserKey !== nextUserKey);
 
     const nextState: Partial<OnboardingState> = {
@@ -273,7 +279,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
 
     set(nextState);
 
-    if (!hasInitialized) {
+    if (!hasInitialized || shouldAdvanceCompletedSetupStep(diagnosisStep, nextStep)) {
       set({ diagnosisStep: nextStep, hasInitialized: true });
     }
   },

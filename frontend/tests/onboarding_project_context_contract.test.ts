@@ -74,3 +74,19 @@ test('syncWithUser keeps active project context for the same user', () => {
   assert.equal(nextState.activeDiagnosisRunId, 'run-active');
   assert.equal(nextState.diagnosisStep, 'RESULT');
 });
+
+test('syncWithUser advances a stale goal step when saved goals already exist', () => {
+  useOnboardingStore.getState().resetOnboarding();
+  useOnboardingStore.setState({
+    diagnosisStep: 'GOALS',
+    hasInitialized: true,
+    lastSyncedUserKey: 'user-1::firebase-1',
+  });
+
+  useOnboardingStore.getState().syncWithUser(makeUser({}));
+
+  const nextState = useOnboardingStore.getState();
+  assert.equal(nextState.diagnosisStep, 'UPLOAD');
+  assert.equal(nextState.goalList[0]?.university, '?쒖슱?');
+  assert.equal(nextState.goalList[0]?.major, '而댄벂?곌났?숆낵');
+});
