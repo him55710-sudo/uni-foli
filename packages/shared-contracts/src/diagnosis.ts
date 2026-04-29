@@ -563,8 +563,8 @@ export interface AsyncJobRead {
   
   // Advanced stabilization fields
   phase?: string | null;
-  stale: boolean;
-  retryable: boolean;
+  stale?: boolean;
+  retryable?: boolean;
   failure_code?: string | null;
   public_message?: string | null;
   debug_detail?: string | null;
@@ -577,10 +577,10 @@ export interface AsyncJobRead {
   heartbeat_at?: string | null;
   next_retry_at?: string | null;
   
-  attempt_count: number;
-  max_attempts: number;
+  attempt_count?: number;
+  max_attempts?: number;
 
-  next_attempt_at: string;
+  next_attempt_at?: string | null;
   started_at: string | null;
   completed_at: string | null;
   dead_lettered_at: string | null;
