@@ -120,6 +120,28 @@ _PDF_ANALYSIS_BRIDGE_READY = Event()
 logger = logging.getLogger("unifoli.pdf_analysis")
 
 
+
+
+
+
+def _extract_keyword_sentences(text: str, keywords: tuple[str, ...], *, limit: int) -> list[str]:
+    lowered_keywords = [keyword.lower() for keyword in keywords if keyword]
+    candidates: list[str] = []
+    for sentence in _split_sentences(text):
+        lowered = sentence.lower()
+        if any(keyword in lowered for keyword in lowered_keywords):
+            candidates.append(_clip(sentence, 180))
+    return _dedupe(candidates, limit=limit)
+
+
+def _detect_process_elements(text: str) -> dict[str, bool]:
+    return {
+        "method": any(keyword in text for keyword in ("방법", "과정", "실험", "조사", "분석")),
+        "result": any(keyword in text for keyword in ("결과", "변화", "성과", "확인", "도출")),
+        "limitation": any(keyword in text for keyword in ("한계", "어려움", "보완", "개선", "성찰")),
+    }
+
+
 @dataclass(frozen=True)
 class _MaskedPage:
     page_number: int
@@ -1838,22 +1860,6 @@ def _infer_evidence_theme(text: str) -> str:
     return "학생부 핵심 근거"
 
 
-def _detect_process_elements(text: str) -> dict[str, bool]:
-    return {
-        "method": any(keyword in text for keyword in ("방법", "과정", "실험", "조사", "분석")),
-        "result": any(keyword in text for keyword in ("결과", "변화", "성과", "확인", "도출")),
-        "limitation": any(keyword in text for keyword in ("한계", "어려움", "보완", "개선", "성찰")),
-    }
-
-
-def _extract_keyword_sentences(text: str, keywords: tuple[str, ...], *, limit: int) -> list[str]:
-    lowered_keywords = [keyword.lower() for keyword in keywords if keyword]
-    candidates: list[str] = []
-    for sentence in _split_sentences(text):
-        lowered = sentence.lower()
-        if any(keyword in lowered for keyword in lowered_keywords):
-            candidates.append(_clip(sentence, 180))
-    return _dedupe(candidates, limit=limit)
 
 
 def _extract_value_list(value: Any, key: str) -> list[str]:

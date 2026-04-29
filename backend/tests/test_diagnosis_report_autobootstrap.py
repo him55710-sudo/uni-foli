@@ -121,6 +121,7 @@ def test_dispatch_diagnosis_job_does_not_fail_when_report_bootstrap_errors(monke
     )
 
     diagnosis_job = SimpleNamespace(
+        id="diagnosis-job-1",
         job_type="diagnosis",
         resource_id="run-1",
         project_id="project-1",
@@ -137,6 +138,47 @@ def test_dispatch_diagnosis_job_does_not_fail_when_report_bootstrap_errors(monke
     fake_db = SimpleNamespace(
         get=lambda model, resource_id: _completed_run() if resource_id == "run-1" else None,
         expire_all=lambda: None,
+        close=lambda: None,
     )
     async_job_service._dispatch_job(fake_db, diagnosis_job)
+
+
+def test_dispatch_diagnosis_job_releases_outer_session_before_worker(monkeypatch) -> None:
+    events: list[str] = []
+
+    def fake_run_async_callable(func, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        events.append("worker")
+        return "run-1"
+
+    monkeypatch.setattr(async_job_service, "_run_async_callable", fake_run_async_callable)
+    monkeypatch.setattr(
+        async_job_service,
+        "ensure_default_diagnosis_report_job",
+        lambda *args, **kwargs: "queued",
+    )
+
+    diagnosis_job = SimpleNamespace(
+        id="diagnosis-job-1",
+        job_type="diagnosis",
+        resource_id="run-1",
+        project_id="project-1",
+        payload={
+            "run_id": "run-1",
+            "project_id": "project-1",
+            "owner_user_id": "owner-1",
+            "auto_report_mode": "premium_10p",
+            "auto_report_include_appendix": True,
+            "auto_report_include_citations": True,
+        },
+    )
+
+    fake_db = SimpleNamespace(
+        get=lambda model, resource_id: _completed_run() if resource_id == "run-1" else None,
+        expire_all=lambda: events.append("expire"),
+        close=lambda: events.append("close"),
+    )
+
+    async_job_service._dispatch_job(fake_db, diagnosis_job)
+
+    assert events[:2] == ["close", "worker"]
 

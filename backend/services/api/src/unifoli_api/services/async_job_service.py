@@ -526,6 +526,15 @@ def _map_exception_to_failure_code(reason: str, internal_reason: str | None) -> 
     return "INTERNAL_ERROR"
 
 
+def _release_session_connection_for_worker(db: Session) -> None:
+    # Serverless deployments intentionally use a tiny DB pool. Release the outer
+    # job-claim session before opening the worker-owned session for inline work.
+    try:
+        db.close()
+    except Exception:  # noqa: BLE001
+        logger.debug("Unable to release async job session before worker dispatch.", exc_info=True)
+
+
 def _dispatch_job(db: Session, job: AsyncJob) -> None:
     payload = job.payload or {}
     if job.job_type == AsyncJobType.DOCUMENT_PARSE.value:
@@ -534,6 +543,7 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
             str(payload.get("document_id") or job.resource_id),
             force=True,
             prepared=bool(payload.get("prepared", False)),
+            job_id=job.id,
         )
         return
     if job.job_type == AsyncJobType.RENDER.value:
@@ -548,15 +558,22 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
         return
     if job.job_type == AsyncJobType.DIAGNOSIS.value:
         run_id = str(payload.get("run_id") or job.resource_id)
+        project_id = str(payload.get("project_id") or job.project_id or "")
+        owner_user_id = str(payload.get("owner_user_id") or "")
+        fallback_target_university = _opt_str(payload.get("fallback_target_university"))
+        fallback_target_major = _opt_str(payload.get("fallback_target_major"))
+        interest_universities = _normalize_interest_universities(payload.get("interest_universities"))
+        job_id = getattr(job, "id", None)
+        _release_session_connection_for_worker(db)
         completed_run_id = _run_async_callable(
             _run_diagnosis_with_worker_session,
-            run_id=str(payload.get("run_id") or job.resource_id),
-            project_id=str(payload.get("project_id") or job.project_id or ""),
-            owner_user_id=str(payload.get("owner_user_id") or ""),
-            fallback_target_university=_opt_str(payload.get("fallback_target_university")),
-            fallback_target_major=_opt_str(payload.get("fallback_target_major")),
-            interest_universities=_normalize_interest_universities(payload.get("interest_universities")),
-            job_id=getattr(job, "id", None),
+            run_id=run_id,
+            project_id=project_id,
+            owner_user_id=owner_user_id,
+            fallback_target_university=fallback_target_university,
+            fallback_target_major=fallback_target_major,
+            interest_universities=interest_universities,
+            job_id=job_id,
         )
         db.expire_all()
         completed_run = db.get(DiagnosisRun, str(completed_run_id or run_id))
@@ -588,6 +605,8 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
     if job.job_type == AsyncJobType.DIAGNOSIS_REPORT.value:
         run_id = str(payload.get("run_id") or job.resource_id)
         report_mode = _normalize_report_mode(str(payload.get("report_mode") or "premium"))
+        job_id = job.id
+        _release_session_connection_for_worker(db)
         artifact_id, artifact_status, artifact_project_id = _run_async_callable(
             _run_diagnosis_report_with_worker_session,
             run_id=run_id,
@@ -595,7 +614,7 @@ def _dispatch_job(db: Session, job: AsyncJob) -> None:
             include_appendix=bool(payload.get("include_appendix", True)),
             include_citations=bool(payload.get("include_citations", True)),
             force_regenerate=bool(payload.get("force_regenerate", False)),
-            job_id=job.id,
+            job_id=job_id,
         )
         if artifact_status == "FAILED":
             logger.warning(
@@ -996,7 +1015,7 @@ async def _run_diagnosis_with_worker_session(
     job_id: str | None = None,
 ) -> str:
     with SessionLocal() as worker_db:
-        def _heartbeat(stage: str, message: str, progress: float | None = None) -> None:
+        def _heartbeat(stage: str, message: str, progress: float | None = None, **kwargs) -> None:
             if job_id:
                 heartbeat_async_job(worker_db, job_id)
                 if progress is not None:
@@ -1032,7 +1051,7 @@ async def _run_diagnosis_report_with_worker_session(
         if project is None:
             raise ValueError(f"Project not found for report generation: {run.project_id}")
 
-        def _heartbeat(stage: str, message: str, progress: float | None = None) -> None:
+        def _heartbeat(stage: str, message: str, progress: float | None = None, **kwargs) -> None:
             if job_id:
                 heartbeat_async_job(worker_db, job_id)
                 if progress is not None:

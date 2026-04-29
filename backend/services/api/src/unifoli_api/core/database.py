@@ -92,7 +92,15 @@ def _ensure_schema_is_ready() -> None:
                 "Skipping automatic migrations in strict serverless production/preview to avoid race conditions. "
                 "Run migrations during deployment or via manual admin trigger."
             )
-            return
+            if not has_app_tables:
+                raise RuntimeError(
+                    "Database schema has not been initialized. "
+                    "Run `backend/scripts/migrate.cmd` or `alembic upgrade head` before starting the service."
+                )
+            raise RuntimeError(
+                "Database schema is not at Alembic head. "
+                "Run `backend/scripts/migrate.cmd` or `alembic upgrade head` before starting the service."
+            )
 
         logger.info(
             "Auto-applying Alembic migrations at startup. current_revisions=%s head_revisions=%s",

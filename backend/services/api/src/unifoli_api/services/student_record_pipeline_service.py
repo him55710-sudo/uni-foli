@@ -95,7 +95,10 @@ class StudentRecordPipelineService:
             stages_success["classification"] = True
             logger.info("Step 1: Page classification complete")
             if heartbeat_callback:
-                heartbeat_callback()
+                try:
+                    heartbeat_callback(stage="classification", message="학생부 구성 요소를 분석 중입니다...")
+                except TypeError:
+                    heartbeat_callback()
         except Exception as e:
             stage_errors["classification"] = str(e)
             logger.error(f"Step 1 Failed: {str(e)}")
@@ -107,7 +110,10 @@ class StudentRecordPipelineService:
                 stages_success["parsing"] = True
                 logger.info(f"Step 2: Section parsing complete. Found {len(sections)} sections.")
                 if heartbeat_callback:
-                    heartbeat_callback()
+                    try:
+                        heartbeat_callback(stage="parsing", message="상세 활동 내역을 추출 중입니다...")
+                    except TypeError:
+                        heartbeat_callback()
             except Exception as e:
                 stage_errors["parsing"] = str(e)
                 logger.error(f"Step 2 Failed: {str(e)}")
@@ -120,7 +126,10 @@ class StudentRecordPipelineService:
                 stages_success["normalization"] = True
                 logger.info("Step 3: Normalization complete")
                 if heartbeat_callback:
-                    heartbeat_callback()
+                    try:
+                        heartbeat_callback(stage="normalization", message="데이터 정규화 및 무결성을 검증 중입니다...")
+                    except TypeError:
+                        heartbeat_callback()
             except Exception as e:
                 stage_errors["normalization"] = str(e)
                 logger.error(f"Step 3 Failed: {str(e)}")

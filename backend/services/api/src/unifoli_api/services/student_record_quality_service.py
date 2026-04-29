@@ -113,7 +113,7 @@ def evaluate_quality(
     # Task 2: Calculate text coverage based on field population
     populated_fields = 0
     total_fields = 5
-    if canonical.basic_info: populated_fields += 1
+    if canonical.student_name: populated_fields += 1
     if canonical.grades: populated_fields += 1
     if canonical.subject_special_notes: populated_fields += 1
     if canonical.extracurricular_narratives: populated_fields += 1

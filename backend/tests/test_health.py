@@ -102,7 +102,7 @@ def test_health_check_llm_probe_uses_ttl_cache(monkeypatch) -> None:
         settings.llm_provider = original_provider
 
 
-def test_create_app_returns_boot_failure_health_when_serverless_database_url_is_missing(monkeypatch) -> None:
+def test_create_app_returns_boot_failure_health_when_serverless_sqlite_is_unsafe(monkeypatch) -> None:
     _clear_settings_cache()
     database_url = "sqlite:///./storage/runtime/unifoli.db?check_same_thread=False&timeout=30"
 
@@ -124,8 +124,8 @@ def test_create_app_returns_boot_failure_health_when_serverless_database_url_is_
         payload = response.json()
         assert payload["status"] == "degraded"
         assert payload["boot_ok"] is False
-        assert payload["startup"]["stage"] == "settings"
-        assert payload["startup"]["error_code"] == "DATABASE_URL_REQUIRED"
+        assert payload["startup"]["stage"] == "ready"
+        assert payload["startup"]["error_code"] == "PRODUCTION_SQLITE_UNSAFE"
         assert "DATABASE_URL" in (payload["startup"]["remediation"] or "")
     finally:
         _clear_settings_cache()

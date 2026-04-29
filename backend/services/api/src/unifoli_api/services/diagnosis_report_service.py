@@ -282,24 +282,24 @@ def build_report_artifact_response(
     )
 
 
-async def _emit_report_heartbeat(
-    heartbeat_callback: Callable[..., Any] | None,
-    *,
-    stage: str,
-    message: str,
-    progress: float | None = None,
-) -> None:
-    if heartbeat_callback is None:
+async def _emit_report_heartbeat(heartbeat_callback, *, stage: str, message: str, progress: float | None = None):
+    if not heartbeat_callback:
         return
     try:
-        result = heartbeat_callback(stage=stage, message=message, progress=progress)
-    except TypeError as exc:
+        # Standardize the callback signature attempt
+        # We try to pass all metadata, but fall back if the callback is legacy/restricted
         try:
-            result = heartbeat_callback()
+            result = heartbeat_callback(stage=stage, message=message, progress=progress)
         except TypeError:
-            raise exc
-    if inspect.isawaitable(result):
-        await result
+            try:
+                result = heartbeat_callback(stage, message)
+            except TypeError:
+                result = heartbeat_callback()
+        
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Heartbeat emission failed (swallowed): %s", exc)
 
 
 async def generate_consultant_report_artifact(

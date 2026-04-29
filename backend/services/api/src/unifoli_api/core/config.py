@@ -287,13 +287,17 @@ class Settings(BaseSettings):
 
     @field_validator("database_url", mode="after")
     @classmethod
-    def normalize_sqlite_path(cls, value: str) -> str:
+    def normalize_database_url(cls, value: str) -> str:
         prefix = "sqlite:///./"
         if value.startswith(prefix):
             relative_path, separator, query = value.removeprefix(prefix).partition("?")
             absolute_path = resolve_runtime_path(relative_path).as_posix()
             suffix = f"{separator}{query}" if separator else ""
             return f"sqlite:///{absolute_path}{suffix}"
+        if value.startswith("postgresql://"):
+            return f"postgresql+psycopg://{value.removeprefix('postgresql://')}"
+        if value.startswith("postgres://"):
+            return f"postgresql+psycopg://{value.removeprefix('postgres://')}"
         return value
 
     @model_validator(mode="after")
@@ -411,7 +415,23 @@ class Settings(BaseSettings):
                     "Data will be ephemeral and will be lost frequently. USE ONLY FOR TEMPORARY TESTING."
                 )
 
-        normalized_storage_provider = (self.unifoli_storage_provider or "").strip().lower()
+        raw_storage_provider = (self.unifoli_storage_provider or "").strip().lower()
+        normalized_storage_provider = raw_storage_provider
+        if strict_runtime and is_production_env and raw_storage_provider in {"", "local"}:
+            inferred_storage_provider: str | None = None
+            if self.blob_read_write_token:
+                inferred_storage_provider = "vercel_blob"
+            elif self.s3_bucket_name:
+                inferred_storage_provider = "s3"
+            elif self.gcs_bucket_name:
+                inferred_storage_provider = "gcs"
+            if inferred_storage_provider:
+                normalized_storage_provider = inferred_storage_provider
+                logger.warning(
+                    "UNIFOLI_STORAGE_PROVIDER is unset/local in production serverless. "
+                    "Using inferred persistent storage provider: %s.",
+                    inferred_storage_provider,
+                )
         object.__setattr__(self, "unifoli_storage_provider", normalized_storage_provider or "local")
         
         # Storage Safety Check
@@ -446,7 +466,7 @@ class Settings(BaseSettings):
 
         allowed_llm_providers = {"gemini", "ollama"}
         normalized_provider = (self.llm_provider or "").strip().lower()
-        if normalized_provider not in allowed_llm_providers:
+        if normalized_provider and normalized_provider not in allowed_llm_providers:
             raise ValueError("LLM_PROVIDER must be 'gemini' or 'ollama'.")
         object.__setattr__(self, "llm_provider", normalized_provider or "gemini")
 

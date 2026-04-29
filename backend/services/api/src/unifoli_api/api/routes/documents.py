@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+import logging
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("unifoli.api.documents")
 
 from unifoli_api.api.deps import get_current_user, get_db
 from unifoli_api.db.models.user import User
@@ -85,11 +88,24 @@ def ingest_upload_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
 
     try:
-        document = ingest_upload_asset(db, upload, force=True)
+        from unifoli_api.services.document_service import ensure_document_placeholder, enqueue_document_parse
+        
+        # 1. Create the database placeholder record immediately
+        document = ensure_document_placeholder(db, upload)
+        
+        # 2. Enqueue the background processing job
+        enqueue_document_parse(document.id)
+        
+        # 3. Refresh document state
+        db.refresh(document)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source file not found.") from exc
+    except Exception as exc:
+        logger.exception("Failed to enqueue document parsing for upload: %s", upload_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to start document processing: {str(exc)}"
+        ) from exc
 
     return ParsedDocumentRead.model_validate(document)
 

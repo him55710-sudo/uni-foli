@@ -30,9 +30,9 @@ def upgrade() -> None:
     if "marketing_agreed" not in columns:
         op.add_column(
             "users",
-            sa.Column("marketing_agreed", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+            sa.Column("marketing_agreed", sa.Boolean(), nullable=False, server_default=sa.false()),
         )
-        op.execute("UPDATE users SET marketing_agreed = 0 WHERE marketing_agreed IS NULL")
+        op.execute(sa.text("UPDATE users SET marketing_agreed = false WHERE marketing_agreed IS NULL"))
 
 
 def downgrade() -> None:
