@@ -9,8 +9,6 @@ export interface MajorTrendTopic {
   activity: string;
 }
 
-const DEFAULT_MAJOR_CHIPS: TrendMajorKey[] = ['건축', '컴공', '바이오', '경영', '사회과학', '디자인', '국어', '수학', '영어', '과학탐구', '사회탐구'];
-
 const MAJOR_KEYWORD_MAP: Array<{ key: TrendMajorKey; keywords: string[] }> = [
   { key: '건축', keywords: ['건축', '도시', '공간', '조경', '설계'] },
   { key: '컴공', keywords: ['컴공', '컴퓨터', '소프트웨어', 'sw', 'ai', '데이터', '인공지능'] },
@@ -38,13 +36,13 @@ function pushUnique(values: string[], value: string, seen: Set<string>): void {
   values.push(normalized);
 }
 
-export function resolveTrendMajorKey(label: string | null | undefined): TrendMajorKey {
+export function resolveTrendMajorKey(label: string | null | undefined): TrendMajorKey | null {
   const normalized = (label || '').trim().toLowerCase();
-  if (!normalized) return '컴공';
+  if (!normalized) return null;
   const matched = MAJOR_KEYWORD_MAP.find(({ keywords }) =>
     keywords.some((keyword) => normalized.includes(keyword)),
   );
-  return matched?.key ?? '컴공';
+  return matched?.key ?? null;
 }
 
 export function buildMajorChipLabels(params: {
@@ -52,7 +50,7 @@ export function buildMajorChipLabels(params: {
   inferredMajors?: string[];
   limit?: number;
 }): string[] {
-  const { explicitMajor = null, inferredMajors = [], limit = 8 } = params;
+  const { explicitMajor = null, inferredMajors = [], limit = 5 } = params;
   const labels: string[] = [];
   const seen = new Set<string>();
 
@@ -63,11 +61,6 @@ export function buildMajorChipLabels(params: {
   for (const inferredMajor of inferredMajors) {
     pushUnique(labels, inferredMajor, seen);
     if (labels.length >= limit) return labels;
-  }
-
-  for (const fallbackMajor of DEFAULT_MAJOR_CHIPS) {
-    pushUnique(labels, fallbackMajor, seen);
-    if (labels.length >= limit) break;
   }
 
   return labels;
