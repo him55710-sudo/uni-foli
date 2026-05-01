@@ -10,7 +10,7 @@ from typing import Any, AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, object_session
 
 from unifoli_api.api.deps import get_current_user, get_db
 from unifoli_api.core.config import get_settings
@@ -131,6 +131,9 @@ def _latest_artifact(session: WorkshopSession) -> DraftArtifact | None:
         artifacts = list(session.draft_artifacts or [])
     except Exception:  # noqa: BLE001
         logger.exception("Failed to read workshop draft artifacts. session_id=%s", session.id)
+        db_session = object_session(session)
+        if db_session is not None:
+            db_session.rollback()
         return None
     if not artifacts:
         return None

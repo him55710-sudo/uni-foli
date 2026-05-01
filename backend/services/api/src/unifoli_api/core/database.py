@@ -26,26 +26,32 @@ class Base(DeclarativeBase):
 settings = get_settings()
 logger = logging.getLogger("unifoli.api.database")
 
-# Build engine arguments
-engine_kwargs = {
-    "echo": settings.database_echo,
-    "future": True,
-    "pool_pre_ping": True,
-}
 
-if settings.database_url.startswith("sqlite"):
-    engine_kwargs["connect_args"] = {"check_same_thread": False}
-else:
-    # PostgreSQL specific pool tuning
-    # In serverless, we keep pools very small to avoid "Too many connections" errors
-    # as each lambda instance creates its own pool.
-    if settings.serverless_runtime:
-        engine_kwargs["pool_size"] = 1
-        engine_kwargs["max_overflow"] = 0
+def _build_engine_kwargs(current_settings) -> dict[str, object]:
+    engine_kwargs: dict[str, object] = {
+        "echo": current_settings.database_echo,
+        "future": True,
+        "pool_pre_ping": True,
+    }
+
+    if current_settings.database_url.startswith("sqlite"):
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+        return engine_kwargs
+
+    # PostgreSQL specific pool tuning. Serverless pools stay small, but need a
+    # little overflow so a long inline parse/diagnosis request does not starve
+    # auth or status polling requests in the same warm function instance.
+    if current_settings.serverless_runtime:
+        engine_kwargs["pool_size"] = max(1, int(current_settings.database_serverless_pool_size))
+        engine_kwargs["max_overflow"] = max(0, int(current_settings.database_serverless_max_overflow))
     else:
-        engine_kwargs["pool_size"] = settings.database_pool_size
-        engine_kwargs["max_overflow"] = settings.database_max_overflow
+        engine_kwargs["pool_size"] = current_settings.database_pool_size
+        engine_kwargs["max_overflow"] = current_settings.database_max_overflow
+    engine_kwargs["pool_timeout"] = float(current_settings.database_pool_timeout_seconds)
+    return engine_kwargs
 
+
+engine_kwargs = _build_engine_kwargs(settings)
 engine = create_engine(settings.database_url, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 _APPLICATION_TABLES: tuple[str, ...] = (
@@ -91,6 +97,14 @@ def _ensure_schema_is_ready() -> None:
             logger.warning(
                 "Skipping automatic migrations in strict serverless production/preview to avoid race conditions. "
                 "Run migrations during deployment or via manual admin trigger."
+            )
+            logger.error(
+                "Database schema revision mismatch in strict runtime. current_revisions=%s head_revisions=%s "
+                "has_app_tables=%s script_location=%s",
+                sorted(current_revisions),
+                sorted(head_revisions),
+                has_app_tables,
+                str(find_project_root() / "alembic"),
             )
             if not has_app_tables:
                 raise RuntimeError(

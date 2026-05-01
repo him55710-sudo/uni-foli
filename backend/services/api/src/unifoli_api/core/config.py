@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     database_auto_create_tables: bool = True
     database_pool_size: int = 5
     database_max_overflow: int = 10
+    database_pool_timeout_seconds: float = 30.0
+    database_serverless_pool_size: int = 1
+    database_serverless_max_overflow: int = 4
     allow_production_sqlite: bool = False
     postgres_enable_pgvector: bool = True
     cors_origins: Annotated[list[str], NoDecode] = Field(

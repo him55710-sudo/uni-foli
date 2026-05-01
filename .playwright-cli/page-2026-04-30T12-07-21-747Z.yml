@@ -1,0 +1,116 @@
+- generic [ref=e6]:
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - link "UniFoli" [ref=e9] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e11]:
+          - generic [ref=e12]: UniFoli
+          - img [ref=e13]
+      - generic [ref=e14]:
+        - link "소개" [ref=e15] [cursor=pointer]:
+          - /url: /
+        - link "FAQ" [ref=e16] [cursor=pointer]:
+          - /url: /faq
+        - link "문의하기" [ref=e17] [cursor=pointer]:
+          - /url: /contact
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - img [ref=e20]
+        - text: 근거 중심 준비 흐름
+      - heading "막연한 불안 대신 확인 가능한 준비 순서" [level=1] [ref=e23]:
+        - text: 막연한 불안 대신
+        - text: 확인 가능한 준비 순서
+      - paragraph [ref=e24]: 학생부 기반 분석, 진단 확인, 문서 작성까지 한 화면 흐름으로 이어집니다.
+      - generic [ref=e25]:
+        - generic [ref=e26]: 근거 중심 진단
+        - generic [ref=e27]: 학생부 기반 흐름
+        - generic [ref=e28]: 다음 행동 제시
+        - generic [ref=e29]: 허위 문장 방지
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - img [ref=e34]
+            - generic [ref=e36]:
+              - paragraph [ref=e37]: 진행 순서
+              - paragraph [ref=e38]: 단계를 명확히 안내해요
+          - generic [ref=e39]:
+            - generic [ref=e40]:
+              - generic [ref=e41]: "1"
+              - generic [ref=e42]: 목표 설정
+            - generic [ref=e43]:
+              - generic [ref=e44]: "2"
+              - generic [ref=e45]: 기록 업로드
+            - generic [ref=e46]:
+              - generic [ref=e47]: "3"
+              - generic [ref=e48]: 진단 확인
+            - generic [ref=e49]:
+              - generic [ref=e50]: "4"
+              - generic [ref=e51]: 문서 작성
+        - generic [ref=e52]:
+          - generic [ref=e53]:
+            - img [ref=e55]
+            - generic [ref=e58]:
+              - paragraph [ref=e59]: 안내 원칙
+              - paragraph [ref=e60]: 근거 없는 과장은 지양해요
+          - generic [ref=e61]:
+            - generic [ref=e62]:
+              - img [ref=e63]
+              - paragraph [ref=e66]: 학생부 내용에 맞는 정보만 제안해요.
+            - generic [ref=e67]:
+              - img [ref=e68]
+              - paragraph [ref=e71]: 부족한 부분은 보완 행동을 먼저 알려줘요.
+            - generic [ref=e72]:
+              - img [ref=e73]
+              - paragraph [ref=e76]: 합격 보장을 약속하는 서비스가 아니에요.
+  - generic [ref=e78]:
+    - generic [ref=e79]:
+      - generic [ref=e82]:
+        - generic [ref=e83]: UniFoli
+        - img [ref=e84]
+      - heading "로그인하고 시작하기" [level=2] [ref=e85]
+      - paragraph [ref=e86]: 소셜 로그인으로 바로 시작하거나, 게스트로 먼저 둘러볼 수 있어요.
+    - generic [ref=e87]:
+      - generic [ref=e89] [cursor=pointer]:
+        - checkbox "전체 동의하기" [checked] [active] [ref=e90]
+        - generic [ref=e91]: 전체 동의하기
+      - generic [ref=e92]:
+        - generic [ref=e94] [cursor=pointer]:
+          - checkbox "[필수] 만 14세 이상입니다" [checked] [ref=e95]
+          - generic [ref=e96]: "[필수] 만 14세 이상입니다"
+        - generic [ref=e97]:
+          - generic [ref=e98] [cursor=pointer]:
+            - checkbox "[필수] 이용약관 동의" [checked] [ref=e99]
+            - generic [ref=e100]: "[필수] 이용약관 동의"
+          - link "보기" [ref=e101] [cursor=pointer]:
+            - /url: /legal/terms
+        - generic [ref=e102]:
+          - generic [ref=e103] [cursor=pointer]:
+            - checkbox "[필수] 개인정보 수집 및 이용 동의" [checked] [ref=e104]
+            - generic [ref=e105]: "[필수] 개인정보 수집 및 이용 동의"
+          - link "보기" [ref=e106] [cursor=pointer]:
+            - /url: /legal/privacy
+        - generic [ref=e107]:
+          - generic [ref=e108] [cursor=pointer]:
+            - checkbox "[선택] 마케팅 정보 수신 동의" [checked] [ref=e109]
+            - generic [ref=e110]: "[선택] 마케팅 정보 수신 동의"
+          - link "보기" [ref=e111] [cursor=pointer]:
+            - /url: /legal/marketing
+    - generic [ref=e112]:
+      - button "Google로 계속하기" [ref=e113]
+      - button "카카오로 계속하기" [ref=e114]
+      - button "네이버로 계속하기" [ref=e115]
+      - button "게스트로 둘러보기" [ref=e116]:
+        - img [ref=e117]
+        - text: 게스트로 둘러보기
+        - img [ref=e120]
+    - generic [ref=e122]:
+      - generic [ref=e123]:
+        - img [ref=e124]
+        - paragraph [ref=e126]: 로그인 문제 해결
+      - paragraph [ref=e127]: 로그인이 원활하지 않을 경우 잠시 후 다시 시도하시거나, 아래의 문의 채널을 통해 도움을 받으실 수 있습니다.
+      - generic [ref=e128]:
+        - link "FAQ 보기" [ref=e129] [cursor=pointer]:
+          - /url: /faq
+        - link "문의 허브" [ref=e130] [cursor=pointer]:
+          - /url: /contact
+    - paragraph [ref=e131]: 게스트는 미리보기 중심이고, 문서 업로드/저장은 로그인 상태에서 가장 안정적으로 동작해요.

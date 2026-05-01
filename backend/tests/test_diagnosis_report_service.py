@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unifoli_api.schemas.diagnosis import ConsultantDiagnosisReport, DiagnosisResultPayload
 from unifoli_api.services import diagnosis_report_service as report_service
 from unifoli_domain.enums import RenderFormat
+from unifoli_render import diagnosis_report_pdf_renderer as pdf_renderer
 from unifoli_render.diagnosis_report_design_contract import get_diagnosis_report_design_contract
 from unifoli_render.diagnosis_report_pdf_renderer import render_consultant_diagnosis_pdf
 from unifoli_render.template_registry import get_template
@@ -111,6 +112,25 @@ def _document_structure(*, contradiction_passed: bool = True) -> dict[str, objec
     }
 
 
+def _well_covered_document_structure() -> dict[str, object]:
+    return {
+        "coverage_check": {
+            "coverage_score": 0.84,
+            "reanalysis_required": False,
+            "required_sections": ["교과학습발달상황", "세특", "창체", "진로"],
+            "missing_required_sections": [],
+        },
+        "contradiction_check": {"passed": True, "items": []},
+        "weak_sections": [],
+        "timeline_signals": ["1학년 관심 발견", "2학년 심화 탐구", "3학년 적용 실험"],
+        "subject_major_alignment_signals": ["건축 전공 연결 활동", "구조 안전 탐구"],
+        "continuity_signals": ["학년 간 주제 심화", "전공 질문 연속"],
+        "process_reflection_signals": ["실험 한계 반영", "개선 방향 제시"],
+        "section_density": {"교과학습발달상황": 0.82, "세특": 0.78, "창체": 0.72, "진로": 0.76},
+        "uncertain_items": [],
+    }
+
+
 def _evidence_bank() -> list[dict[str, object]]:
     return [
         {"anchor_id": "A1", "page": 1, "quote": "교과 활동 근거", "section": "교과학습발달상황"},
@@ -118,6 +138,109 @@ def _evidence_bank() -> list[dict[str, object]]:
         {"anchor_id": "A3", "page": 3, "quote": "창체 활동 근거", "section": "창체"},
         {"anchor_id": "A4", "page": 4, "quote": "진로 활동 근거", "section": "진로"},
     ]
+
+
+def test_public_evidence_refs_hide_internal_anchor_codes() -> None:
+    ref = report_service._evidence_ref(
+        {
+            "anchor_id": "p1-e1",
+            "id": "evidence_001",
+            "page": 1,
+            "section": "student_record",
+            "quote": "[student_record] | p1-e1 | 건축 구조와 제방 설계 탐구를 진행함",
+        }
+    )
+
+    assert "p1-e1" not in ref
+    assert "evidence_001" not in ref
+    assert "student_record" not in ref
+    assert "[학생부]" in ref
+    assert "p.1" in ref
+
+
+def test_renderer_uses_public_score_and_strength_labels() -> None:
+    score_text = pdf_renderer._score_bar_text(38)
+
+    assert "#" not in score_text
+    assert "-" not in score_text
+    assert score_text == "38점 / 100"
+    assert pdf_renderer._network_strength_label("Strong") == "강함"
+    assert pdf_renderer._network_strength_label("Artificial") == "보완 필요"
+    assert "student_record" not in pdf_renderer._truncate_plain("[student_record] | 건축 탐구", 80)
+
+
+def test_subject_scores_are_aligned_with_dashboard_scores() -> None:
+    subjects = report_service._build_subject_specialty_analyses(
+        result=_result_payload(),
+        document_structure=_document_structure(),
+        evidence_bank=[
+            {"anchor_id": f"p{i}-e1", "page": i, "quote": "건축 제방 압력 탐구 실험 수치화", "section": "세특"}
+            for i in range(1, 5)
+        ],
+        target_context="목표 전공: 건축공학과",
+    )
+    low_dashboard = [
+        report_service.ConsultantDiagnosisScoreBlock(
+            key="inquiry_depth",
+            label="탐구 심화도",
+            score=38,
+            band="weak",
+            interpretation="낮음",
+        ),
+        report_service.ConsultantDiagnosisScoreBlock(
+            key="major_fit_alignment",
+            label="전공 적합성",
+            score=42,
+            band="weak",
+            interpretation="낮음",
+        ),
+    ]
+
+    adjusted = report_service._align_subject_scores_with_dashboard(subjects, score_blocks=low_dashboard)
+
+    assert max(item.score for item in adjusted) <= 50
+    assert all(item.level in {"약함", "위험"} for item in adjusted[:2])
+
+
+def test_student_dashboard_calibration_is_generous_only_when_evidence_is_sufficient() -> None:
+    score_groups = report_service._build_score_groups(
+        result=_result_payload(),
+        document_structure=_well_covered_document_structure(),
+        evidence_items=[],
+        evidence_bank=[
+            {"anchor_id": "A1", "page": 1, "quote": "교과 세특 학업 성취 수치 방법 심화 연구 전공 진로 서사 연속 근거", "section": "교과학습발달상황"},
+            {"anchor_id": "A2", "page": 2, "quote": "교과 세특 과목 결과 구체성 실험 전문 적합 관심 발전 흐름 근거", "section": "세특"},
+            {"anchor_id": "A3", "page": 3, "quote": "학업 성취 세특 현상 방법 심층 연구 전공 목표 성장 지속 근거", "section": "세특"},
+            {"anchor_id": "A4", "page": 4, "quote": "교과 과목 근거 결과 고급 이론 진로 지망 계기 확장 근거", "section": "진로"},
+            {"anchor_id": "A5", "page": 5, "quote": "성장 서사 발전 계기 전공 관심 심화 실험 근거", "section": "창체"},
+            {"anchor_id": "A6", "page": 6, "quote": "연속 확장 지속 흐름 적합 목표 전문 연구 근거", "section": "창체"},
+        ],
+    )
+
+    student_group = next(group for group in score_groups if group.group == "student_evaluation")
+    blocks = {block.key: block for block in student_group.blocks}
+
+    assert blocks["academic_rigor"].score > 72
+    assert blocks["specificity_and_concreteness"].score > 64
+    assert blocks["academic_rigor"].score < 80
+
+
+def test_text_fallback_evidence_expands_page_diversity() -> None:
+    document = SimpleNamespace(
+        content_text=(
+            "[Page 1]\n건축학과 탐방 후 학교공간 사용자 참여 설계를 조사함\n"
+            "[Page 2]\n영종도 제방 규격을 수치화하고 정적압력과 동적압력을 비교함\n"
+            "[Page 3]\n강제환기장치를 제작하고 실내 공기질 개선 가능성을 분석함\n"
+            "[Page 4]\nCLT와 옥상녹화가 열섬 완화에 미치는 영향을 탐구함"
+        ),
+        content_markdown="",
+        parse_metadata={},
+    )
+
+    evidence = report_service._collect_evidence_bank([document])
+
+    assert len(evidence) >= 4
+    assert {item["page"] for item in evidence} >= {1, 2, 3, 4}
 
 
 def test_score_groups_keep_required_top_level_groups_and_add_consultant_axes() -> None:
@@ -375,7 +498,14 @@ def test_report_generation_failure_keeps_diagnosis_payload_usable(monkeypatch) -
     monkeypatch.setattr(
         report_service,
         "get_settings",
-        lambda: SimpleNamespace(llm_provider="gemini", ollama_render_model=None, ollama_model="gemma4"),
+        lambda: SimpleNamespace(
+            llm_provider="gemini",
+            ollama_render_model=None,
+            ollama_model="gemma4",
+            app_env="test",
+            serverless_runtime=False,
+            unifoli_storage_provider="local",
+        ),
     )
     monkeypatch.setattr(report_service, "get_storage_provider", lambda _settings: SimpleNamespace(exists=lambda _key: False))
     monkeypatch.setattr(report_service, "get_storage_provider_name", lambda _storage: "memory")

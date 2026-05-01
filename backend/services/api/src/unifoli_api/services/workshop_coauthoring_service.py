@@ -1,4 +1,3 @@
-# -*- coding: latin-1 -*-
 from __future__ import annotations
 
 import json
@@ -15,12 +14,12 @@ from unifoli_api.schemas.workshop import (
 )
 
 DEFAULT_BLOCK_DEFINITIONS: tuple[tuple[str, str], ...] = (
-    ("title", "??목"),
-    ("introduction_background", "??입 / 배경"),
+    ("title", "제목"),
+    ("introduction_background", "서론 / 배경"),
     ("body_section_1", "본론 1"),
     ("body_section_2", "본론 2"),
     ("body_section_3", "본론 3"),
-    ("conclusion_reflection_next_step", "결론 / ??찰 / ??음 ??계"),
+    ("conclusion_reflection_next_step", "결론 / 성찰 / 다음 단계"),
 )
 
 _PATCH_PATTERN = re.compile(r"\[DRAFT_PATCH\]([\s\S]*?)\[/DRAFT_PATCH\]", re.IGNORECASE)
@@ -84,20 +83,22 @@ def build_coauthoring_system_context(
 ) -> str:
     if structured_draft is None:
         structured_draft = build_default_structured_draft(mode=mode, source="derived")
+
     lines = [
-        "[??크??공동??성 모드]",
-        f"- ??재 모드: {mode}",
-        "- 기본 ??션 구조: title, introduction/background, body1, body2, body3, conclusion/reflection/next step",
-        "- ??션 ??안??????는 본문 ??명 ??에 [DRAFT_PATCH] JSON [/DRAFT_PATCH] 블록??추????????습??다.",
-        "- DRAFT_PATCH JSON ??식:",
+        "[초안 공동작성 모드]",
+        f"- 현재 모드: {mode}",
+        "- 기본 초안 구조: title, introduction/background, body1, body2, body3, conclusion/reflection/next step",
+        "- 사용자가 본문 작성을 요청하면 [DRAFT_PATCH] JSON [/DRAFT_PATCH] 블록을 함께 제안할 수 있습니다.",
+        "- DRAFT_PATCH JSON 예시:",
         (
-            '  {"mode":"section_drafting","block_id":"body_section_1","heading":"??택","content_markdown":"본문",'
-            '"rationale":"??????션????","evidence_boundary_note":"근거 경계","requires_approval":true}'
+            '  {"mode":"section_drafting","block_id":"body_section_1","heading":"소제목",'
+            '"content_markdown":"본문","rationale":"왜 이 블록에 들어가는지",'
+            '"evidence_boundary_note":"근거 경계","requires_approval":true}'
         ),
-        "- ??인 ??에????생 ??성 ??용?????????? 말고 ??안??로 ??????세??",
-        "- ??생 ??동/??과???추정 ??성???? 마세??",
+        "- 학생이 직접 쓴 문장을 임의로 덮어쓰지 말고, 제안은 반드시 승인 전 상태로 둡니다.",
+        "- 생기부에 없는 활동이나 성과를 추정해서 만들지 마세요.",
         "",
-        "[??재 구조??초안 ??태]",
+        "[현재 구조화 초안 상태]",
     ]
     for block in structured_draft.blocks:
         preview = (block.content_markdown or "").strip().replace("\n", " ")
@@ -129,4 +130,3 @@ def extract_draft_patch_from_response(raw_response: str) -> tuple[str, WorkshopD
             continue
         return cleaned, patch
     return cleaned, None
-

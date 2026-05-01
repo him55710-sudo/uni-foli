@@ -101,3 +101,25 @@ def test_serverless_runtime_infers_vercel_blob_when_token_is_configured(monkeypa
 
     assert settings.unifoli_storage_provider == "vercel_blob"
 
+
+def test_serverless_postgres_pool_allows_small_overflow(monkeypatch) -> None:
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+
+    settings = Settings(
+        _env_file=None,
+        app_env="production",
+        app_debug=False,
+        auth_allow_local_dev_bypass=False,
+        llm_provider="gemini",
+        database_url="postgresql+psycopg://user:password@db.example.com/unifoli",
+    )
+
+    from unifoli_api.core.database import _build_engine_kwargs
+
+    kwargs = _build_engine_kwargs(settings)
+
+    assert kwargs["pool_size"] == 1
+    assert kwargs["max_overflow"] >= 2
+    assert kwargs["pool_timeout"] == settings.database_pool_timeout_seconds
+

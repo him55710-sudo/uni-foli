@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Literal
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, load_only
 
 from unifoli_api.db.models.document_chunk import DocumentChunk
 from unifoli_api.db.models.parsed_document import ParsedDocument
 from unifoli_api.db.models.project import Project
+from unifoli_api.db.models.upload_asset import UploadAsset
 from unifoli_domain.enums import DocumentProcessingStatus
 
 GroundingProfile = Literal["fast", "standard", "render"]
+logger = logging.getLogger("unifoli.api.workshop_grounding")
 
 _TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
 _STOPWORDS = {
@@ -84,10 +87,20 @@ def build_workshop_document_grounding_context(
             "- 추측으로 학생 활동을 만들지 않습니다."
         )
 
-    documents = _load_recent_documents(db=db, project_id=project.id, limit=resolved_docs)
+    try:
+        documents = _load_recent_documents(db=db, project_id=project.id, limit=resolved_docs)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to load workshop grounding documents. project_id=%s", project.id)
+        db.rollback()
+        documents = []
     document_block = _format_document_analysis_block(documents)
 
-    chunks = _load_recent_chunks(db=db, project_id=project.id, limit=320)
+    try:
+        chunks = _load_recent_chunks(db=db, project_id=project.id, limit=120)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to load workshop grounding chunks. project_id=%s", project.id)
+        db.rollback()
+        chunks = []
     lexical_chunks = _select_lexical_chunks(chunks=chunks, query=user_message, limit=resolved_chunks)
     evidence_block = _format_chunk_evidence_block(lexical_chunks)
 
@@ -123,7 +136,21 @@ def _load_recent_chunks(*, db: Session, project_id: str, limit: int) -> list[Doc
     return list(
         db.execute(
             select(DocumentChunk)
-            .options(joinedload(DocumentChunk.document))
+            .options(
+                load_only(
+                    DocumentChunk.id,
+                    DocumentChunk.document_id,
+                    DocumentChunk.project_id,
+                    DocumentChunk.chunk_index,
+                    DocumentChunk.page_number,
+                    DocumentChunk.content_text,
+                    DocumentChunk.created_at,
+                ),
+                joinedload(DocumentChunk.document)
+                .load_only(ParsedDocument.id, ParsedDocument.upload_asset_id)
+                .joinedload(ParsedDocument.upload_asset)
+                .load_only(UploadAsset.original_filename),
+            )
             .where(DocumentChunk.project_id == project_id)
             .order_by(DocumentChunk.created_at.desc(), DocumentChunk.chunk_index.desc())
             .limit(limit)

@@ -315,32 +315,37 @@ def _build_admission_axes(
     semantic: SemanticDiagnosisExtraction | None = None,
 ) -> list[AdmissionAxisResult]:
     # Layer 1: Universal
-    rigor_base = _bounded_int(15 + features.reliability_score * 45 + min(features.total_records, 30) * 1.3)
-    spec_base = _bounded_int(10 + features.evidence_density * 60 + min(features.evidence_reference_count, 20) * 1.5)
+    rigor_base = _bounded_int(18 + features.reliability_score * 47 + min(features.total_records, 30) * 1.35)
+    spec_base = _bounded_int(13 + features.evidence_density * 60 + min(features.evidence_reference_count, 20) * 1.6)
     
     # Layer 2: Relational
-    narrative_base = _bounded_int(20 + features.narrative_density * 50 + len(features.section_presence) * 4)
-    continuity_base = _bounded_int(15 + features.repeated_subject_ratio * 65 + min(features.unique_subject_count, 12) * 1.5)
+    narrative_base = _bounded_int(23 + features.narrative_density * 52 + len(features.section_presence) * 4.2)
+    continuity_base = _bounded_int(18 + features.repeated_subject_ratio * 65 + min(features.unique_subject_count, 12) * 1.6)
     
     # Layer 3: Cluster (Major-specific)
-    depth_base = _bounded_int(10 + features.major_term_overlap_ratio * 75 + min(features.unique_subject_count, 8) * 2.0)
+    depth_base = _bounded_int(13 + features.major_term_overlap_ratio * 80 + min(features.unique_subject_count, 8) * 2.1)
     suitability_base = depth_base # Heuristic fallback matches depth unless semantic provides better
 
-    def _merge(base: int, semantic_grade: AxisSemanticGrade | None) -> tuple[int, str, list[str]]:
+    def _merge(
+        key: PositiveAxisKey,
+        base: int,
+        semantic_grade: AxisSemanticGrade | None,
+    ) -> tuple[int, str, list[str]]:
         if semantic_grade is None:
-            return base, "", []
+            return _calibrate_positive_axis_score(key=key, score=base, features=features), "", []
         score = _bounded_int(base * 0.3 + semantic_grade.score * 0.7)
+        score = _calibrate_positive_axis_score(key=key, score=score, features=features)
         return score, semantic_grade.rationale, semantic_grade.evidence_hints
 
-    u_rigor_score, u_rigor_rat, u_rigor_hints = _merge(rigor_base, semantic.universal_rigor if semantic else None)
-    u_spec_score, u_spec_rat, u_spec_hints = _merge(spec_base, semantic.universal_specificity if semantic else None)
-    r_narr_score, r_narr_rat, r_narr_hints = _merge(narrative_base, semantic.relational_narrative if semantic else None)
-    r_cont_score, r_cont_rat, r_cont_hints = _merge(continuity_base, semantic.relational_continuity if semantic else None)
-    c_depth_score, c_depth_rat, c_depth_hints = _merge(depth_base, semantic.cluster_depth if semantic else None)
-    c_suit_score, c_suit_rat, c_suit_hints = _merge(suitability_base, semantic.cluster_suitability if semantic else None)
+    u_rigor_score, u_rigor_rat, u_rigor_hints = _merge("universal_rigor", rigor_base, semantic.universal_rigor if semantic else None)
+    u_spec_score, u_spec_rat, u_spec_hints = _merge("universal_specificity", spec_base, semantic.universal_specificity if semantic else None)
+    r_narr_score, r_narr_rat, r_narr_hints = _merge("relational_narrative", narrative_base, semantic.relational_narrative if semantic else None)
+    r_cont_score, r_cont_rat, r_cont_hints = _merge("relational_continuity", continuity_base, semantic.relational_continuity if semantic else None)
+    c_depth_score, c_depth_rat, c_depth_hints = _merge("cluster_depth", depth_base, semantic.cluster_depth if semantic else None)
+    c_suit_score, c_suit_rat, c_suit_hints = _merge("cluster_suitability", suitability_base, semantic.cluster_suitability if semantic else None)
 
     authenticity_risk = _bounded_int(
-        80 - features.reliability_score * 40 - features.evidence_density * 25 - features.repeated_subject_ratio * 15
+        78 - features.reliability_score * 40 - features.evidence_density * 26 - features.repeated_subject_ratio * 16
         + (20 if features.needs_review else 0)
     )
 
@@ -386,6 +391,122 @@ def _build_admission_axes(
             hints=[f"파싱 신뢰도: {round(features.reliability_score, 2)}", f"검토 필요 문서: {features.needs_review_documents}"],
         ),
     ]
+
+
+def _calibrate_positive_axis_score(
+    *,
+    key: PositiveAxisKey,
+    score: int,
+    features: StudentRecordFeatures,
+) -> int:
+    """Apply a slightly warmer but evidence-gated admission score calibration."""
+
+    bonus = 0
+    if features.reliability_score >= 0.65:
+        bonus += 2
+    if features.evidence_density >= 0.45:
+        bonus += 2
+    if features.total_records >= 12:
+        bonus += 1
+    if not features.needs_review:
+        bonus += 1
+
+    active_sections = sum(1 for present in features.section_presence.values() if present)
+    if key == "universal_rigor" and features.reliability_score >= 0.72 and features.total_records >= 10:
+        bonus += 2
+    elif key == "universal_specificity" and features.evidence_reference_count >= 8:
+        bonus += 2
+    elif key == "relational_narrative" and features.narrative_density >= 0.45 and active_sections >= 3:
+        bonus += 2
+    elif key == "relational_continuity" and features.repeated_subject_ratio >= 0.4:
+        bonus += 3
+    elif key in {"cluster_depth", "cluster_suitability"} and features.major_term_overlap_ratio >= 0.32:
+        bonus += 3
+
+    if score < 45:
+        bonus = min(bonus, 2)
+    elif score < 60:
+        bonus = min(bonus, 4)
+
+    calibrated = _bounded_int(score + bonus)
+    cap = _positive_axis_score_cap(key=key, features=features, active_sections=active_sections)
+    calibrated = min(calibrated, cap)
+
+    if calibrated >= 90 and not _positive_axis_allows_90(key=key, features=features, active_sections=active_sections):
+        calibrated = 89
+    if calibrated >= 80 and not _positive_axis_allows_80(key=key, features=features, active_sections=active_sections):
+        calibrated = 79
+    return calibrated
+
+
+def _positive_axis_score_cap(
+    *,
+    key: PositiveAxisKey,
+    features: StudentRecordFeatures,
+    active_sections: int,
+) -> int:
+    cap = 100
+    if features.needs_review:
+        cap = min(cap, 76)
+    if features.reliability_score < 0.55 or features.total_records < 5:
+        cap = min(cap, 64)
+    elif features.reliability_score < 0.65 or features.evidence_density < 0.2:
+        cap = min(cap, 72)
+    if key == "universal_specificity" and features.evidence_reference_count < 6:
+        cap = min(cap, 74)
+    if key == "relational_narrative" and active_sections < 3:
+        cap = min(cap, 74)
+    if key == "relational_continuity" and features.repeated_subject_ratio < 0.22 and features.unique_subject_count < 4:
+        cap = min(cap, 74)
+    if key in {"cluster_depth", "cluster_suitability"} and features.major_term_overlap_ratio < 0.18:
+        cap = min(cap, 74)
+    return cap
+
+
+def _positive_axis_allows_80(
+    *,
+    key: PositiveAxisKey,
+    features: StudentRecordFeatures,
+    active_sections: int,
+) -> bool:
+    if features.needs_review:
+        return False
+    if features.reliability_score < 0.68 or features.evidence_density < 0.3 or features.total_records < 10:
+        return False
+    if key == "universal_rigor":
+        return features.reliability_score >= 0.72
+    if key == "universal_specificity":
+        return features.evidence_reference_count >= 8 and features.evidence_density >= 0.38
+    if key == "relational_narrative":
+        return features.narrative_density >= 0.45 and active_sections >= 3
+    if key == "relational_continuity":
+        return features.repeated_subject_ratio >= 0.35
+    if key in {"cluster_depth", "cluster_suitability"}:
+        return features.major_term_overlap_ratio >= 0.32 and features.evidence_reference_count >= 6
+    return True
+
+
+def _positive_axis_allows_90(
+    *,
+    key: PositiveAxisKey,
+    features: StudentRecordFeatures,
+    active_sections: int,
+) -> bool:
+    if (
+        features.needs_review
+        or features.reliability_score < 0.85
+        or features.evidence_density < 0.55
+        or features.total_records < 18
+        or active_sections < 4
+    ):
+        return False
+    if key == "universal_specificity":
+        return features.evidence_reference_count >= 12
+    if key == "relational_continuity":
+        return features.repeated_subject_ratio >= 0.5
+    if key in {"cluster_depth", "cluster_suitability"}:
+        return features.major_term_overlap_ratio >= 0.55
+    return True
 
 
 def _positive_axis(

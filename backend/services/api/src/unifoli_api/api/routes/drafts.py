@@ -60,7 +60,7 @@ def _format_reference_materials(reference_materials: list[ReferenceMaterial]) ->
 
     blocks = ["[참고 자료]"]
     for index, material in enumerate(reference_materials, start=1):
-        authors = ", ".join(material.authors[:6]) if material.authors else "저자정보 없음"
+        authors = ", ".join(material.authors[:6]) if material.authors else "저자 정보 없음"
         year_text = str(material.year) if material.year else "연도 미상"
         abstract = (material.abstract or "초록 정보 없음").replace("\n", " ").strip()
         if len(abstract) > 700:
@@ -78,7 +78,6 @@ def _format_reference_materials(reference_materials: list[ReferenceMaterial]) ->
             f"   요약: {abstract}"
         )
     return "\n".join(blocks)
-
 
 def _safe_json_dump(payload: dict[str, object] | None) -> str:
     if not payload:
@@ -104,7 +103,7 @@ def _build_system_instruction(
 
     sections = [f"[학생 맥락]\n{profile_context}"]
     if guided_context:
-        sections.append(f"[가이드드래프팅 상태]\n{guided_context}")
+        sections.append(f"[가이드 드래프팅 상태]\n{guided_context}")
     if document_grounding_context:
         sections.append(document_grounding_context)
     if reference_context:
@@ -118,7 +117,6 @@ def _build_system_instruction(
         sections.append(f"[학생측 최신 초안 스냅샷]\n{snapshot}")
     sections.append(base_instruction)
     return "\n\n".join(sections)
-
 
 def _validate_reference_limit(reference_materials: list[ReferenceMaterial]) -> None:
     if len(reference_materials) > 3:
@@ -239,14 +237,22 @@ def _resolve_project_grounding_context(db: Session, project_id: str, user: User,
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
-    document_grounding_context = build_workshop_document_grounding_context(
-        db=db,
-        project=project,
-        user_message=message,
-        profile="standard",
-    )
+    try:
+        document_grounding_context = build_workshop_document_grounding_context(
+            db=db,
+            project=project,
+            user_message=message,
+            profile="standard",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Draft chat grounding context failed. project_id=%s", project_id)
+        db.rollback()
+        document_grounding_context = (
+            "[학생부 근거 컨텍스트]\n"
+            "학생부 원문 근거를 불러오지 못했습니다. 생기부에 없는 사실을 단정하지 말고, "
+            "현재 초안과 사용자가 제공한 문장만 기준으로 보수적으로 도와주세요."
+        )
     return project, document_grounding_context
-
 
 @router.post(
     "/{project_id}/drafts",
@@ -371,3 +377,4 @@ async def handle_drafts_chat_stream_route(
         target_major=target_major or current_user.target_major,
         document_grounding_context=document_grounding_context,
     )
+
