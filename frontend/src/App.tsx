@@ -132,7 +132,6 @@ export default function App() {
                 <Route path="legal/data-deletion" element={<DataDeletionPolicy />} />
                 
                 {/* Legacy redirect routes */}
-                <Route path="/terms" element={<LegacyRouteRedirect to="/legal/terms" />} />
                 <Route path="/privacy" element={<LegacyRouteRedirect to="/legal/privacy" />} />
               </Route>
 
@@ -148,14 +147,16 @@ export default function App() {
                 }
               >
                 <Route index element={<Dashboard />} />
-                <Route path="record" element={<Record />} />
+                <Route path="record" element={<Navigate to="/app/diagnosis" replace />} />
                 <Route path="help/student-record-pdf" element={<RecordPdfHelp />} />
                 <Route path="diagnosis" element={<Diagnosis />} />
+                <Route path="diagnosis/history" element={<Archive />} />
                 <Route path="workshop" element={<Workshop />} />
                 <Route path="workshop/:projectId" element={<Workshop />} />
                 <Route path="editor/:projectId" element={<DocumentEditorPage />} />
                 <Route path="archive" element={<Archive />} />
                 <Route path="trends" element={<Trends />} />
+                <Route path="interview" element={<Interview />} />
                 <Route path="interview/:projectId" element={<Interview />} />
                 <Route path="settings" element={<Settings />} />
               </Route>
@@ -165,13 +166,14 @@ export default function App() {
                 element={<Navigate to="/app/diagnosis" replace />}
               />
 
-              <Route path="/record" element={<LegacyRouteRedirect to="/app/record" />} />
+              <Route path="/record" element={<LegacyRouteRedirect to="/app/diagnosis" />} />
               <Route path="/record/help" element={<LegacyRouteRedirect to="/app/help/student-record-pdf" />} />
               <Route path="/diagnosis" element={<LegacyRouteRedirect to="/app/diagnosis" />} />
               <Route path="/workshop" element={<LegacyWorkshopRedirect />} />
               <Route path="/workshop/:projectId" element={<LegacyWorkshopRedirect />} />
               <Route path="/archive" element={<LegacyRouteRedirect to="/app/archive" />} />
               <Route path="/trends" element={<LegacyRouteRedirect to="/app/trends" />} />
+              <Route path="/interview" element={<LegacyRouteRedirect to="/app/interview" />} />
               <Route path="/settings" element={<LegacyRouteRedirect to="/app/settings" />} />
               <Route path="/editor/:projectId" element={<LegacyEditorRedirect />} />
 

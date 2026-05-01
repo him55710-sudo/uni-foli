@@ -200,7 +200,12 @@ export function Contact() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard title="연락 채널" description="급하지 않은 문의는 폼 접수를 권장해요." eyebrow="연락처">
+        <SectionCard 
+          title="연락 채널" 
+          description="급하지 않은 문의는 폼 접수를 권장해요." 
+          eyebrow="연락처"
+          bodyClassName="space-y-4"
+        >
           <SurfaceCard tone="muted" padding="sm">
             <p className="inline-flex items-center gap-2 text-sm font-bold text-slate-800">
               <Mail size={16} className="text-blue-700" />

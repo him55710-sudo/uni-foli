@@ -1,41 +1,63 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowDown, ArrowRight, Compass, FileSearch, Layers3, Rocket, Sparkles, Target } from 'lucide-react';
+import {
+  ArrowRight,
+  BarChart3,
+  Check,
+  ClipboardCheck,
+  Compass,
+  FileSearch,
+  Layers3,
+  PieChart,
+  Rocket,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-
-const quickMajors = ['건축', '컴공', '바이오', '경영', '사회과학', '디자인'];
+const quickMajors = ['건축공학', '컴퓨터공학', '바이오', '경영', '사회과학', '디자인'];
 
 const quickFeatures = [
   {
     title: 'PDF 진단',
-    subtitle: '파일 업로드',
+    subtitle: '생기부 업로드 후 전공 적합성, 탐구 흐름, 리스크를 자동 분석합니다.',
     icon: FileSearch,
-    accent: 'from-indigo-600 to-indigo-500',
     href: '/app/diagnosis',
   },
   {
-    title: '트렌드 탐색',
-    subtitle: '전공 주제칩',
+    title: '전공 탐색',
+    subtitle: '내 기록과 맞는 학과 흐름을 비교하고 다음 탐구 방향을 찾습니다.',
     icon: Compass,
-    accent: 'from-indigo-500 to-indigo-400',
     href: '/app/trends',
   },
   {
-    title: '워크숍 설계',
-    subtitle: '실행 계획',
+    title: '보고서 작성',
+    subtitle: '분석 결과를 바탕으로 유의미한 탐구 보고서 초안을 만듭니다.',
     icon: Layers3,
-    accent: 'from-indigo-400 to-blue-400',
     href: '/app/workshop',
   },
   {
-    title: '결과 출력',
-    subtitle: '문서 정리',
+    title: '전략 정리',
+    subtitle: '면접 질문, 30일 액션 플랜, 보완 체크리스트까지 이어집니다.',
     icon: Target,
-    accent: 'from-blue-400 to-sky-400',
     href: '/app/workshop',
   },
+];
+
+const dashboardBars = [
+  { label: '전공 적합성', mine: 88, major: 76, total: 69 },
+  { label: '탐구 심화도', mine: 82, major: 71, total: 64 },
+  { label: '학업 엄밀성', mine: 79, major: 70, total: 63 },
+  { label: '서사 일관성', mine: 86, major: 73, total: 66 },
+];
+
+const proofCards = [
+  { title: '핵심 강점', value: '5개', copy: '학년별 반복 근거와 전공 연결성을 묶어 정리' },
+  { title: '리스크', value: '3개', copy: '면접에서 공격받을 수 있는 빈틈을 우선순위화' },
+  { title: '액션 플랜', value: '30일', copy: '보고서, 면접, 후속 탐구를 실행 단위로 변환' },
 ];
 
 export function Landing() {
@@ -47,115 +69,97 @@ export function Landing() {
   };
 
   return (
-    <div className="bg-transparent text-slate-900 selection:bg-indigo-100">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden pt-20 sm:pt-28 lg:pt-36 pb-20 sm:pb-28 lg:pb-36">
-        <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-8">
+    <div className="bg-[#FAFAFA] text-[#111827] selection:bg-violet-100">
+      <section className="relative overflow-hidden border-b border-[#E5E7EB] bg-white">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#7C3AED] to-transparent" />
+        <div className="mx-auto grid min-h-[calc(86vh-72px)] max-w-7xl items-center gap-12 px-4 py-12 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:px-8 lg:py-14">
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.45 }}
-            transition={{ duration: 0.48 }}
-            className="space-y-10"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className="space-y-8"
           >
-            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/92 px-4 py-2 text-xs font-black text-indigo-700 shadow-sm">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#DDD6FE] bg-[#F5F3FF] px-4 py-2 text-xs font-black text-[#5B21B6] shadow-sm">
               <Sparkles size={14} />
-              트렌드·진단·워크숍 코파일럿
+              최고의 온라인 입시컨설팅 | 업계 최저가 보장
             </div>
 
-            <h1 className="text-4xl font-black leading-[1.15] tracking-tight sm:text-6xl lg:text-7xl">
-              말은 짧게
-              <br />
-              <span className="bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent">
-                실행은 빠르게
-              </span>
-            </h1>
+            <div className="space-y-5">
+              <h1 className="max-w-3xl text-4xl font-black leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
+                최고의 온라인
+                <span className="block text-[#7C3AED]">입시 컨설팅.</span>
+              </h1>
+              <p className="max-w-2xl text-base font-semibold leading-8 text-[#4B5563] sm:text-xl">
+                오프라인 컨설팅의 1/10 가격으로 만나는 프리미엄 리포트.
+                과목별 세특, 창체, 진로활동을 데이터로 분석하여 전공 적합성을 한눈에 보여줍니다.
+              </p>
+            </div>
 
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-3">
+              <Link
+                to={startHref}
+                onClick={scrollToTop}
+                className="group inline-flex items-center gap-2 rounded-2xl bg-[#7C3AED] px-7 py-4 text-base font-black text-white shadow-xl shadow-violet-200 transition hover:bg-[#5B21B6] active:scale-[0.98] sm:text-lg"
+              >
+                <Rocket size={20} />
+                생기부 PDF 진단하기
+                <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+              </Link>
+              <Link
+                to="/app/trends"
+                onClick={scrollToTop}
+                className="inline-flex items-center gap-2 rounded-2xl border border-[#E5E7EB] bg-white px-7 py-4 text-base font-black text-[#374151] shadow-sm transition hover:border-[#C4B5FD] hover:bg-[#F5F3FF] sm:text-lg"
+              >
+                샘플 대시보드 보기
+              </Link>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-2">
+              <p className="w-full text-xs font-black text-[#6B7280]">인기 전공 분석</p>
               {quickMajors.map((major) => (
                 <span
                   key={major}
-                  className="rounded-full border border-slate-200 bg-white/92 px-4 py-1.5 text-sm font-bold text-slate-700 shadow-[0_8px_16px_-14px_rgba(15,23,42,0.5)]"
+                  className="rounded-full border border-[#EDE9FE] bg-[#F5F3FF] px-3 py-1 text-xs font-black text-[#5B21B6]"
                 >
-                  {major}
+                  #{major}
                 </span>
               ))}
-            </div>
-
-            <div className="flex flex-wrap gap-3 pt-4 sm:gap-4">
-              <Link to={startHref} onClick={scrollToTop} className="btn-primary inline-flex items-center gap-2 px-6 py-3.5 text-base sm:px-8 sm:py-4 sm:text-lg">
-                <Rocket size={18} />
-                시작
-                <ArrowRight size={16} />
-              </Link>
-              <Link to="/app/trends" onClick={scrollToTop} className="btn-secondary inline-flex items-center gap-2 px-6 py-3.5 text-base sm:px-8 sm:py-4 sm:text-lg">
-                트렌드
-                <ArrowRight size={16} />
-              </Link>
-              <Link to="/app/workshop" onClick={scrollToTop} className="btn-secondary inline-flex items-center gap-2 px-6 py-3.5 text-base sm:px-8 sm:py-4 sm:text-lg">
-                워크숍
-                <ArrowRight size={16} />
-              </Link>
             </div>
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true, amount: 0.35 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="relative"
+            initial={{ opacity: 0, scale: 0.96, y: 22 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.65, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
           >
-            <div className="relative overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-2xl shadow-blue-50/50 sm:rounded-[3rem] sm:p-20 flex flex-col items-center justify-center h-full min-h-[320px] sm:min-h-[400px]">
-              {/* Subtle background element */}
-              <div className="absolute top-0 right-0 -mr-16 -mt-16 h-80 w-80 rounded-full bg-blue-50/50 blur-3xl opacity-60" />
-              <div className="absolute bottom-0 left-0 -ml-16 -mb-16 h-80 w-80 rounded-full bg-indigo-50/50 blur-3xl opacity-60" />
-              
-              <div className="relative z-10 space-y-6 sm:space-y-8 text-center">
-                <div className="mx-auto flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-[1.5rem] sm:rounded-[2rem] bg-blue-50 text-[#3182f6]">
-                  <Layers3 size={32} className="sm:w-10 sm:h-10" strokeWidth={2.5} />
-                </div>
-                <div className="space-y-3 sm:space-y-4">
-                  <h2 className="text-3xl font-black tracking-tight text-[#191f28] sm:text-5xl leading-tight">
-                    입시 전략의<br />새로운 패러다임
-                  </h2>
-                  <p className="text-xl font-medium leading-relaxed text-[#4e5968] max-w-[320px] mx-auto">
-                    여러분의 학생부 분석부터 워크숍 기획까지, <span className="font-black text-[#3182f6]">UniFoli</span>가 함께합니다.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <DashboardMockup />
           </motion.div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {quickFeatures.map((item, index) => (
             <motion.div
               key={item.title}
-              initial={{ opacity: 0, y: 24 }}
+              initial={{ opacity: 0, y: 18 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.35 }}
-              transition={{ duration: 0.42, delay: index * 0.06 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.36, delay: index * 0.05 }}
             >
               <Link
                 to={item.href}
                 onClick={scrollToTop}
-                className="group tilt-3d block rounded-[2.5rem] border border-white/70 bg-white/84 p-6 shadow-[0_32px_64px_-24px_rgba(15,23,42,0.12)] backdrop-blur-md transition-all hover:shadow-[0_48px_80px_-24px_rgba(15,23,42,0.18)]"
+                className="group block h-full rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-[#C4B5FD] hover:shadow-xl hover:shadow-violet-100"
               >
-                <div className={`relative overflow-hidden rounded-[2rem] bg-gradient-to-br p-6 text-white shadow-inner ${item.accent}`}>
-                  <item.icon size={20} />
-                  <div className="mt-12">
-                    <p className="text-2xl font-black tracking-tight">{item.title}</p>
-                    <p className="text-sm font-bold text-white/85 mt-1">{item.subtitle}</p>
-                  </div>
-                  <div className="absolute -bottom-8 -right-8 h-28 w-28 rounded-full bg-white/18 blur-xl" />
+                <div className="mb-6 inline-flex rounded-2xl bg-[#F5F3FF] p-3 text-[#7C3AED] ring-1 ring-[#EDE9FE]">
+                  <item.icon size={23} />
                 </div>
-                <div className="mt-6 px-2 inline-flex items-center gap-2 text-base font-extrabold text-slate-700 transition group-hover:text-[#3182f6]">
-                  자세히 보기
-                  <ArrowRight size={16} />
+                <h3 className="text-lg font-black text-[#111827]">{item.title}</h3>
+                <p className="mt-2 text-sm font-semibold leading-6 text-[#6B7280]">{item.subtitle}</p>
+                <div className="mt-6 inline-flex items-center gap-1.5 text-sm font-black text-[#7C3AED]">
+                  바로가기
+                  <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
                 </div>
               </Link>
             </motion.div>
@@ -163,10 +167,183 @@ export function Landing() {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="mx-auto max-w-7xl px-4 py-32 sm:px-6 lg:px-8">
+      <section className="border-y border-[#E5E7EB] bg-white">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+          <div className="space-y-4">
+            <div className="inline-flex rounded-full bg-[#EDE9FE] px-3 py-1 text-xs font-black text-[#5B21B6]">
+              프리미엄 리포트 구조
+            </div>
+            <h2 className="text-3xl font-black tracking-tight text-[#111827] sm:text-4xl">
+              AI가 쓴 긴 문장이 아니라,
+              <span className="block text-[#7C3AED]">분석 JSON을 템플릿에 배치합니다.</span>
+            </h2>
+            <p className="text-base font-semibold leading-8 text-[#6B7280]">
+              내부 근거 코드나 텍스트 그래프를 노출하지 않고, 고정된 카드와 차트에
+              학생별 데이터를 자동 배치해 학부모가 바로 이해할 수 있게 만듭니다.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {proofCards.map((card) => (
+              <div key={card.title} className="rounded-2xl border border-[#E5E7EB] bg-[#FAFAFA] p-5">
+                <p className="text-sm font-black text-[#6B7280]">{card.title}</p>
+                <p className="mt-3 text-3xl font-black text-[#7C3AED]">{card.value}</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-[#4B5563]">{card.copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <PricingSection />
       </section>
+    </div>
+  );
+}
+
+function DashboardMockup() {
+  return (
+    <div className="mx-auto w-full max-w-[560px] rounded-[28px] border border-[#E5E7EB] bg-white p-4 shadow-[0_28px_70px_-28px_rgba(17,24,39,0.35)] sm:p-5">
+      <div className="rounded-[22px] border border-[#EDE9FE] bg-[#F5F3FF] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black text-[#7C3AED]">PREMIUM DIAGNOSIS</p>
+            <h2 className="mt-1 text-xl font-black text-[#111827]">AI 생기부 진단 대시보드</h2>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-[#5B21B6] shadow-sm">
+            상위 7.8%
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-3xl border border-[#E5E7EB] bg-white p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black text-[#6B7280]">종합 점수</p>
+              <p className="mt-1 text-3xl font-black text-[#111827]">347</p>
+              <p className="text-xs font-black text-[#9CA3AF]">/ 400점</p>
+            </div>
+            <PieChart className="text-[#7C3AED]" size={24} />
+          </div>
+          <div className="relative mx-auto mt-5 flex h-36 w-36 items-center justify-center">
+            <svg className="h-36 w-36 -rotate-90" viewBox="0 0 144 144">
+              <circle cx="72" cy="72" r="58" fill="none" stroke="#EDE9FE" strokeWidth="14" />
+              <motion.circle
+                cx="72"
+                cy="72"
+                r="58"
+                fill="none"
+                stroke="#7C3AED"
+                strokeWidth="14"
+                strokeLinecap="round"
+                strokeDasharray="364.4"
+                initial={{ strokeDashoffset: 364.4 }}
+                whileInView={{ strokeDashoffset: 48.3 }}
+                viewport={{ once: true }}
+                transition={{ duration: 1, delay: 0.2 }}
+              />
+            </svg>
+            <div className="absolute text-center">
+              <p className="text-2xl font-black text-[#111827]">86.8%</p>
+              <p className="text-[11px] font-black text-[#6B7280]">전공 적합</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-[#E5E7EB] bg-white p-5">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black text-[#6B7280]">비교 분석</p>
+              <h3 className="text-base font-black text-[#111827]">내 점수 vs 평균</h3>
+            </div>
+            <BarChart3 className="text-[#7C3AED]" size={22} />
+          </div>
+
+          <div className="space-y-4">
+            {dashboardBars.map((item) => (
+              <div key={item.label} className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-black">
+                  <span className="text-[#374151]">{item.label}</span>
+                  <span className="text-[#7C3AED]">{item.mine}점</span>
+                </div>
+                <CompareBars mine={item.mine} major={item.major} total={item.total} />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2 text-[10px] font-black text-[#6B7280]">
+            <Legend color="bg-[#7C3AED]" label="내 점수" />
+            <Legend color="bg-[#2563EB]" label="동일 전공" />
+            <Legend color="bg-[#D1D5DB]" label="전체 평균" />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <MiniMetric icon={TrendingUp} label="강점" value="전공 연결성" tone="purple" />
+        <MiniMetric icon={ShieldCheck} label="리스크" value="근거 분산" tone="red" />
+        <MiniMetric icon={ClipboardCheck} label="다음 액션" value="대표 탐구 3개" tone="blue" />
+      </div>
+    </div>
+  );
+}
+
+function CompareBars({ mine, major, total }: { mine: number; major: number; total: number }) {
+  const rows = [
+    { value: mine, color: 'bg-[#7C3AED]' },
+    { value: major, color: 'bg-[#2563EB]' },
+    { value: total, color: 'bg-[#D1D5DB]' },
+  ];
+
+  return (
+    <div className="space-y-1">
+      {rows.map((row, index) => (
+        <div key={index} className="h-2 overflow-hidden rounded-full bg-[#F3F4F6]">
+          <motion.div
+            initial={{ width: 0 }}
+            whileInView={{ width: `${row.value}%` }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.8, delay: index * 0.05 }}
+            className={`h-full rounded-full ${row.color}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`h-2 w-2 rounded-full ${color}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function MiniMetric({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  label: string;
+  value: string;
+  tone: 'purple' | 'red' | 'blue';
+}) {
+  const toneClass = {
+    purple: 'bg-[#F5F3FF] text-[#7C3AED] border-[#EDE9FE]',
+    red: 'bg-red-50 text-[#EF4444] border-red-100',
+    blue: 'bg-blue-50 text-[#2563EB] border-blue-100',
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <Icon size={18} />
+      <p className="mt-3 text-[11px] font-black opacity-70">{label}</p>
+      <p className="mt-1 text-sm font-black">{value}</p>
     </div>
   );
 }
@@ -177,153 +354,127 @@ function PricingSection() {
   const plans = [
     {
       name: 'Free',
-      description: '가볍게 기능을 체험해보고 싶은 학생',
+      description: 'AI 분석 흐름을 가볍게 체험',
       price: { monthly: 0, semester: 0 },
-      features: [
-        '기본 AI 대화 및 아이디어 스케치',
-        '월 5회 생기부 진단',
-        '워터마크 포함 PDF 다운로드'
-      ],
-      buttonText: '현재 플랜 유지',
+      features: ['샘플 리포트 열람', '생기부 간단 분석 1회', '기본 탐구 아이디어 추천', '문서 편집기 체험'],
+      buttonText: '체험하기',
       highlight: false,
-      dark: false
+      dark: false,
     },
     {
       name: 'Pro',
-      description: '입시 준비 시간을 획기적으로 단축하고 싶은 학생',
+      description: '본격적인 입시 전략 설계',
       price: { monthly: 5900, semester: 23900 },
-      features: [
-        '무제한 생기부 심층 진단',
-        '워터마크 없는 깔끔한 PDF 제공',
-        'HWPX 절대 조판 무제한 다운로드',
-        '프리미엄 탐구보고서 템플릿 무제한'
-      ],
-      buttonText: 'Pro 플랜 시작하기',
+      features: ['프리미엄 진단서 3회 제공', '워터마크 없는 PDF 다운로드', '과목별 세특 분석 카드', '추천 탐구 주제와 액션 플랜'],
+      buttonText: 'Pro 시작하기',
       highlight: true,
       dark: false,
       popular: true,
-      originalPrice: { semester: 35400 }
+      originalPrice: { semester: 35400 },
     },
     {
       name: 'Ultra',
-      description: '압도적인 퀄리티로 최상위권을 노리는 학생',
-      price: { monthly: 9900, semester: 39900 },
-      features: [
-        'Pro 플랜의 모든 기능 포함',
-        'AI 실전 모의 면접 무제한',
-        '우선 순위 빠른 AI 응답 속도',
-        '심층 면접 예상 질문 및 답변 생성'
-      ],
-      buttonText: 'Ultra 플랜 시작하기',
+      description: '면접과 보고서까지 연결',
+      price: { monthly: 12900, semester: 49900 },
+      features: ['프리미엄 진단 리포트 월간 업데이트', 'AI 모의 면접 질문 생성', '보고서 초안 자동 구성', '전공별 30일 로드맵'],
+      buttonText: 'Ultra 시작하기',
       highlight: false,
       dark: true,
-      originalPrice: { semester: 59400 }
-    }
+      originalPrice: { semester: 77400 },
+    },
   ];
 
   return (
-    <div className="space-y-12">
-      <div className="text-center space-y-3 sm:space-y-4">
-        <h2 className="text-2xl font-black tracking-tight text-slate-900 sm:text-4xl lg:text-5xl">
-          나에게 꼭 맞는 <span className="text-indigo-600">성장 플랜</span>
+    <div className="space-y-10">
+      <div className="mx-auto max-w-3xl text-center">
+        <h2 className="text-3xl font-black tracking-tight text-[#111827] sm:text-4xl">
+          업계 최저가로 누리는 <span className="text-[#7C3AED]">고퀄리티 컨설팅</span>
         </h2>
-        <p className="text-base sm:text-lg font-medium text-slate-500 max-w-2xl mx-auto px-4">
-          합리적인 가격으로 프리미엄 AI 입시 코파일럿을 경험하세요.
+        <p className="mt-3 text-base font-semibold leading-7 text-[#6B7280]">
+          오프라인 컨설팅의 거품을 걷어냈습니다. 
+          PDF 진단부터 보고서, 면접 준비까지 가장 합리적인 가격으로 시작하세요.
         </p>
-
-        {/* Billing Toggle */}
-        <div className="flex items-center justify-center pt-8">
-          <div className="bg-[#f2f4f6] p-1 rounded-2xl inline-flex relative border border-[#e5e8eb] shadow-inner min-w-[320px]">
-            <button
-              onClick={() => setBillingCycle('monthly')}
-              className={cn(
-                "relative z-10 flex-1 px-8 py-3 rounded-xl font-black text-[15px] transition-all duration-300",
-                billingCycle === 'monthly' ? "text-[#191f28]" : "text-[#8b95a1] hover:text-[#4e5968]"
-              )}
-            >
-              월간 결제
-            </button>
-            <button
-              onClick={() => setBillingCycle('semester')}
-              className={cn(
-                "relative z-10 flex-1 px-8 py-3 rounded-xl font-black text-[15px] transition-all duration-300",
-                billingCycle === 'semester' ? "text-[#3182f6]" : "text-[#8b95a1] hover:text-[#4e5968]"
-              )}
-            >
-              학기 결제
-            </button>
-            <div
-              className="absolute inset-y-1 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-all duration-400 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
-              style={{
-                left: billingCycle === 'monthly' ? '4px' : 'calc(50% + 2px)',
-                width: 'calc(50% - 6px)'
-              }}
-            />
-          </div>
+        <div className="mt-7 inline-flex rounded-2xl border border-[#E5E7EB] bg-white p-1 shadow-sm">
+          <button
+            onClick={() => setBillingCycle('monthly')}
+            className={cn(
+              'rounded-xl px-6 py-2 text-sm font-black transition',
+              billingCycle === 'monthly' ? 'bg-[#F5F3FF] text-[#7C3AED]' : 'text-[#6B7280] hover:text-[#111827]',
+            )}
+          >
+            월간 결제
+          </button>
+          <button
+            onClick={() => setBillingCycle('semester')}
+            className={cn(
+              'rounded-xl px-6 py-2 text-sm font-black transition',
+              billingCycle === 'semester' ? 'bg-[#F5F3FF] text-[#7C3AED]' : 'text-[#6B7280] hover:text-[#111827]',
+            )}
+          >
+            학기 결제
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-3 pt-6 items-stretch">
+      <div className="grid gap-6 lg:grid-cols-3">
         {plans.map((plan, index) => (
-            <motion.div
+          <motion.div
             key={plan.name}
-            initial={{ opacity: 0, y: 32 }}
+            initial={{ opacity: 0, y: 24 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: index * 0.1 }}
+            transition={{ duration: 0.4, delay: index * 0.06 }}
             className={cn(
-              "relative flex flex-col rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 transition-all duration-300 hover:scale-[1.02]",
-              plan.dark 
-                ? "bg-[#191f28] text-white shadow-2xl shadow-blue-900/20" 
-                : "bg-white border border-[#f2f4f6] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.05)]",
-              plan.highlight && "ring-2 ring-[#3182f6] ring-offset-4"
+              'relative flex flex-col rounded-3xl p-7 transition hover:-translate-y-1',
+              plan.dark
+                ? 'bg-[#111827] text-white shadow-2xl shadow-violet-200'
+                : 'border border-[#E5E7EB] bg-white shadow-sm hover:shadow-xl hover:shadow-violet-100',
+              plan.highlight && 'ring-2 ring-[#7C3AED] ring-offset-4',
             )}
           >
             {plan.popular && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap">
-                <span className="bg-[#3182f6] text-white text-[11px] font-black px-6 py-2.5 rounded-full shadow-xl uppercase tracking-widest">
-                  추천 요금제
+              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2">
+                <span className="rounded-full bg-[#7C3AED] px-5 py-2 text-[10px] font-black tracking-widest text-white shadow-lg">
+                  RECOMMENDED
                 </span>
               </div>
             )}
 
-            <div className="mb-8 h-20">
-              <h3 className={cn("text-2xl font-black mb-2 tracking-tight", plan.dark ? "text-[#3182f6]" : "text-[#191f28]")}>
-                {plan.name}
-              </h3>
-              <p className={cn("text-sm font-bold leading-relaxed", plan.dark ? "text-[#adb5bd]" : "text-[#4e5968]")}>
+            <div>
+              <h3 className={cn('text-2xl font-black', plan.dark ? 'text-white' : 'text-[#111827]')}>{plan.name}</h3>
+              <p className={cn('mt-2 text-sm font-semibold leading-6', plan.dark ? 'text-slate-300' : 'text-[#6B7280]')}>
                 {plan.description}
               </p>
             </div>
 
-            <div className="mb-8 h-20 sm:h-28 flex flex-col justify-end">
-              <div className="h-6">
-                {billingCycle === 'semester' && plan.originalPrice && plan.price.semester < plan.originalPrice.semester && (
-                  <div className={cn("text-xs sm:text-sm font-bold line-through mb-1 opacity-40", plan.dark ? "text-slate-500" : "text-slate-400")}>
-                    ₩{plan.originalPrice.semester.toLocaleString()}
-                  </div>
+            <div className="my-9">
+              <div className="h-5">
+                {billingCycle === 'semester' && plan.originalPrice && (
+                  <span className="text-sm font-bold text-[#9CA3AF] line-through">
+                    {plan.originalPrice.semester.toLocaleString()}원
+                  </span>
                 )}
               </div>
-              <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
-                <span className="text-3xl sm:text-5xl font-black tracking-tighter whitespace-nowrap">
-                  ₩{plan.price[billingCycle].toLocaleString()}
-                </span>
-                <span className={cn("text-sm sm:text-xl font-bold opacity-60", plan.dark ? "text-slate-400" : "text-slate-500")}>
+              <div className="flex items-baseline gap-1">
+                <span className="text-4xl font-black tracking-tight">{plan.price[billingCycle].toLocaleString()}원</span>
+                <span className={cn('text-sm font-black', plan.dark ? 'text-slate-400' : 'text-[#9CA3AF]')}>
                   /{billingCycle === 'monthly' ? '월' : '학기'}
                 </span>
               </div>
             </div>
 
-            <ul className="mb-10 space-y-4 flex-1">
+            <ul className="mb-9 flex-1 space-y-4">
               {plan.features.map((feature) => (
                 <li key={feature} className="flex items-start gap-3">
-                  <div className={cn(
-                    "mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
-                    plan.dark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-50 text-indigo-600"
-                  )}>
+                  <span
+                    className={cn(
+                      'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+                      plan.dark ? 'bg-[#7C3AED]/20 text-[#C4B5FD]' : 'bg-[#F5F3FF] text-[#7C3AED]',
+                    )}
+                  >
                     <Check size={12} strokeWidth={4} />
-                  </div>
-                  <span className={cn("text-sm font-bold leading-snug", plan.dark ? "text-slate-300" : "text-slate-700")}>
+                  </span>
+                  <span className={cn('text-sm font-semibold leading-6', plan.dark ? 'text-slate-200' : 'text-[#374151]')}>
                     {feature}
                   </span>
                 </li>
@@ -332,50 +483,21 @@ function PricingSection() {
 
             <button
               className={cn(
-                "w-full rounded-2xl py-4 sm:py-5 text-base sm:text-lg font-black transition-all duration-300 active:scale-[0.98] shadow-lg",
+                'w-full rounded-2xl py-4 text-base font-black transition active:scale-[0.98]',
                 plan.dark
-                  ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-900/40"
+                  ? 'bg-[#7C3AED] text-white hover:bg-[#8B5CF6]'
                   : plan.highlight
-                  ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-100"
-                  : "bg-slate-100 text-slate-900 hover:bg-slate-200 shadow-slate-50"
+                    ? 'bg-[#7C3AED] text-white hover:bg-[#5B21B6]'
+                    : 'bg-[#F5F3FF] text-[#5B21B6] hover:bg-[#EDE9FE]',
               )}
-              onClick={() => {
-                const amount = plan.price[billingCycle];
-                if (amount > 0) {
-                  alert(`토스페이먼츠 연동 준비 중입니다.\n결제 금액: ₩${amount.toLocaleString()}`);
-                }
-              }}
             >
               {plan.buttonText}
             </button>
           </motion.div>
         ))}
       </div>
-
-      <p className="text-center text-sm font-bold text-slate-400 flex items-center justify-center gap-2">
-        <Sparkles size={14} /> 토스페이먼츠 보안 결제를 지원합니다
-      </p>
     </div>
   );
 }
 
-function Check({ size, strokeWidth, ...props }: any) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
-}
-
-const cn = (...classes: any[]) => classes.filter(Boolean).join(' ');
+const cn = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ');

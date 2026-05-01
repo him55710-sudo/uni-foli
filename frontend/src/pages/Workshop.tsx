@@ -32,7 +32,7 @@ import {
   type ChatStreamMetaPayload,
 } from '../lib/chatStream';
 import { cn } from '../lib/cn';
-import type { DiagnosisRunResponse } from '../lib/diagnosis';
+import { DIAGNOSIS_STORAGE_KEY, type DiagnosisRunResponse, type StoredDiagnosis } from '../lib/diagnosis';
 import { saveArchiveItem } from '../lib/archiveStore';
 import { readQuestStart } from '../lib/questStart';
 import type { AuthTokenSource } from '../lib/requestAuth';
@@ -699,11 +699,25 @@ interface WorkshopLocationState {
   diagnosisRunId?: string | null;
 }
 
+function readStoredWorkshopProjectId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(DIAGNOSIS_STORAGE_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as Partial<StoredDiagnosis>;
+    const projectId = typeof stored.projectId === 'string' ? stored.projectId.trim() : '';
+    return projectId || null;
+  } catch {
+    return null;
+  }
+}
+
 export function Workshop() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
   const location = useLocation();
   const workshopLocationState = (location.state as WorkshopLocationState | null) ?? null;
+  const storedWorkshopProjectId = useMemo(() => readStoredWorkshopProjectId(), []);
   const requestedChatbotMode = useMemo(
     () =>
       resolveChatbotModeFromRouteContext({
@@ -767,6 +781,7 @@ export function Workshop() {
   const preferredDiagnosisRunId = workshopLocationState?.diagnosisRunId ?? null;
   const openedFromDiagnosis = workshopLocationState?.fromDiagnosis === true;
   const isProjectBacked = Boolean(projectId && projectId !== 'demo');
+  const shouldRedirectToStoredProject = !isProjectBacked && Boolean(storedWorkshopProjectId);
   const guidedProjectId = isProjectBacked ? projectId ?? null : null;
   const fileName = useMemo(() => `${(questStart?.title || 'draft').replace(/\s+/g, '_')}.hwpx`, [questStart]);
   const researchCandidates = useResearchCandidates({
@@ -1018,6 +1033,17 @@ export function Workshop() {
   }, [isProjectBacked, openedFromDiagnosis, preferredDiagnosisRunId, projectId, requestedChatbotMode]);
 
   useEffect(() => {
+    if (!shouldRedirectToStoredProject || !storedWorkshopProjectId) return;
+    navigate(`/app/workshop/${encodeURIComponent(storedWorkshopProjectId)}${location.search}`, {
+      replace: true,
+      state: workshopLocationState ?? undefined,
+    });
+  }, [location.search, navigate, shouldRedirectToStoredProject, storedWorkshopProjectId, workshopLocationState]);
+
+  useEffect(() => {
+    if (shouldRedirectToStoredProject) {
+      return;
+    }
     const savedLevel = localStorage.getItem('uni_foli_quality_level');
     if (savedLevel === 'low' || savedLevel === 'mid' || savedLevel === 'high') {
       setQualityLevel(savedLevel as QualityLevel);
@@ -1040,7 +1066,7 @@ export function Workshop() {
       setIsGuidedTopicSelected(true);
       setMessages([{ id: 'demo-init', role: 'foli', content: '데모 모드입니다. 유니폴리에게 질문하면 초안 작성을 이어서 도와드릴게요.' }]);
     }
-  }, [initialMajor, isProjectBacked, initWorkshop, questStart]);
+  }, [initialMajor, isProjectBacked, initWorkshop, questStart, shouldRedirectToStoredProject]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2174,48 +2200,11 @@ export function Workshop() {
   }, [chatbotMode, diagnosisHeadline, guidedSetupComplete, isProjectBacked]);
 
   return (
-    <div className={cn("mx-auto max-w-[1800px] space-y-4 px-2.5 py-3 transition-all duration-700 sm:space-y-6 sm:px-4 sm:py-6", advancedMode && "rounded-[32px] bg-[linear-gradient(145deg,rgba(124,58,237,0.06)_0%,rgba(6,182,212,0.05)_100%)] shadow-[inset_0_0_100px_rgba(124,58,237,0.06)] sm:rounded-[48px]")}>
+    <div className={cn("mx-auto h-[100dvh] flex flex-col max-w-[1800px] px-2 sm:px-4 py-2 sm:py-4 transition-all duration-700", advancedMode && "rounded-[32px] bg-[linear-gradient(145deg,rgba(124,58,237,0.06)_0%,rgba(6,182,212,0.05)_100%)] shadow-[inset_0_0_100px_rgba(124,58,237,0.06)] sm:rounded-[48px]")}>
       <motion.div
         animate={advancedMode ? { y: [0, -2, 0] } : {}}
         transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
       >
-        <PageHeader
-          eyebrow="워크숍"
-          title={isProjectBacked ? '근거 기반 초안 작업' : 'AI 초안 작업'}
-          description="질문과 수정을 한 화면에서 바로 진행합니다."
-          actions={
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <SecondaryButton
-                data-testid="workshop-advanced-toggle"
-                onClick={() => setAdvancedMode(prev => !prev)}
-                aria-label={advancedMode ? '고급 모드 끄기' : '고급 모드 켜기'}
-              >
-                {advancedMode ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                {advancedMode ? '고급 모드' : '기본 모드'}
-              </SecondaryButton>
-              <SecondaryButton
-                onClick={handleGenerateDraft}
-                disabled={!workshopState || isRendering || !workshopState.render_requirements?.can_render}
-              >
-                {isRendering ? <Loader2 size={16} className="animate-spin" /> : <Presentation size={14} />}
-                미리보기 생성
-              </SecondaryButton>
-            </div>
-          }
-          evidence={
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={isProjectBacked ? 'success' : 'warning'}>
-                {isProjectBacked ? '프로젝트 연결' : '데모 모드'}
-              </StatusBadge>
-              {isProjectBacked && (
-                <StatusBadge status={guidedSetupComplete ? 'success' : 'warning'}>
-                  {guidedSetupComplete ? '가이드 설정 완료' : `가이드 진행: ${guidedPhaseLabel}`}
-                </StatusBadge>
-              )}
-              <StatusBadge status={qualityMeta.status}>{qualityMeta.label}</StatusBadge>
-            </div>
-          }
-        />
 
         {quickPromptOptions.length > 0 && messages.length <= 4 && (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -2259,7 +2248,7 @@ export function Workshop() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[400px_minmax(0,1fr)] xl:grid-cols-[460px_minmax(0,1fr)]">
+        <div className="mt-2 flex-1 min-h-0 grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)] xl:grid-cols-[420px_minmax(0,1fr)]">
           <SectionCard
             title="코파일럿"
             eyebrow="대화"
@@ -2377,37 +2366,32 @@ export function Workshop() {
             </div>
           </SectionCard>
 
-          <SectionCard
-            title="문서 편집기"
-            description="작성 중인 보고서를 전문 편집기에서 자유롭게 다듬어보세요."
-            eyebrow="작성"
+          <div
             className={cn(
-              'flex min-h-0 flex-col min-h-[70dvh] max-h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-16rem)] lg:min-h-[600px] lg:max-h-[900px]',
+              'flex min-h-0 flex-col h-full bg-slate-50/50 rounded-[2rem] border border-slate-200 overflow-hidden relative',
               mobileView !== 'draft' && 'hidden lg:flex'
             )}
-            bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0 bg-slate-50/50"
-            actions={
-              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                <PrimaryButton size="sm" onClick={handleSaveDraft}>
-                  <Save size={14} className="mr-1.5" />
-                  저장
-                </PrimaryButton>
-                <SecondaryButton size="sm" onClick={() => {
-                  const blob = new Blob([documentContent], { type: 'text/markdown' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = fileName.replace('.hwpx', '.md');
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}>
-                  <Download size={14} className="mr-1.5" />
-                  내보내기
-                </SecondaryButton>
-              </div>
-            }
           >
-            <div className="flex flex-1 flex-col overflow-hidden p-4 sm:p-6">
+            <div className="absolute top-4 right-6 z-10 flex items-center gap-2">
+              <PrimaryButton size="sm" onClick={handleSaveDraft} className="shadow-md">
+                <Save size={14} className="mr-1.5" />
+                저장
+              </PrimaryButton>
+              <SecondaryButton size="sm" className="shadow-md bg-white" onClick={() => {
+                const blob = new Blob([documentContent], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName.replace('.hwpx', '.md');
+                a.click();
+                URL.revokeObjectURL(url);
+              }}>
+                <Download size={14} className="mr-1.5" />
+                내보내기
+              </SecondaryButton>
+            </div>
+            
+            <div className="flex flex-1 flex-col overflow-hidden p-2 sm:p-4 pt-16 sm:pt-16">
               {isDraftOutOfSync && (
                 <WorkflowNotice
                   tone="warning"
@@ -2446,7 +2430,7 @@ export function Workshop() {
                 </div>
               )}
             </div>
-          </SectionCard>
+          </div>
         </div>
       </motion.div>
     </div>

@@ -154,19 +154,19 @@ function markdownStringToHtml(markdown: string): string {
 const SECTION_HEADING_LABELS: Record<UniFoliReportSectionId, string> = {
   cover: '표지',
   table_of_contents: '목차',
-  motivation: 'I. 연구 동기 및 목적',
-  research_purpose: '연구 목적',
-  research_question: '연구 질문',
+  motivation: 'I. 탐구 동기 및 목적',
+  research_purpose: '탐구 목적',
+  research_question: '탐구 질문',
   background_theory: 'II. 이론적 배경',
   prior_research: '선행연구',
-  research_method: 'III. 연구 방법',
-  research_process: '연구 과정',
+  research_method: 'III. 탐구 방법',
+  research_process: '탐구 과정',
   data_analysis: '데이터 분석',
-  result: 'IV. 연구 결과',
+  result: 'IV. 탐구 결과',
   conclusion: 'V. 결론 및 제언',
   limitation: '한계점',
-  future_research: '후속 연구',
-  student_record_connection: '학생 기록 연결',
+  future_research: '후속 탐구',
+  student_record_connection: '학생부 기록 연결',
   references: '참고 문헌',
   appendix: '부록',
 };
@@ -174,19 +174,19 @@ const SECTION_HEADING_LABELS: Record<UniFoliReportSectionId, string> = {
 const SECTION_HEADING_KEYWORDS: Record<UniFoliReportSectionId, string[]> = {
   cover: ['표지', 'title', 'cover', '탐구 보고서'],
   table_of_contents: ['목차', 'table of contents'],
-  motivation: ['연구 동기', 'motivation', 'introduction'],
-  research_purpose: ['연구 목적', 'purpose'],
-  research_question: ['연구 질문', 'research question', 'title'],
+  motivation: ['탐구 동기', '동기 및 목적', 'motivation', 'introduction'],
+  research_purpose: ['탐구 목적', 'purpose'],
+  research_question: ['탐구 질문', 'research question', '핵심 질문'],
   background_theory: ['이론적 배경', 'background', 'theory'],
   prior_research: ['선행연구', 'prior research'],
-  research_method: ['연구 방법', 'method'],
-  research_process: ['연구 과정', 'process'],
+  research_method: ['탐구 방법', 'method'],
+  research_process: ['탐구 과정', 'process'],
   data_analysis: ['데이터 분석', 'data analysis'],
-  result: ['연구 결과', 'result'],
+  result: ['탐구 결과', 'result'],
   conclusion: ['결론', '제언', 'conclusion'],
   limitation: ['한계', 'limitation'],
-  future_research: ['후속 연구', 'future research', 'next step'],
-  student_record_connection: ['학생 기록', 'record connection'],
+  future_research: ['후속 탐구', 'future research', 'next step'],
+  student_record_connection: ['학생부 기록', '생기부 기반', 'record connection'],
   references: ['참고 문헌', 'references', 'bibliography'],
   appendix: ['부록', 'appendix'],
 };
@@ -408,8 +408,28 @@ export function normalizeInitialStringContent(value: string): string {
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
   function TiptapEditor({ initialContent, onUpdate, onJsonUpdate, onHtmlUpdate, readOnly = false }, ref) {
     const contentRef = useRef<JSONContent | null>(null);
-    const [editorWidth, setEditorWidth] = useState(100); // percentage or specific max-width
+    const [zoom, setZoom] = useState(100);
     const [isResizing, setIsResizing] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scale on mount and resize to fit container if too narrow
+    useEffect(() => {
+      const handleResize = () => {
+        if (!containerRef.current) return;
+        const containerWidth = containerRef.current.clientWidth;
+        const a4WidthPx = 210 * 3.7795275591; // 210mm to px approx (96dpi / 25.4)
+        
+        // If container is smaller than A4 width + padding, auto-scale down
+        if (containerWidth < a4WidthPx + 64) {
+          const autoScale = Math.floor(((containerWidth - 64) / a4WidthPx) * 100);
+          setZoom(Math.max(30, Math.min(100, autoScale)));
+        }
+      };
+
+      handleResize();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     const handleImageUpload = useCallback((file: File, editorInstance: Editor) => {
       const reader = new FileReader();
@@ -683,38 +703,42 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
 
     return (
       <div 
-        className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
-        style={{ width: `${editorWidth}%`, margin: '0 auto', transition: isResizing ? 'none' : 'width 0.2s ease' }}
+        ref={containerRef}
+        className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 w-full"
       >
         {!readOnly && (
-          <div className="flex-none bg-slate-50/50 backdrop-blur-md">
+          <div className="flex-none bg-slate-50/50 backdrop-blur-md z-20">
             <EditorToolbar editor={editor} onInsertTemplate={insertTemplate} />
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto bg-slate-50/30 p-4 sm:p-8">
-          <div className="mx-auto max-w-5xl shadow-2xl transition-shadow hover:shadow-blue-900/5">
-            <A4Container>
+        <div className="flex-1 overflow-auto bg-slate-100/50 p-4 sm:p-10 flex justify-center custom-scrollbar">
+          <div 
+            className="h-fit transition-all duration-300 origin-top"
+          >
+            <A4Container scale={zoom / 100}>
               {editor && <EditorContent editor={editor} />}
             </A4Container>
           </div>
         </div>
 
-        {/* Resize Handle */}
+        {/* Zoom Controls */}
         {!readOnly && (
-          <div className="absolute bottom-4 right-4 flex flex-col items-center gap-2">
-             <div className="flex items-center gap-2 rounded-full bg-white/80 p-1.5 shadow-lg ring-1 ring-slate-200 backdrop-blur-sm">
+          <div className="absolute bottom-6 right-6 flex flex-col items-center gap-2 z-30">
+             <div className="flex items-center gap-2 rounded-full bg-white/90 p-2 shadow-2xl ring-1 ring-slate-200/50 backdrop-blur-md">
                 <button 
-                  onClick={() => setEditorWidth(prev => Math.max(50, prev - 10))}
-                  className="rounded-full p-1.5 hover:bg-slate-100 text-slate-500"
+                  onClick={() => setZoom(prev => Math.max(30, prev - 10))}
+                  className="rounded-full p-2 hover:bg-slate-100 text-slate-500 transition-colors"
                   title="축소"
                 >
                   <Minus size={16} />
                 </button>
-                <span className="text-[10px] font-bold text-slate-400 w-8 text-center">{editorWidth}%</span>
+                <div className="px-1 text-[11px] font-black text-slate-600 w-10 text-center tracking-tighter">
+                  {zoom}%
+                </div>
                 <button 
-                  onClick={() => setEditorWidth(prev => Math.min(100, prev + 10))}
-                  className="rounded-full p-1.5 hover:bg-slate-100 text-slate-500"
+                  onClick={() => setZoom(prev => Math.min(200, prev + 10))}
+                  className="rounded-full p-2 hover:bg-slate-100 text-slate-500 transition-colors"
                   title="확대"
                 >
                   <Plus size={16} />
@@ -726,3 +750,4 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
     );
   },
 );
+

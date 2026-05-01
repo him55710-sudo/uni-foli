@@ -1,12 +1,12 @@
 import type { LucideIcon } from 'lucide-react';
-import { Archive, FileSearch, FolderOpen, Home, PenTool, Settings, TrendingUp } from 'lucide-react';
+import { Archive, FileSearch, Compass, PenTool, Settings, TrendingUp, FileText, MessageSquareQuote } from 'lucide-react';
 
 export interface AppNavItem {
   path: string;
   label: string;
   hint: string;
   icon: LucideIcon;
-  stage: string;
+  stage?: string;
 }
 
 export interface AppNavSection {
@@ -18,37 +18,25 @@ export interface AppNavSection {
 
 export const appNavSections: AppNavSection[] = [
   {
-    key: 'setup',
-    label: '준비',
-    hint: '목표와 자료 정리',
+    key: 'main',
+    label: '핵심 서비스',
+    hint: '성장을 위한 핵심 도구',
     items: [
-      { path: '/app', label: '대시보드', hint: '현재 진행 상태 확인', icon: Home, stage: '개요' },
-      { path: '/app/record', label: '기록 업로드', hint: '학생부 PDF 업로드', icon: FolderOpen, stage: '1단계' },
+      { path: '/app/diagnosis', label: 'AI 진단', hint: '학생부 업로드 및 정밀 진단', icon: FileSearch },
+      { path: '/app/diagnosis/history', label: '진단서', hint: '생성된 리포트 모아보기', icon: FileText },
+      { path: '/app/trends', label: '탐구 설계', hint: '전공 주제 및 탐구 방향 탐색', icon: Compass },
+      { path: '/app/workshop', label: '문서 작성', hint: '탐구 보고서 초안 및 워크숍', icon: PenTool },
+      { path: '/app/interview', label: '면접 준비', hint: 'AI 실전 모의 면접', icon: MessageSquareQuote },
     ],
   },
   {
-    key: 'analyze',
-    label: '분석',
-    hint: '근거 기반 진단',
+    key: 'management',
+    label: '관리',
+    hint: '자료 및 환경 관리',
     items: [
-      { path: '/app/diagnosis', label: '진단', hint: '강점과 보완점 확인', icon: FileSearch, stage: '2단계' },
-      { path: '/app/trends', label: '트렌드', hint: '참고 데이터 확인', icon: TrendingUp, stage: '참고' },
+      { path: '/app/archive', label: '보관함', hint: '완료된 문서 및 백업', icon: Archive },
+      { path: '/app/settings', label: '설정', hint: '계정·개인정보·환경 설정', icon: Settings },
     ],
-  },
-  {
-    key: 'execute',
-    label: '작성',
-    hint: '초안 작성과 수정',
-    items: [
-      { path: '/app/workshop', label: '문서 작성', hint: '초안 작성 공간', icon: PenTool, stage: '3단계' },
-      { path: '/app/archive', label: '보관함', hint: '완료 문서 모아보기', icon: Archive, stage: '기록' },
-    ],
-  },
-  {
-    key: 'account',
-    label: '계정',
-    hint: '프로필과 환경 설정',
-    items: [{ path: '/app/settings', label: '설정', hint: '계정·개인정보·환경 설정', icon: Settings, stage: '계정' }],
   },
 ];
 

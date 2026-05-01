@@ -21,8 +21,8 @@ function PublicNavItem({ to, label, onClick }: { to: string; label: string; onCl
         cn(
           'rounded-2xl px-3.5 py-2.5 text-sm font-black transition-all',
           isActive
-            ? 'bg-[#3182f6] text-white shadow-lg shadow-blue-100'
-            : 'text-[#4e5968] hover:bg-blue-50 hover:text-[#3182f6]',
+            ? 'bg-[#7C3AED] text-white shadow-lg shadow-violet-100'
+            : 'text-[#4e5968] hover:bg-[#F5F3FF] hover:text-[#7C3AED]',
         )
       }
     >
@@ -72,7 +72,14 @@ export function PublicLayout() {
 
           <div className="hidden md:block">
             {location.pathname !== '/auth' ? (
-              <Link to={entry.href} onClick={handleDesktopNavClick} className={buttonClassName({ variant: 'primary', size: 'md' })}>
+              <Link
+                to={entry.href}
+                onClick={handleDesktopNavClick}
+                className={cn(
+                  buttonClassName({ variant: 'primary', size: 'md' }),
+                  'bg-[#7C3AED] shadow-violet-200/70 hover:bg-[#5B21B6] focus-visible:ring-[#7C3AED]/30',
+                )}
+              >
                 {entry.label}
                 <ArrowRight size={16} />
               </Link>
@@ -83,7 +90,7 @@ export function PublicLayout() {
             type="button"
             onClick={() => setMenuOpen(open => !open)}
             aria-label={menuOpen ? '메뉴 닫기' : '메뉴 열기'}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/70 bg-white/84 text-[#31569f] shadow-[0_12px_26px_rgba(42,64,132,0.1)] backdrop-blur-md md:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/70 bg-white/84 text-[#7C3AED] shadow-[0_12px_26px_rgba(124,58,237,0.12)] backdrop-blur-md md:hidden"
           >
             {menuOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
@@ -99,7 +106,10 @@ export function PublicLayout() {
                 <Link
                   to={entry.href}
                   onClick={handleMobileNavClick}
-                  className={buttonClassName({ variant: 'primary', size: 'md', fullWidth: true })}
+                  className={cn(
+                    buttonClassName({ variant: 'primary', size: 'md', fullWidth: true }),
+                    'bg-[#7C3AED] shadow-violet-200/70 hover:bg-[#5B21B6] focus-visible:ring-[#7C3AED]/30',
+                  )}
                 >
                   {entry.label}
                   <ArrowRight size={16} />

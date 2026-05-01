@@ -400,7 +400,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 pb-20 sm:space-y-12">
+    <div className="mx-auto max-w-7xl space-y-6 pb-12 sm:space-y-8">
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -412,7 +412,7 @@ export default function Dashboard() {
           eyebrow="Dashboard"
           title={nextAction.title}
           description={nextAction.description}
-          className="border-slate-200 bg-white"
+          className="border-slate-200 bg-white p-6 sm:p-8"
           actions={
             <div className="flex flex-wrap gap-2">
               <button
@@ -454,7 +454,7 @@ export default function Dashboard() {
         <SectionCard
           title="현재 기준"
           subtitle={hasPrimaryGoal ? '현재 목표/다음 단계 요약' : '목표 설정 후 다음 단계가 열립니다.'}
-          className="border-slate-200 bg-white/90"
+          className="border-slate-200 bg-white/90 p-6 sm:p-8"
         >
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
@@ -482,7 +482,7 @@ export default function Dashboard() {
           <button
             key={action.label}
             onClick={action.onClick}
-            className={`flex items-center justify-between rounded-3xl border px-6 py-5 text-left transition-all ${
+            className={`flex items-center justify-between rounded-3xl border px-6 py-4 text-left transition-all ${
               action.tone === 'primary'
                 ? 'border-[#3182f6] bg-[#3182f6] text-white shadow-xl shadow-blue-100 hover:-translate-y-0.5'
                 : 'border-slate-200 bg-white text-[#333d4b] hover:border-blue-100 hover:bg-blue-50'
@@ -497,14 +497,14 @@ export default function Dashboard() {
       {/* Target & Progress Grid */}
       <div className="grid gap-6 sm:gap-8 lg:grid-cols-3">
         {/* Target Card */}
-        <SurfaceCard className="relative overflow-hidden border-slate-200 bg-white p-6 shadow-sm sm:p-10 lg:col-span-2">
+        <SurfaceCard className="relative overflow-hidden border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:col-span-2">
           <div className="relative z-10">
-            <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
-              <div className="flex items-center gap-5 sm:gap-8 flex-1 min-w-0">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
+              <div className="flex items-center gap-4 sm:gap-6 flex-1 min-w-0">
                 <div className="relative shrink-0">
                   <UniversityLogo
                     universityName={primaryGoal?.university}
-                    className="h-16 w-16 rounded-2xl border border-[#f2f4f6] bg-white object-contain p-2.5 shadow-sm sm:h-24 sm:w-24 sm:rounded-[2rem] sm:p-3.5 ring-1 ring-slate-100"
+                    className="h-16 w-16 rounded-2xl border border-[#f2f4f6] bg-white object-contain p-2.5 shadow-sm sm:h-20 sm:w-20 sm:rounded-[1.5rem] sm:p-3 ring-1 ring-slate-100"
                   />
                   {!hasPrimaryGoal && (
                     <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#ff9c20] text-white shadow-md ring-2 ring-white">
@@ -538,7 +538,7 @@ export default function Dashboard() {
               </div>
 
               {/* Secondary Goals or Placeholders to fill space */}
-              <div className="flex flex-col gap-3 lg:w-[240px] shrink-0">
+              <div className="flex flex-col gap-2.5 lg:w-[220px] shrink-0">
                 {allGoals.length > 1 ? (
                   allGoals.slice(1, 3).map((goal, index) => (
                      <div key={index} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/30 p-3">
@@ -589,8 +589,8 @@ export default function Dashboard() {
         </SurfaceCard>
 
         {/* Workflow Status */}
-        <SectionCard title="워크플로 진행도" className="h-full">
-          <div className="space-y-4">
+        <SectionCard title="워크플로 진행도" className="h-full p-6 sm:p-8">
+          <div className="space-y-3">
             {workflowSteps.map((step) => (
               <div key={step.key} className="flex gap-4 rounded-2xl bg-slate-50/50 p-3 ring-1 ring-slate-100">
                 <div className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
@@ -616,7 +616,7 @@ export default function Dashboard() {
         viewport={{ once: true, amount: 0.1 }}
         transition={{ duration: 0.5 }}
       >
-        <InterestCloud />
+        <InterestCloud className="p-6 sm:p-8" />
       </motion.div>
 
       {/* Action Plan / Next Step Section */}
@@ -631,6 +631,7 @@ export default function Dashboard() {
           title="맞춤형 액션 플랜" 
           subtitle="진단 기반 추천 퀘스트"
           badge={blueprint ? "AI 추천 가동 중" : "준비 중"}
+          className="p-6 sm:p-8"
         >
           {isLoadingBlueprint ? (
             <div className="flex h-64 flex-col items-center justify-center gap-4 text-slate-400">
