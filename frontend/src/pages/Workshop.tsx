@@ -500,6 +500,7 @@ async function streamFoliReply(
   try {
     const { endpoint, response, authSource } = await openChatEventStreamWithFallback({
       endpoints: endpointCandidates,
+      firebaseUser: auth?.currentUser,
       payload: {
         project_id: projectId,
         workshop_id: workshopId,
@@ -2204,8 +2205,9 @@ export function Workshop() {
   }, [chatbotMode, diagnosisHeadline, guidedSetupComplete, isProjectBacked]);
 
   return (
-    <div className={cn("mx-auto h-[100dvh] flex flex-col max-w-[1800px] px-2 sm:px-4 py-2 sm:py-4 transition-all duration-700", advancedMode && "rounded-[32px] bg-[linear-gradient(145deg,rgba(124,58,237,0.06)_0%,rgba(6,182,212,0.05)_100%)] shadow-[inset_0_0_100px_rgba(124,58,237,0.06)] sm:rounded-[48px]")}>
+    <div className={cn("mx-auto flex h-full min-h-0 w-full max-w-[1800px] flex-col overflow-hidden px-2 py-2 transition-all duration-700 sm:px-4 sm:py-4", advancedMode && "rounded-[32px] bg-[linear-gradient(145deg,rgba(124,58,237,0.06)_0%,rgba(6,182,212,0.05)_100%)] shadow-[inset_0_0_100px_rgba(124,58,237,0.06)] sm:rounded-[48px]")}>
       <motion.div
+        className="flex min-h-0 flex-1 flex-col"
         animate={advancedMode ? { y: [0, -2, 0] } : {}}
         transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
       >
@@ -2230,7 +2232,7 @@ export function Workshop() {
           <WorkshopMobileToggle value={mobileView} onChange={setMobileView} />
         </div>
 
-        <div className="mt-2 flex-1 min-h-0 relative flex overflow-hidden justify-center">
+        <div className="relative mt-2 flex min-h-0 flex-1 justify-center overflow-hidden">
           <div className={cn("flex flex-col min-h-0 flex-1 transition-all duration-500 items-center w-full", isEditorOpen ? "lg:mr-[400px] xl:mr-[500px]" : "")}>
             <div className="w-full max-w-4xl flex-1 flex flex-col relative h-full">
               <div className="absolute top-2 right-4 z-20 hidden lg:block">

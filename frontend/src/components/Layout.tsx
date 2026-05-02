@@ -84,11 +84,10 @@ export function Layout() {
           )
         }
         footer={shouldShowFooter ? <AppFooter onOpenPartnership={() => setIsPartnershipModalOpen(true)} /> : null}
-        contentClassName={isEditorRoute ? 'p-0 pb-0' : undefined}
+        contentClassName={isEditorRoute || isWorkshopRoute ? 'flex min-h-0 flex-col overflow-hidden p-0 pb-0' : undefined}
       >
         <Outlet />
       </AppShell>
     </>
   );
 }
-

@@ -26,6 +26,23 @@ test('auth helper prefers Firebase token when available', async () => {
   assert.equal(result.value, 'Bearer firebase-token-123');
 });
 
+test('auth helper can force-refresh a Firebase token for retry flows', async () => {
+  const forceRefreshFlags: Array<boolean | undefined> = [];
+  const result = await getAuthorizationHeader({
+    firebaseUser: {
+      getIdToken: async (forceRefresh) => {
+        forceRefreshFlags.push(forceRefresh);
+        return forceRefresh ? 'fresh-token' : 'cached-token';
+      },
+    },
+    forceFirebaseTokenRefresh: true,
+  });
+
+  assert.equal(result.source, 'firebase');
+  assert.equal(result.value, 'Bearer fresh-token');
+  assert.deepEqual(forceRefreshFlags, [true]);
+});
+
 test('auth helper falls back to app_access_token when Firebase user is absent', async () => {
   const result = await getAuthorizationHeader({
     appAccessToken: 'app-token-only',
@@ -90,6 +107,43 @@ test('chat stream rejects non-event-stream content types and keeps auth header w
   );
 
   assert.equal(observedAuthorization, 'Bearer draft-token');
+});
+
+test('chat stream refreshes Firebase auth once when the cached token is rejected', async () => {
+  const observedAuthorization: string[] = [];
+  const tokenRefreshFlags: Array<boolean | undefined> = [];
+
+  const { response, authSource } = await openChatEventStream({
+    endpoint: 'https://api.example.com/api/v1/workshops/w1/chat/stream',
+    payload: { message: 'hello' },
+    firebaseUser: {
+      getIdToken: async (forceRefresh) => {
+        tokenRefreshFlags.push(forceRefresh);
+        return forceRefresh ? 'fresh-firebase-token' : 'cached-firebase-token';
+      },
+    },
+    fetchImpl: async (_input, init) => {
+      const authorization = new Headers(init?.headers).get('Authorization') || '';
+      observedAuthorization.push(authorization);
+
+      if (authorization === 'Bearer cached-firebase-token') {
+        return new Response(JSON.stringify({ detail: 'Expired token' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return new Response('data: {"done":true}\n\n', {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(authSource, 'firebase');
+  assert.deepEqual(tokenRefreshFlags, [false, true]);
+  assert.deepEqual(observedAuthorization, ['Bearer cached-firebase-token', 'Bearer fresh-firebase-token']);
 });
 
 test('chat stream retries a same-flow fallback endpoint after misroute-style HTML response', async () => {

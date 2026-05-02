@@ -3,13 +3,14 @@ import { readAppAccessToken } from './appAccessToken';
 export type AuthTokenSource = 'firebase' | 'app_access_token' | 'none';
 
 export interface FirebaseTokenUser {
-  getIdToken: () => Promise<string>;
+  getIdToken: (forceRefresh?: boolean) => Promise<string>;
 }
 
 export interface AuthorizationHeaderOptions {
   firebaseUser?: FirebaseTokenUser | null;
   appAccessToken?: string | null;
   appAccessTokenReader?: () => string | null;
+  forceFirebaseTokenRefresh?: boolean;
 }
 
 export interface AuthorizationHeaderResult {
@@ -26,10 +27,15 @@ function normalizeToken(value: string | null | undefined): string | null {
 export async function getAuthorizationHeader(
   options: AuthorizationHeaderOptions = {},
 ): Promise<AuthorizationHeaderResult> {
-  const { firebaseUser, appAccessToken, appAccessTokenReader = readAppAccessToken } = options;
+  const {
+    firebaseUser,
+    appAccessToken,
+    appAccessTokenReader = readAppAccessToken,
+    forceFirebaseTokenRefresh = false,
+  } = options;
   if (firebaseUser) {
     try {
-      const firebaseToken = normalizeToken(await firebaseUser.getIdToken());
+      const firebaseToken = normalizeToken(await firebaseUser.getIdToken(forceFirebaseTokenRefresh));
       if (firebaseToken) {
         return { source: 'firebase', value: `Bearer ${firebaseToken}` };
       }

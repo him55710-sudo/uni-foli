@@ -16,7 +16,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import { DIAGNOSIS_STORAGE_KEY } from '../lib/diagnosis';
-import { searchMajors } from '../lib/educationCatalog';
+import type { CatalogSuggestion } from '../lib/educationCatalog';
 import { extractDiagnosisMajorDirectionCandidates } from '../lib/chatbotMode';
 import {
   MAJOR_TREND_PLAYBOOK,
@@ -221,6 +221,7 @@ export function Trends() {
   const [showRecordConnection, setShowRecordConnection] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [subjectKeyword, setSubjectKeyword] = useState('');
+  const [majorSuggestions, setMajorSuggestions] = useState<CatalogSuggestion[]>([]);
 
   useEffect(() => {
     if (selectedMajor || !initialMajor) return;
@@ -228,10 +229,24 @@ export function Trends() {
     setMajorQuery(initialMajor);
   }, [initialMajor, selectedMajor]);
 
-  const majorSuggestions = useMemo(() => {
+  useEffect(() => {
     const query = majorQuery.trim();
-    if (!query) return [];
-    return searchMajors(query, null, 8);
+    if (!query) {
+      setMajorSuggestions([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void import('../lib/educationCatalog').then(({ searchMajors }) => {
+        if (!cancelled) setMajorSuggestions(searchMajors(query, null, 8));
+      });
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [majorQuery]);
 
   const majorKey = resolveTrendMajorKey(selectedMajor);

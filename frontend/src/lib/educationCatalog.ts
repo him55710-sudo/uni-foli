@@ -33,6 +33,12 @@ export interface CatalogSuggestion {
   type: 'university' | 'major';
 }
 
+interface SearchIndexEntry {
+  item: string;
+  normalized: string;
+  initials: string;
+}
+
 const catalog = rawCatalog as EducationCatalogData;
 const universities = Array.isArray(catalog.universities) ? catalog.universities : [];
 const universityMap = new Map(universities.map((item) => [item.name, item]));
@@ -44,6 +50,26 @@ for (const university of universities) {
     current.push(university.name);
     majorUniversityMap.set(major, current);
   }
+}
+
+function buildSearchIndex(items: string[]): SearchIndexEntry[] {
+  return items.map((item) => ({
+    item,
+    normalized: normalizeSearchText(item),
+    initials: extractInitialConsonants(item),
+  }));
+}
+
+const universitySearchIndex = buildSearchIndex(universities.map((item) => item.name));
+const allMajorSearchIndex = buildSearchIndex(Array.isArray(catalog.all_majors) ? catalog.all_majors : []);
+const universityMajorSearchIndex = new Map<string, SearchIndexEntry[]>();
+
+function getUniversityMajorSearchIndex(universityName: string): SearchIndexEntry[] {
+  const cached = universityMajorSearchIndex.get(universityName);
+  if (cached) return cached;
+  const index = buildSearchIndex(getMajorsForUniversity(universityName));
+  universityMajorSearchIndex.set(universityName, index);
+  return index;
 }
 
 export function isEducationCatalogLoaded(): boolean {
@@ -66,36 +92,36 @@ export function getEducationCatalogSummary(): {
   };
 }
 
-function scoreCandidate(candidate: string, query: string): number | null {
-  const normalizedCandidate = normalizeSearchText(candidate);
-  const normalizedQuery = normalizeSearchText(query);
+function scoreCandidate(entry: SearchIndexEntry, normalizedQuery: string, isInitialsQuery: boolean): number | null {
   if (!normalizedQuery) {
     return null;
   }
 
-  if (normalizedCandidate.startsWith(normalizedQuery)) {
+  if (entry.normalized.startsWith(normalizedQuery)) {
     return 0;
   }
 
-  const initials = extractInitialConsonants(candidate);
-  if (isChoseongQuery(query) && initials.startsWith(normalizedQuery)) {
+  if (isInitialsQuery && entry.initials.startsWith(normalizedQuery)) {
     return 1;
   }
 
-  if (normalizedCandidate.includes(normalizedQuery)) {
+  if (entry.normalized.includes(normalizedQuery)) {
     return 2;
   }
 
-  if (initials.includes(normalizedQuery)) {
+  if (entry.initials.includes(normalizedQuery)) {
     return 3;
   }
 
   return null;
 }
 
-function searchNames(items: string[], query: string, limit: number): string[] {
-  return items
-    .map((item) => ({ item, score: scoreCandidate(item, query) }))
+function searchNames(index: SearchIndexEntry[], query: string, limit: number): string[] {
+  const normalizedQuery = normalizeSearchText(query);
+  const isInitialsQuery = isChoseongQuery(query);
+
+  return index
+    .map((entry) => ({ item: entry.item, score: scoreCandidate(entry, normalizedQuery, isInitialsQuery) }))
     .filter((entry): entry is { item: string; score: number } => entry.score !== null)
     .sort((left, right) => left.score - right.score || left.item.localeCompare(right.item, 'ko'))
     .slice(0, limit)
@@ -113,11 +139,11 @@ export function searchUniversities(
   const { limit = 100, excludeNames = [] } = options;
   const excludeSet = new Set(excludeNames);
 
-  return searchNames(
-    universities.map((item) => item.name).filter((name) => !excludeSet.has(name)),
-    query,
-    limit,
-  ).map((name) => ({
+  const index = excludeSet.size
+    ? universitySearchIndex.filter((entry) => !excludeSet.has(entry.item))
+    : universitySearchIndex;
+
+  return searchNames(index, query, limit).map((name) => ({
     id: `university:${name}`,
     label: name,
     type: 'university',
@@ -150,7 +176,7 @@ export function searchMajors(
   }
 
   // When a university is selected, prioritise that university's own departments.
-  const universityMajors = universityName ? getMajorsForUniversity(universityName) : [];
+  const universityMajors = universityName ? getUniversityMajorSearchIndex(universityName) : [];
 
   if (universityMajors.length > 0) {
     return searchNames(universityMajors, query, limit).map((name) => ({
@@ -162,7 +188,7 @@ export function searchMajors(
   }
 
   // Fallback: no university selected — search all majors
-  return searchNames(catalog.all_majors, query, limit).map((name) => ({
+  return searchNames(allMajorSearchIndex, query, limit).map((name) => ({
     id: `major:all:${name}`,
     label: name,
     secondary: undefined,

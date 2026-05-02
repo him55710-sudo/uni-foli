@@ -38,10 +38,13 @@ import { AsyncJobStatusCard } from '../components/AsyncJobStatusCard';
 import { useAsyncJob } from '../hooks/useAsyncJob';
 import { TERMINAL_STATUSES, SUCCESS_STATUSES, type DocumentStatus } from '../types/domain';
 import { DiagnosisProfile } from '../components/diagnosis/DiagnosisProfile';
-import { DiagnosisGoals } from '../components/diagnosis/DiagnosisGoals';
 import { DiagnosisUpload } from '../components/diagnosis/DiagnosisUpload';
 import { DiagnosisResultDisplay } from '../components/diagnosis/DiagnosisResultDisplay';
 import { DiagnosisReportPanel } from '../components/DiagnosisReportPanel';
+
+const DiagnosisGoals = React.lazy(() =>
+  import('../components/diagnosis/DiagnosisGoals').then((module) => ({ default: module.DiagnosisGoals })),
+);
 
 type DiagnosisStep = 'PROFILE' | 'GOALS' | 'UPLOAD' | 'ANALYSING' | 'RESULT' | 'FAILED';
 type TimingPhaseKey = 'upload' | 'parse' | 'diagnosis';
@@ -952,7 +955,17 @@ export function Diagnosis() {
       <AnimatePresence mode="wait">
         {step === 'PROFILE' && <DiagnosisProfile key="profile" />}
 
-        {step === 'GOALS' && <DiagnosisGoals key="goals" />}
+        {step === 'GOALS' && (
+          <React.Suspense
+            fallback={(
+              <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm font-bold text-slate-500 shadow-sm">
+                목표 대학과 학과 선택 화면을 준비하는 중입니다.
+              </div>
+            )}
+          >
+            <DiagnosisGoals key="goals" />
+          </React.Suspense>
+        )}
 
         {step === 'UPLOAD' && (
           <DiagnosisUpload

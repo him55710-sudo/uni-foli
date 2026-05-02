@@ -145,8 +145,8 @@ export async function openChatEventStream(
   let streamResponse: Response;
   let authSource: AuthTokenSource;
 
-  try {
-    const result = await fetchWithAuth(
+  const fetchStream = async (forceFirebaseTokenRefresh: boolean) =>
+    fetchWithAuth(
       endpoint,
       {
         method: 'POST',
@@ -156,11 +156,23 @@ export async function openChatEventStream(
         },
         body: JSON.stringify(payload),
       },
-      authOptions,
+      {
+        ...authOptions,
+        forceFirebaseTokenRefresh,
+      },
       fetchImpl,
     );
+
+  try {
+    const result = await fetchStream(false);
     streamResponse = result.response;
     authSource = result.authSource;
+
+    if ((streamResponse.status === 401 || streamResponse.status === 403) && authSource === 'firebase') {
+      const refreshedResult = await fetchStream(true);
+      streamResponse = refreshedResult.response;
+      authSource = refreshedResult.authSource;
+    }
   } catch (error) {
     throw new ChatStreamError('network_error', 'Failed to reach chat stream endpoint.', {
       endpoint,
@@ -450,7 +462,7 @@ export async function consumeChatEventStream(params: ConsumeChatEventStreamParam
 
 export function resolveChatStreamToastMessage(error: ChatStreamError): string {
   if (error.code === 'auth_failure') {
-    return '채팅 인증이 만료되었습니다. 다시 로그인한 뒤 시도해 주세요.';
+    return '로그인 상태를 확인하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.';
   }
   if (error.code === 'backend_startup_failed') {
     return '채팅 백엔드가 아직 준비되지 않았습니다. 배포 상태와 데이터베이스 설정을 확인해 주세요.';
@@ -472,7 +484,7 @@ export function resolveChatStreamToastMessage(error: ChatStreamError): string {
 
 export function resolveChatStreamFallbackHint(error: ChatStreamError): string | null {
   if (error.code === 'auth_failure') {
-    return '인증 토큰이 없거나 만료되었을 수 있습니다.';
+    return 'Firebase 토큰을 새로고침해도 백엔드 인증을 통과하지 못했습니다.';
   }
   if (error.code === 'backend_startup_failed') {
     return '배포된 백엔드가 부팅에 실패했습니다. DATABASE_URL, 마이그레이션, 서버 상태를 확인해 주세요.';
