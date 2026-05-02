@@ -51,7 +51,6 @@ import {
   WorkflowNotice,
 } from '../components/primitives';
 import { TiptapEditor, type TiptapEditorHandle } from '../components/editor/TiptapEditor';
-import { WorkshopProgress } from '../components/WorkshopProgress';
 import { ChatBubble as WorkshopChatBubble } from '../features/workshop/components/ChatBubble';
 import { PatchReviewCard } from '../features/workshop/components/PatchReviewCard';
 import { WorkshopMobileToggle } from '../features/workshop/components/WorkshopMobileToggle';
@@ -234,27 +233,27 @@ interface StreamFoliReplyResult {
 }
 
 const QUALITY_META_MAP: Record<QualityLevel, { label: string; status: 'success' | 'active' | 'warning' }> = {
-  low: { label: '빠른 응답', status: 'success' },
+  low: { label: '빠른 ?�답', status: 'success' },
   mid: { label: '균형 모드', status: 'active' },
-  high: { label: '심화 모드', status: 'warning' },
+  high: { label: '?�화 모드', status: 'warning' },
 };
 
-const GUIDED_CHAT_GREETING = '안녕하세요! 어떤 주제로 보고서를 완성해볼까요?';
+const GUIDED_CHAT_GREETING = '?�녕?�세?? ?�떤 주제�?보고?��? ?�성?�볼까요?';
 const DIAGNOSIS_RISK_LABEL_MAP: Record<string, string> = {
   safe: '근거 충분',
-  warning: '보완 필요',
-  danger: '집중 보완 필요',
+  warning: '보완 ?�요',
+  danger: '집중 보완 ?�요',
 };
 
 function formatDiagnosisRiskLabel(value: string | undefined): string {
   const key = String(value || '').trim().toLowerCase();
-  return DIAGNOSIS_RISK_LABEL_MAP[key] || '보완 필요';
+  return DIAGNOSIS_RISK_LABEL_MAP[key] || '보완 ?�요';
 }
 
 function formatDraftAttributionLabel(attribution: WorkshopDraftAttribution): string {
-  if (attribution === 'student-authored') return '학생 작성';
-  if (attribution === 'ai-inserted-after-approval') return '승인 후 AI 반영';
-  return 'AI 제안';
+  if (attribution === 'student-authored') return '?�생 ?�성';
+  if (attribution === 'ai-inserted-after-approval') return '?�인 ??AI 반영';
+  return 'AI ?�안';
 }
 
 function normalizeGuidedSuggestions(response: GuidedTopicSuggestionResponse): GuidedTopicSuggestion[] {
@@ -264,16 +263,16 @@ function normalizeGuidedSuggestions(response: GuidedTopicSuggestionResponse): Gu
 function formatGuidedSuggestionMessage(response: GuidedTopicSuggestionResponse) {
   const suggestions = normalizeGuidedSuggestions(response);
   const lines = [
-    `좋아요. '${response.subject}'를 바탕으로 학생 기록 흐름에 맞는 주제 3가지를 준비했어요.`,
+    `좋아?? '${response.subject}'�?바탕?�로 ?�생 기록 ?�름??맞는 주제 3가지�?준비했?�요.`,
     '',
     ...suggestions.flatMap((item, index) => {
       const chunk = [
         `${index + 1}. **${item.title}**`,
-        `- 추천 이유: ${item.why_fit_student}`,
-        `- 기록 연결: ${item.link_to_record_flow}`,
+        `- 추천 ?�유: ${item.why_fit_student}`,
+        `- 기록 ?�결: ${item.link_to_record_flow}`,
       ];
       if (item.link_to_target_major_or_university) {
-        chunk.push(`- 진로 연계: ${item.link_to_target_major_or_university}`);
+        chunk.push(`- 진로 ?�계: ${item.link_to_target_major_or_university}`);
       }
       if (item.caution_note) {
         chunk.push(`- 주의: ${item.caution_note}`);
@@ -284,17 +283,17 @@ function formatGuidedSuggestionMessage(response: GuidedTopicSuggestionResponse) 
   if (response.evidence_gap_note) {
     lines.push('', `참고: ${response.evidence_gap_note}`);
   }
-  lines.push('', '이 중에서 가장 마음이 가는 주제를 골라주세요.');
+  lines.push('', '??중에??가??마음??가??주제�?골라주세??');
   return lines.join('\n');
 }
 
 function formatGuidedSelectionMessage(response: GuidedTopicSelectionResponse) {
   const lines = [
-    `선택한 주제는 **${response.selected_title}**입니다.`,
+    `?�택??주제??**${response.selected_title}**?�니??`,
     '',
     response.guidance_message,
     '',
-    '이제 진행하고 싶은 보고서 분량을 고르면 바로 개요를 잡아드릴게요.',
+    '?�제 진행?�고 ?��? 보고??분량??고르�?바로 개요�??�아?�릴게요.',
   ];
   return lines.join('\n');
 }
@@ -303,12 +302,12 @@ function formatGuidedPageRangeMessage(response: GuidedPageRangeSelectionResponse
   const lines = [
     response.assistant_message,
     '',
-    `선택한 분량: **${response.selected_page_range_label}**`,
+    `?�택??분량: **${response.selected_page_range_label}**`,
   ];
   if (response.selected_page_range_note) {
     lines.push(`- 참고: ${response.selected_page_range_note}`);
   }
-  lines.push('', '다음으로 구성 스타일을 골라주세요.');
+  lines.push('', '?�음?�로 구성 ?��??�을 골라주세??');
   return lines.join('\n');
 }
 
@@ -316,9 +315,9 @@ function formatGuidedStructureMessage(response: GuidedStructureSelectionResponse
   return [
     response.assistant_message,
     '',
-    `선택한 구성: **${response.selected_structure_label}**`,
+    `?�택??구성: **${response.selected_structure_label}**`,
     '',
-    '가이드가 거의 끝났습니다. 다음으로 무엇을 하고 싶은지 알려주세요.',
+    '가?�드가 거의 ?�났?�니?? ?�음?�로 무엇???�고 ?��?지 ?�려주세??',
   ].join('\n');
 }
 
@@ -337,7 +336,7 @@ function formatAssistantMessageWithEvidenceNote(
 function buildTopicChoiceGroup(suggestions: GuidedTopicSuggestion[]): GuidedChoiceGroup {
   return {
     id: 'topic-selection',
-    title: '이 중에서 가장 마음에 드는 주제를 골라주세요.',
+    title: '??중에??가??마음???�는 주제�?골라주세??',
     style: 'cards',
     options: suggestions.map((topic) => ({
       id: topic.id,
@@ -353,7 +352,7 @@ function buildPageRangeChoiceGroup(
 ): GuidedChoiceGroup {
   return {
     id: 'page-range-selection',
-    title: '보고서 분량을 선택해 주세요.',
+    title: '보고??분량???�택??주세??',
     style: 'cards',
     options: pageRanges.map((range) => ({
       id: `page-range-${range.label}`,
@@ -367,7 +366,7 @@ function buildPageRangeChoiceGroup(
 function buildStructureChoiceGroup(options: GuidedStructureOption[]): GuidedChoiceGroup {
   return {
     id: 'structure-selection',
-    title: '구성 스타일을 골라주세요.',
+    title: '구성 ?��??�을 골라주세??',
     style: 'cards',
     options,
   };
@@ -376,7 +375,7 @@ function buildStructureChoiceGroup(options: GuidedStructureOption[]): GuidedChoi
 function buildNextActionChoiceGroup(options: GuidedChoiceOption[]): GuidedChoiceGroup {
   return {
     id: 'next-action-selection',
-    title: '다음으로 무엇을 할까요?',
+    title: '?�음?�로 무엇???�까??',
     style: 'chips',
     options,
   };
@@ -412,23 +411,23 @@ function resolveGuidedSelectionFromText(text: string, suggestions: GuidedTopicSu
 
 function buildFoliFallback(message: string) {
   const clean = (message || '').toLowerCase().trim();
-  const greetings = ['안녕', 'hi', 'hello', 'hey', 'good morning', 'good evening'];
+  const greetings = ['?�녕', 'hi', 'hello', 'hey', 'good morning', 'good evening'];
 
   if (greetings.some(token => clean.includes(token))) {
     return [
-      '안녕하세요! 유니폴리 워크숍 도우미입니다.',
+      '?�녕?�세?? ?�니?�리 ?�크???�우미입?�다.',
       '',
-      '지금은 AI 연결이 잠시 불안정해서, 초안 구조 정리와 다음 질문 안내를 중심으로 안전하게 이어갈게요.',
+      '지금�? AI ?�결???�시 불안?�해?? 초안 구조 ?�리?� ?�음 질문 ?�내�?중심?�로 ?�전?�게 ?�어갈게??',
     ].join('\n');
   }
 
   return [
-    '현재 AI 응답이 잠시 지연되어 기본 안내 모드로 전환했어요.',
+    '?�재 AI ?�답???�시 지?�되??기본 ?�내 모드�??�환?�어??',
     '',
-    '아래 순서대로 보내 주시면 초안 작성 흐름을 계속 이어갈 수 있어요.',
-    '1. 이번 글에서 다루려는 주제를 한 문장으로 적어 주세요.',
-    '2. 그 주제를 선정한 이유를 간단히 알려 주세요.',
-    '3. 마지막으로 보고서에 꼭 포함하고 싶은 키워드 3가지만 말씀해 주세요.',
+    '?�래 ?�서?��?보내 주시�?초안 ?�성 ?�름??계속 ?�어�????�어??',
+    '1. ?�번 글?�서 ?�루?�는 주제�???문장?�로 ?�어 주세??',
+    '2. �?주제�??�정???�유�?간단???�려 주세??',
+    '3. 마�?막으�?보고?�에 �??�함?�고 ?��? ?�워??3가지�?말�???주세??',
   ].join('\n');
 }
 
@@ -563,7 +562,7 @@ const ChatBubble = memo(function ChatBubble({
       groups = [
         {
           id: 'topic-selection',
-          title: '이 중에서 가장 마음에 드는 주제를 골라주세요.',
+          title: '??중에??가??마음???�는 주제�?골라주세??',
           style: 'cards',
           options: topicSuggestions.map((topic) => ({
             id: topic.id,
@@ -604,7 +603,7 @@ const ChatBubble = memo(function ChatBubble({
         {isStreaming ? (
           <div className="flex items-center gap-2 text-sm font-medium py-1">
             <Loader2 size={14} className="animate-spin" />
-            <span>분석하고 있어요...</span>
+            <span>분석?�고 ?�어??..</span>
           </div>
         ) : message.content ? (
           <MemoizedMarkdown content={message.content} role={message.role} />
@@ -624,14 +623,14 @@ const ChatBubble = memo(function ChatBubble({
           <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 shadow-inner">
             <p className="text-xs font-bold text-slate-600 mb-3 flex items-center gap-2">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-indigo-600 text-[10px] text-white shadow-sm">AI</span>
-              보고서 구성 제안이 도착했어요.
+              보고??구성 ?�안???�착?�어??
             </p>
             <PrimaryButton
               size="sm"
               className="w-full text-xs py-2 h-auto rounded-lg"
               onClick={() => onApplyDraftPatch(message.draftPatch!)}
             >
-              제안 내용을 문서에 반영하기
+              ?�안 ?�용??문서??반영?�기
             </PrimaryButton>
           </div>
         ) : null}
@@ -942,7 +941,7 @@ export function Workshop() {
           const cachedSuggestions = Array.isArray(stateSummary.suggestions)
             ? normalizeGuidedSuggestions({
                 greeting,
-                subject: cachedSubject || '탐구',
+                subject: cachedSubject || '?�구',
                 suggestions: stateSummary.suggestions as GuidedTopicSuggestion[],
                 evidence_gap_note: guidedStart.evidence_gap_note,
               })
@@ -1028,10 +1027,10 @@ export function Workshop() {
       }
     } catch (error) {
       console.error('Workshop init failed:', error);
-      toast.error('워크숍을 불러오지 못했습니다. 로컬 모드로 전환합니다.');
+      toast.error('?�크?�을 불러?��? 못했?�니?? 로컬 모드�??�환?�니??');
       setGuidedPhase('freeform_coauthoring');
       setIsGuidedTopicSelected(true);
-      setMessages([{ id: 'fallback', role: 'foli', content: '세션 연결에 실패했습니다. 로컬에서 초안 작성을 진행하실 수 있습니다.' }]);
+      setMessages([{ id: 'fallback', role: 'foli', content: '?�션 ?�결???�패?�습?�다. 로컬?�서 초안 ?�성??진행?�실 ???�습?�다.' }]);
     } finally {
       setIsSessionLoading(false);
     }
@@ -1056,7 +1055,7 @@ export function Workshop() {
     if (!documentContent) {
       const seed =
         questStart?.document_seed_markdown ||
-        `# [탐구 초안] ${questStart?.title || '새 주제'}\n\n## 배경 및 문제의식\n\n## 핵심 탐구 내용 1\n\n## 핵심 탐구 내용 2\n\n## 핵심 탐구 내용 3\n\n## 결론 및 다음 단계`;
+        `# [?�구 초안] ${questStart?.title || '??주제'}\n\n## 배경 �?문제?�식\n\n## ?�심 ?�구 ?�용 1\n\n## ?�심 ?�구 ?�용 2\n\n## ?�심 ?�구 ?�용 3\n\n## 결론 �??�음 ?�계`;
       const derived = markdownToStructuredDraft(seed, 'planning');
       setStructuredDraft(derived);
       setWorkshopMode(derived.mode);
@@ -1069,7 +1068,7 @@ export function Workshop() {
       setIsSessionLoading(false);
       setGuidedPhase('freeform_coauthoring');
       setIsGuidedTopicSelected(true);
-      setMessages([{ id: 'demo-init', role: 'foli', content: '데모 모드입니다. 유니폴리에게 질문하면 초안 작성을 이어서 도와드릴게요.' }]);
+      setMessages([{ id: 'demo-init', role: 'foli', content: '?�모 모드?�니?? ?�니?�리?�게 질문?�면 초안 ?�성???�어???��??�릴게요.' }]);
     }
   }, [initialMajor, isProjectBacked, initWorkshop, questStart, shouldRedirectToStoredProject]);
 
@@ -1136,7 +1135,7 @@ export function Workshop() {
             }
             setLatestDraftUpdatedAt(remoteUpdatedAt);
             setIsDraftOutOfSync(true);
-            toast('다른 탭에서 초안이 변경되어 최신 내용을 병합한 뒤 다시 저장했습니다.');
+            toast('?�른 ??��??초안??변경되??최신 ?�용??병합?????�시 ?�?�했?�니??');
             await attemptSave(mergedContent, remoteUpdatedAt, false);
             return;
           }
@@ -1231,10 +1230,10 @@ export function Workshop() {
               ? response.choice_groups
               : [buildPageRangeChoiceGroup(pageRanges)],
         });
-        toast.success('주제 선택이 반영되었어요. 이제 분량을 정해볼게요.');
+        toast.success('주제 ?�택??반영?�었?�요. ?�제 분량???�해볼게??');
       } catch (error) {
         console.error('Guided topic selection failed:', error);
-        toast.error('주제 선택을 반영하지 못했습니다. 다시 시도해 주세요.');
+        toast.error('주제 ?�택??반영?��? 못했?�니?? ?�시 ?�도??주세??');
       } finally {
         setIsSelectingGuidedTopicId(null);
         setIsGuidedActionLoading(false);
@@ -1280,7 +1279,7 @@ export function Workshop() {
         });
       } catch (error) {
         console.error('Guided page-range selection failed:', error);
-        toast.error('분량 선택을 반영하지 못했습니다. 다시 시도해 주세요.');
+        toast.error('분량 ?�택??반영?��? 못했?�니?? ?�시 ?�도??주세??');
       } finally {
         setIsGuidedActionLoading(false);
       }
@@ -1325,7 +1324,7 @@ export function Workshop() {
         });
       } catch (error) {
         console.error('Guided structure selection failed:', error);
-        toast.error('구성 선택을 반영하지 못했습니다. 다시 시도해 주세요.');
+        toast.error('구성 ?�택??반영?��? 못했?�니?? ?�시 ?�도??주세??');
       } finally {
         setIsGuidedActionLoading(false);
       }
@@ -1343,7 +1342,7 @@ export function Workshop() {
         {
           id: pendingId,
           role: 'foli',
-          content: '학생 기록을 바탕으로 주제 3가지를 정리하고 있어요. 잠시만 기다려주세요.',
+          content: '?�생 기록??바탕?�로 주제 3가지�??�리?�고 ?�어?? ?�시�?기다?�주?�요.',
         },
       ]);
       try {
@@ -1432,10 +1431,10 @@ export function Workshop() {
       if (applied) {
         setPendingDraftPatch(null);
         if (approved) {
-          toast.success('승인된 섹션 제안이 우측 구조 초안에 반영되었습니다.');
+          toast.success('?�인???�션 ?�안???�측 구조 초안??반영?�었?�니??');
         }
       } else if (blockedReason === 'student_content_protected') {
-        toast('학생이 직접 작성한 섹션은 자동 덮어쓰기를 막고 있어요. 내용을 확인한 뒤 수동으로 반영해 주세요.');
+        toast('?�생??직접 ?�성???�션?� ?�동 ??��?�기�?막고 ?�어?? ?�용???�인?????�동?�로 반영??주세??');
       }
       return applied;
     },
@@ -1466,13 +1465,13 @@ export function Workshop() {
       };
       const validation = validateReportPatch(reportPatch, structuredDraftToReportDocumentState(structuredDraft));
       if (!validation.valid) {
-        toast.error(validation.errors[0] || '문서 반영 제안을 검토해야 합니다.');
+        toast.error(validation.errors[0] || '문서 반영 ?�안??검?�해???�니??');
         return false;
       }
 
       const result = applyReportPatchToStructuredDraft(structuredDraft, reportPatch, { approved: true });
       if (!result.applied) {
-        toast.error('학생 작성 내용 보호 정책 때문에 patch를 바로 반영하지 못했습니다.');
+        toast.error('?�생 ?�성 ?�용 보호 ?�책 ?�문??patch�?바로 반영?��? 못했?�니??');
         return false;
       }
 
@@ -1483,7 +1482,7 @@ export function Workshop() {
       setWorkshopMode(result.next.mode);
       setDocumentContent(structuredDraftToMarkdown(result.next));
       setPendingDraftPatch(null);
-      toast.success('승인된 문서 patch를 반영했습니다.');
+      toast.success('?�인??문서 patch�?반영?�습?�다.');
       return true;
     },
     [structuredDraft],
@@ -1526,7 +1525,7 @@ export function Workshop() {
         {
           id: pendingId,
           role: 'foli',
-          content: '관련 논문과 자료를 찾고 있어요. 검색 결과는 바로 문서에 넣지 않고 후보 카드로 보여드릴게요.',
+          content: '관???�문�??�료�?찾고 ?�어?? 검??결과??바로 문서???��? ?�고 ?�보 카드�?보여?�릴게요.',
         },
       ]);
 
@@ -1542,8 +1541,8 @@ export function Workshop() {
               ? {
                   ...message,
                   content: result.candidates.length
-                    ? `자료 후보 ${result.candidates.length}개를 찾았어요. 사용할 후보를 고르면 먼저 문서 반영 제안 카드로 바꿔서 보여드릴게요.`
-                    : '검색된 자료 후보가 없어요. 주제나 키워드를 조금 더 구체적으로 말해 주세요.',
+                    ? `?�료 ?�보 ${result.candidates.length}개�? 찾았?�요. ?�용???�보�?고르�?먼�? 문서 반영 ?�안 카드�?바꿔??보여?�릴게요.`
+                    : '검?�된 ?�료 ?�보가 ?�어?? 주제???�워?��? 조금 ??구체?�으�?말해 주세??',
                   researchCandidates: result.candidates,
                   researchSources: result.sources,
                 }
@@ -1551,7 +1550,7 @@ export function Workshop() {
           ),
         );
       } catch (error) {
-        const message = error instanceof Error ? error.message : '자료 검색 중 오류가 발생했습니다.';
+        const message = error instanceof Error ? error.message : '?�료 검??�??�류가 발생?�습?�다.';
         console.error('Research candidate search failed:', error);
         toast.error(message);
         setMessages((prev) =>
@@ -1559,7 +1558,7 @@ export function Workshop() {
             item.id === pendingId
               ? {
                   ...item,
-                  content: `자료 검색에 실패했어요.\n\n${message}\n\n잠시 뒤 다시 시도하거나 검색어를 더 구체적으로 바꿔 주세요.`,
+                  content: `?�료 검?�에 ?�패?�어??\n\n${message}\n\n?�시 ???�시 ?�도?�거??검?�어�???구체?�으�?바꿔 주세??`,
                 }
               : item,
           ),
@@ -1599,8 +1598,8 @@ export function Workshop() {
           setGuidedPhase('specific_topic_check');
           pushGuidedAssistantMessage({
             content: broadSubject
-              ? `좋아요. ${normalizedSubject}로 진행해볼게요.\n특별히 생각해 둔 주제가 있을까요? 아직 없다면 학생 기록 기반으로 3개 추천해드릴게요.`
-              : `좋아요. ${normalizedSubject} 방향으로 진행해볼게요.\n이미 생각해둔 탐구 질문이 있다면 알려주세요. 없으면 학생 기록을 바탕으로 3개 추천해드릴게요.`,
+              ? `좋아?? ${normalizedSubject}�?진행?�볼게요.\n?�별???�각????주제가 ?�을까요? ?�직 ?�다�??�생 기록 기반?�로 3�?추천?�드릴게??`
+              : `좋아?? ${normalizedSubject} 방향?�로 진행?�볼게요.\n?��? ?�각?�둔 ?�구 질문???�다�??�려주세?? ?�으�??�생 기록??바탕?�로 3�?추천?�드릴게??`,
             phase: 'specific_topic_check',
             topicSubject: normalizedSubject,
             choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -1615,7 +1614,7 @@ export function Workshop() {
           }
           if (isSpecificTopicAffirmative(text)) {
             pushGuidedAssistantMessage({
-              content: '좋아요. 생각해둔 주제를 한 문장으로 적어주시면, 그 방향까지 반영해서 주제 3가지를 제안할게요.',
+              content: '좋아?? ?�각?�둔 주제�???문장?�로 ?�어주시�? �?방향까�? 반영?�서 주제 3가지�??�안?�게??',
               phase: 'specific_topic_check',
               topicSubject: guidedSubject || undefined,
               choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -1632,7 +1631,7 @@ export function Workshop() {
             await handleGuidedTopicSelection(selectedFromText.id, guidedSubject || undefined);
           } else {
             pushGuidedAssistantMessage({
-              content: '주제 카드를 눌러 선택하면 바로 분량/구성 단계로 이어갈게요.',
+              content: '주제 카드�??�러 ?�택?�면 바로 분량/구성 ?�계�??�어갈게??',
               phase: 'topic_selection',
               topicSubject: guidedSubject || undefined,
               topicSuggestions: guidedSuggestions,
@@ -1648,7 +1647,7 @@ export function Workshop() {
             await handleGuidedPageRangeSelection(selectedPageLabel);
           } else {
             pushGuidedAssistantMessage({
-              content: '분량 카드를 눌러 선택해 주세요. 선택 후 바로 구성 스타일을 물어볼게요.',
+              content: '분량 카드�??�러 ?�택??주세?? ?�택 ??바로 구성 ?��??�을 물어볼게??',
               phase: 'page_range_selection',
               pageRangeOptions: guidedPageRanges,
               choiceGroups: [buildPageRangeChoiceGroup(guidedPageRanges)],
@@ -1663,7 +1662,7 @@ export function Workshop() {
             await handleGuidedStructureSelection(selectedStructureId);
           } else {
             pushGuidedAssistantMessage({
-              content: '구성 스타일 카드를 눌러 선택해 주세요.',
+              content: '구성 ?��???카드�??�러 ?�택??주세??',
               phase: 'structure_selection',
               structureOptions: guidedStructureOptions,
               choiceGroups: [buildStructureChoiceGroup(guidedStructureOptions)],
@@ -1673,7 +1672,7 @@ export function Workshop() {
         }
       } catch (error) {
         console.error('Guided setup flow failed:', error);
-        toast.error('가이드 설정 중 오류가 발생했습니다. 다시 시도해 주세요.');
+        toast.error('가?�드 ?�정 �??�류가 발생?�습?�다. ?�시 ?�도??주세??');
       } finally {
         setIsTyping(false);
       }
@@ -1768,15 +1767,15 @@ export function Workshop() {
           workshop_id: workshopState?.session.id ?? null,
         });
         if (streamLimitedReason === 'llm_unavailable') {
-          toast.error('AI 모델 연결이 불안정하여 제한 모드 안내로 전환되었어요.');
+          toast.error('AI 모델 ?�결??불안?�하???�한 모드 ?�내�??�환?�었?�요.');
         } else if (streamLimitedReason === 'llm_not_configured') {
-          toast.error('AI 모델 키가 서버에 설정되지 않아 제한 모드로 전환되었습니다.');
+          toast.error('AI 모델 ?��? ?�버???�정?��? ?�아 ?�한 모드�??�환?�었?�니??');
         }
       }
 
       const extracted = extractPatchTagFromRaw(raw);
       const resolvedPatch = streamedPatch || extracted.patch;
-      const responseContent = extracted.cleaned || raw || accumulated || '답변을 생성하지 못했습니다.';
+      const responseContent = extracted.cleaned || raw || accumulated || '?��????�성?��? 못했?�니??';
       setMessages(prev =>
         prev.map(message =>
           message.id === foliId
@@ -1810,11 +1809,11 @@ export function Workshop() {
         toast.error(resolveChatStreamToastMessage(error));
         const hint = resolveChatStreamFallbackHint(error);
         if (hint) {
-          fallbackContent = `${fallbackContent}\n\n참고 안내: ${hint}`;
+          fallbackContent = `${fallbackContent}\n\n참고 ?�내: ${hint}`;
         }
       } else {
         console.error('AI reply stream failed with unexpected error:', error);
-        toast.error('채팅 응답 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        toast.error('채팅 ?�답 ?�성???�패?�습?�다. ?�시 ???�시 ?�도??주세??');
       }
       setMessages(prev =>
         prev.map(message =>
@@ -1857,7 +1856,7 @@ export function Workshop() {
         setGuidedSubject(rawValue);
         setGuidedPhase('specific_topic_check');
         pushGuidedAssistantMessage({
-          content: `좋아요. ${rawValue}로 진행해볼게요.\n특별히 생각해 둔 주제가 있을까요? 아직 없다면 학생 기록 기반으로 3개 추천해드릴게요.`,
+          content: `좋아?? ${rawValue}�?진행?�볼게요.\n?�별???�각????주제가 ?�을까요? ?�직 ?�다�??�생 기록 기반?�로 3�?추천?�드릴게??`,
           phase: 'specific_topic_check',
           topicSubject: rawValue,
           choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -1871,12 +1870,12 @@ export function Workshop() {
             await requestGuidedSuggestions(guidedSubject || rawValue);
           } catch (error) {
             console.error('Guided suggestion failed from choice:', error);
-            toast.error('주제 추천을 불러오지 못했습니다. 다시 시도해 주세요.');
+            toast.error('주제 추천??불러?��? 못했?�니?? ?�시 ?�도??주세??');
           }
           return;
         }
         pushGuidedAssistantMessage({
-          content: '좋아요. 생각해둔 주제를 한 문장으로 적어주시면 그 방향까지 반영해서 3개 주제를 제안할게요.',
+          content: '좋아?? ?�각?�둔 주제�???문장?�로 ?�어주시�?�?방향까�? 반영?�서 3�?주제�??�안?�게??',
           phase: 'specific_topic_check',
           topicSubject: guidedSubject || undefined,
           choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -1952,7 +1951,7 @@ export function Workshop() {
     } else {
       documentPatch.rejectPatch(patch);
     }
-    toast('문서 반영 제안을 거절했습니다.');
+    toast('문서 반영 ?�안??거절?�습?�다.');
   }, [documentPatch]);
 
   const handleRejectPatchByMessageId = useCallback((messageId: string) => {
@@ -1964,17 +1963,17 @@ export function Workshop() {
       ),
     );
     setPendingDraftPatch(null);
-    toast('문서 반영 제안을 거절했습니다.');
+    toast('문서 반영 ?�안??거절?�습?�다.');
   }, []);
 
   const handleRequestPatchRewrite = useCallback(
     (patch: ReviewablePatch, tone: 'simpler' | 'professional' | 'custom') => {
       const instruction =
         tone === 'simpler'
-          ? '방금 문서 반영 제안을 더 쉽게 다시 써줘. 문서에는 아직 반영하지 말고 새 patch로 제안해줘.'
+          ? '방금 문서 반영 ?�안?????�게 ?�시 ?�줘. 문서?�는 ?�직 반영?��? 말고 ??patch�??�안?�줘.'
           : tone === 'professional'
-            ? '방금 문서 반영 제안을 더 전문적인 보고서 문체로 다시 써줘. 문서에는 아직 반영하지 말고 새 patch로 제안해줘.'
-            : '방금 문서 반영 제안을 내가 수정해서 승인할 수 있도록 더 작은 단위의 patch로 다시 제안해줘.';
+            ? '방금 문서 반영 ?�안?????�문?�인 보고??문체�??�시 ?�줘. 문서?�는 ?�직 반영?��? 말고 ??patch�??�안?�줘.'
+            : '방금 문서 반영 ?�안???��? ?�정?�서 ?�인?????�도�????��? ?�위??patch�??�시 ?�안?�줘.';
       if ('block_id' in patch) {
         setPendingDraftPatch(patch);
       } else {
@@ -1989,7 +1988,7 @@ export function Workshop() {
     (candidateId: string, message: Message) => {
       const candidate = message.researchCandidates?.find((item) => item.id === candidateId);
       if (!candidate) {
-        toast.error('선택한 자료 후보를 찾을 수 없습니다.');
+        toast.error('?�택???�료 ?�보�?찾을 ???�습?�다.');
         return;
       }
       const patch = researchCandidates.convertCandidateToPatch(candidate);
@@ -2005,7 +2004,7 @@ export function Workshop() {
             : item,
         ),
       );
-      toast.success('자료 후보를 문서 반영 제안으로 바꿨어요. 검토 후 승인하면 문서에 들어갑니다.');
+      toast.success('?�료 ?�보�?문서 반영 ?�안?�로 바꿨?�요. 검?????�인?�면 문서???�어갑니??');
     },
     [documentPatch, researchCandidates],
   );
@@ -2015,14 +2014,14 @@ export function Workshop() {
       const candidate = message.researchCandidates?.find((item) => item.id === candidateId);
       if (!candidate) return;
       try {
-        const result = await researchCandidates.refineCandidate(candidateId, `${candidate.title} 더 구체적인 근거`);
+        const result = await researchCandidates.refineCandidate(candidateId, `${candidate.title} ??구체?�인 근거`);
         if (!result) return;
         setMessages((prev) =>
           prev.map((item) =>
             item.id === message.id
               ? {
                   ...item,
-                  content: `더 구체화한 자료 후보 ${result.candidates.length}개를 다시 찾았어요.`,
+                  content: `??구체?�한 ?�료 ?�보 ${result.candidates.length}개�? ?�시 찾았?�요.`,
                   researchCandidates: result.candidates,
                   researchSources: result.sources,
                   reportPatch: undefined,
@@ -2033,7 +2032,7 @@ export function Workshop() {
         );
       } catch (error) {
         console.error('Research candidate refine failed:', error);
-        toast.error(error instanceof Error ? error.message : '자료 후보를 구체화하지 못했습니다.');
+        toast.error(error instanceof Error ? error.message : '?�료 ?�보�?구체?�하지 못했?�니??');
       }
     },
     [researchCandidates],
@@ -2061,10 +2060,10 @@ export function Workshop() {
     setIsRendering(true);
     try {
       await api.post(`/api/v1/workshops/${workshopState.session.id}/render`);
-      toast.success('결과물 생성을 요청했습니다.');
+      toast.success('결과�??�성???�청?�습?�다.');
     } catch (error) {
       console.error('Failed to render draft:', error);
-      toast.error('생성 요청에 실패했습니다.');
+      toast.error('?�성 ?�청???�패?�습?�다.');
     } finally {
       setIsRendering(false);
     }
@@ -2079,7 +2078,7 @@ export function Workshop() {
       createdAt: new Date().toISOString(),
       contentMarkdown: documentContent,
     });
-    toast.success('워크숍 초안을 저장했어요.');
+    toast.success('?�크??초안???�?�했?�요.');
     confetti({ particleCount: 80, spread: 62, origin: { y: 0.65 } });
   };
 
@@ -2091,10 +2090,10 @@ export function Workshop() {
         { approval_status: status }
       );
       setWorkshopState(response.data);
-      toast.success('상태를 업데이트했습니다.');
+      toast.success('?�태�??�데?�트?�습?�다.');
     } catch (error) {
       console.error('Failed to update visual status:', error);
-      toast.error('상태 업데이트 실패');
+      toast.error('?�태 ?�데?�트 ?�패');
     }
   };
 
@@ -2108,7 +2107,7 @@ export function Workshop() {
       toast.success('새로운 시각 자료를 생성했습니다.');
     } catch (error) {
       console.error('Failed to replace visual:', error);
-      toast.error('시각 자료 생성 실패');
+      toast.error('?�각 ?�료 ?�성 ?�패');
     }
   };
 
@@ -2136,13 +2135,13 @@ export function Workshop() {
     if (limitedReason === 'evidence_gap') {
       return {
         title: '근거 보완 모드가 활성화되었습니다.',
-        description: '현재 확인 가능한 학생 기록만 우선 연결해, 보수적인 제안 중심으로 안내하고 있어요.',
+        description: '현재 확인 가능한 학생 기록의 우선 해결 및 보수적인 대안 중심으로 안내하고 있습니다.',
       };
     }
     if (limitedReason === 'llm_unavailable') {
       return {
         title: 'AI 연결이 일시적으로 제한되었습니다.',
-        description: 'Gemini/LLM 연결이 불안정해 더 안전한 제한 응답으로 전환했습니다.',
+        description: 'Gemini/LLM 연결이 불안정하여 더 안전하고 제한된 응답으로 전환했습니다.',
       };
     }
     if (limitedReason === 'llm_not_configured') {
@@ -2174,32 +2173,32 @@ export function Workshop() {
                 : '가이드 진행';
   const inputPlaceholder =
     isProjectBacked && !guidedSetupComplete
-      ? '과목 카드부터 고르면 바로 시작됩니다.'
-      : '예: 내 약점 3가지를 근거와 함께 정리해줘';
+      ? '과목 카드부터 고르면 바로 시작합니다.'
+      : '내 핵심 강점 3가지를 근거와 함께 정리해줘';
   const quickPromptOptions = useMemo(() => {
     if (chatbotMode === 'diagnosis') return [];
     if (isProjectBacked && !guidedSetupComplete) return [];
 
     const prefix = diagnosisHeadline
-      ? '최근 진단 아티팩트를 기준으로 '
-      : '현재 기록과 대화 문맥을 기준으로 ';
+      ? '최근 진단 아티팩트를 기반으로 '
+      : '현재 기록과 대화 문맥을 기반으로 ';
 
     return [
       {
         label: '강점 요약',
-        prompt: `${prefix}내 생기부의 핵심 강점 3가지를 근거와 함께 정리해줘.`,
+        prompt: `${prefix}학생부 핵심 강점 3가지를 근거와 함께 정리해줘.`,
       },
       {
         label: '약점 보완',
-        prompt: `${prefix}내가 먼저 보완해야 할 약점 3가지를 근거와 함께 설명해줘.`,
+        prompt: `${prefix}가장 먼저 보완해야 할 약점 3가지를 근거와 함께 설명해줘.`,
       },
       {
         label: '탐구 주제',
         prompt: `${prefix}지금 바로 시도할 탐구 주제 3개를 추천해줘.`,
       },
       {
-        label: '다음 한 달',
-        prompt: `${prefix}다음 한 달 행동 계획을 주차별로 정리해줘.`,
+        label: '다음 단계',
+        prompt: `${prefix}다음 활동 계획을 주차별로 정리해줘.`,
       },
     ];
   }, [chatbotMode, diagnosisHeadline, guidedSetupComplete, isProjectBacked]);
@@ -2212,21 +2211,7 @@ export function Workshop() {
         transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
       >
 
-        {quickPromptOptions.length > 0 && messages.length <= 4 && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {quickPromptOptions.map((option) => (
-              <button
-                key={option.label}
-                type="button"
-                onClick={() => void handleSend(option.prompt)}
-                disabled={isTyping || !!isSelectingGuidedTopicId || isGuidedActionLoading}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        )}
+
 
         <div className="mt-6 lg:hidden">
           <WorkshopMobileToggle value={mobileView} onChange={setMobileView} />
@@ -2242,125 +2227,139 @@ export function Workshop() {
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-indigo-600 transition-all"
                 >
                   <FileText size={16} className={isEditorOpen ? "text-indigo-600" : ""} />
-                  {isEditorOpen ? '문서 닫기' : '작성된 문서 보기'}
+                  {isEditorOpen ? '문서 닫기' : '작성한 문서 보기'}
                 </button>
               </div>
-              <SectionCard
-                title="코파일럿"
-                eyebrow="대화"
+                            <SectionCard
                 className={cn(
                   'flex min-h-0 flex-col h-full border-none shadow-none bg-transparent',
                   mobileView !== 'chat' && 'hidden lg:flex'
                 )}
                 bodyClassName="relative flex min-h-0 flex-1 flex-col overflow-hidden p-0 bg-transparent"
               >
-            <div className="flex h-full flex-col">
-              <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4 scroll-smooth">
-                {workshopState?.render_requirements && (
-                  <div className="mb-4 border-b border-slate-50 bg-slate-50/50 px-4 py-4 rounded-2xl">
-                    <WorkshopProgress 
-                      requirements={workshopState.render_requirements} 
-                      qualityInfo={workshopState.quality_level_info}
-                    />
-                  </div>
-                )}
-
-                {diagnosisReport && (
-                  <SurfaceCard tone="muted" padding="none" className="mb-4 overflow-hidden border-violet-100 bg-violet-50/40">
-                    <button
-                      type="button"
-                      onClick={() => setShowDiagnosis(prev => !prev)}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-violet-100/50"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-violet-500 shadow-sm shadow-violet-500/30" />
-                        진단 결과 요약
-                      </span>
-                      {showDiagnosis ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
-                    <AnimatePresence>
-                      {showDiagnosis && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden border-t border-violet-100 px-4 pb-4"
-                        >
-                          <div className="mt-3 space-y-2">
-                            <p className="text-sm font-bold text-slate-900 leading-snug">{diagnosisHeadline}</p>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {diagnosisRisk && <StatusBadge status={diagnosisRiskStatus}>{diagnosisRiskLabel}</StatusBadge>}
-                              <StatusBadge status="neutral">보완 {diagnosisGapCount}개</StatusBadge>
+                <div className="flex flex-col h-full bg-slate-50/10 backdrop-blur-md">
+                  {/* Messages Area */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth">
+                    <div className="max-w-4xl mx-auto w-full flex flex-col min-h-full">
+                      {messages.length === 0 && !isSessionLoading ? (
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in slide-in-from-bottom-8 duration-1000">
+                          <div className="relative mb-10">
+                            <div className="absolute -inset-4 bg-gradient-to-r from-violet-500 to-indigo-600 rounded-[36px] blur-2xl opacity-20 animate-pulse"></div>
+                            <div className="relative w-24 h-24 rounded-[32px] bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shadow-2xl ring-8 ring-indigo-50/50">
+                              <Bot size={48} className="text-white" />
                             </div>
                           </div>
-                        </motion.div>
+                          
+                          <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">
+                            반가워요! 무엇을 도와드릴까요?
+                          </h2>
+                          <p className="text-slate-500 max-w-lg leading-relaxed mb-12 text-lg font-medium">
+                            학생부 분석부터 리포트 작성까지,<br />
+                            당신의 대입 성공을 위한 AI 코파일럿 <span className="text-violet-600 font-bold">Foli</span>입니다.
+                          </p>
+                          
+                          {quickPromptOptions.length > 0 && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl px-4">
+                              {quickPromptOptions.map((option) => (
+                                <button
+                                  key={option.label}
+                                  onClick={() => void handleSend(option.prompt)}
+                                  className="group flex items-start gap-4 p-6 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-[28px] hover:border-violet-400 hover:bg-white hover:shadow-2xl hover:shadow-violet-200/40 transition-all duration-300 transform hover:-translate-y-1"
+                                >
+                                  <div className="mt-1 w-10 h-10 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-violet-50 transition-colors">
+                                    <PenSquare size={20} className="text-slate-400 group-hover:text-violet-600" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="font-bold text-slate-800 text-lg mb-1 group-hover:text-violet-700 transition-colors">{option.label}</div>
+                                    <div className="text-slate-400 text-sm font-medium">맞춤형 분석을 시작합니다</div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="px-6 py-10 space-y-10">
+                          {limitedModeNotice && (
+                            <WorkflowNotice
+                              tone="warning"
+                              title={limitedModeNotice.title}
+                              description={limitedModeNotice.description}
+                              className="rounded-[28px] border-amber-100 bg-amber-50/80 backdrop-blur-sm shadow-sm"
+                            />
+                          )}
+
+                          {!isSessionLoading ? (
+                            <div className="space-y-10">
+                              {messages.map((message) => (
+                                <WorkshopChatBubble
+                                  key={message.id}
+                                  message={message}
+                                  onApplyPatch={handleApplyPatchFromMessage}
+                                  onRejectPatch={handleRejectPatchFromMessage}
+                                  onRequestPatchRewrite={handleRequestPatchRewrite}
+                                  onUseResearchCandidate={handleUseResearchCandidate}
+                                  onRefineResearchCandidate={handleRefineResearchCandidate}
+                                  onExcludeResearchCandidate={handleExcludeResearchCandidate}
+                                  onGuidedChoiceSelect={handleGuidedChoiceSelect}
+                                  isGuidedActionLoading={isGuidedActionLoading}
+                                  selectingTopicId={isSelectingGuidedTopicId}
+                                />
+                              ))}
+                              <div ref={messagesEndRef} />
+                            </div>
+                          ) : (
+                            <div className="flex h-96 items-center justify-center">
+                              <div className="flex flex-col items-center gap-6">
+                                <div className="relative">
+                                  <div className="absolute inset-0 rounded-full bg-violet-400 blur-xl opacity-20 animate-pulse"></div>
+                                  <Loader2 size={40} className="animate-spin text-violet-600 relative" />
+                                </div>
+                                <p className="text-slate-400 font-bold text-lg animate-pulse tracking-wide">AI 분석 세션 연결 중...</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
-                    </AnimatePresence>
-                  </SurfaceCard>
-                )}
-
-                {limitedModeNotice && (
-                  <WorkflowNotice
-                    tone="warning"
-                    title={limitedModeNotice.title}
-                    description={limitedModeNotice.description}
-                    className="mb-4 rounded-2xl"
-                  />
-                )}
-
-                {!isSessionLoading ? (
-                  <div className="space-y-6 pb-6">
-                    {messages.map((message) => (
-                      <WorkshopChatBubble
-                        key={message.id}
-                        message={message}
-                        onApplyPatch={handleApplyPatchFromMessage}
-                        onRejectPatch={handleRejectPatchFromMessage}
-                        onRequestPatchRewrite={handleRequestPatchRewrite}
-                        onUseResearchCandidate={handleUseResearchCandidate}
-                        onRefineResearchCandidate={handleRefineResearchCandidate}
-                        onExcludeResearchCandidate={handleExcludeResearchCandidate}
-                        onGuidedChoiceSelect={handleGuidedChoiceSelect}
-                        isGuidedActionLoading={isGuidedActionLoading}
-                        selectingTopicId={isSelectingGuidedTopicId}
-                      />
-                    ))}
-                    <div ref={messagesEndRef} />
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center py-20">
-                    <Loader2 size={24} className="animate-spin text-blue-600" />
-                  </div>
-                )}
-              </div>
 
-              <div className="border-t border-slate-100 bg-white p-4 lg:rounded-b-2xl">
-                <div className="flex items-center gap-3">
-                  <input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        void handleSend();
-                      }
-                    }}
-                    placeholder={inputPlaceholder}
-                    disabled={isTyping || !!isSelectingGuidedTopicId || isGuidedActionLoading}
-                    className="flex-1 h-12 rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 text-[15px] font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white disabled:opacity-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleSend()}
-                    disabled={!input.trim() || isTyping || !!isSelectingGuidedTopicId || isGuidedActionLoading}
-                    className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#3182f6] text-white shadow-lg shadow-blue-100 transition-all hover:bg-[#1b64da] disabled:bg-slate-200"
-                  >
-                    {isTyping ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
-                  </button>
+                  {/* Input Area */}
+                  <div className="px-4 pb-8 pt-4 bg-gradient-to-t from-slate-50/50 to-transparent">
+                    <div className="max-w-4xl mx-auto w-full">
+                      <div className="relative group">
+                        <div className="absolute -inset-1 bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500 rounded-[32px] opacity-15 group-focus-within:opacity-30 transition duration-500 blur-md"></div>
+                        <div className="relative flex items-center gap-3 bg-white p-2.5 pl-7 rounded-[30px] border border-slate-200/80 shadow-2xl shadow-indigo-100/30 transition-all duration-300 group-focus-within:border-violet-300 group-focus-within:shadow-violet-200/40">
+                          <input
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                void handleSend();
+                              }
+                            }}
+                            placeholder={inputPlaceholder}
+                            disabled={isTyping || !!isSelectingGuidedTopicId || isGuidedActionLoading}
+                            className="flex-1 py-4 bg-transparent text-[17px] font-semibold text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleSend()}
+                            disabled={!input.trim() || isTyping || !!isSelectingGuidedTopicId || isGuidedActionLoading}
+                            className="flex h-14 w-14 items-center justify-center rounded-[24px] bg-slate-900 text-white shadow-xl transition-all duration-300 hover:bg-violet-600 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            <Send size={24} />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-4 text-center text-[12px] text-slate-400 font-bold tracking-tight opacity-70">
+                        Foli는 AI 기술을 통해 분석을 돕지만, 최종 결정은 사용자에게 있습니다.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </SectionCard>
+              </SectionCard>
             </div>
           </div>
 
@@ -2448,6 +2447,7 @@ export function Workshop() {
     </div>
   );
 }
+
 
 
 

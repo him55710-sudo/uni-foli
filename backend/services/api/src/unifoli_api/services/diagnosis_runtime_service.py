@@ -156,6 +156,20 @@ def _extract_document_text(document: Any) -> str:
         if isinstance(metadata, dict):
             canonical = metadata.get("student_record_canonical")
             if isinstance(canonical, dict):
+                if canonical.get("is_primary_student_record") is False:
+                    prefix = str(
+                        canonical.get("consulting_summary")
+                        or "Uploaded PDF appears to be a generated diagnosis report, not the original student record."
+                    ).strip()
+                    limit = get_settings().diagnosis_llm_max_input_chars
+                    available = max(0, limit - len(prefix) - 80)
+                    excerpt = primary[:available].strip()
+                    return (
+                        "[student_record_report_context]\n"
+                        f"{prefix}\n\n"
+                        "[uploaded_diagnosis_report_excerpt]\n"
+                        f"{excerpt}"
+                    ).strip()
                 context_lines = [str(canonical.get("consulting_summary") or "").strip()]
                 for item in canonical.get("priority_interventions", [])[:4] if isinstance(canonical.get("priority_interventions"), list) else []:
                     value = str(item or "").strip()

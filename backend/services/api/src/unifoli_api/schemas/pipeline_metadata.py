@@ -93,6 +93,7 @@ class PdfAnalysisMetadata(BaseModel):
     
     summary: str | None = Field(default=None, max_length=2000)
     document_type: str | None = Field(default=None, max_length=80)
+    source_document_kind: str | None = Field(default=None, max_length=80)
     document_type_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     likely_student_record: bool = False
     

@@ -484,3 +484,81 @@ def test_student_record_metadata_builds_evidence_bank_and_consulting_aliases() -
     assert "subject_major_alignment_signals" in structure
     assert "process_reflection_signals" in structure
     assert structure["evidence_bank"]
+
+
+def test_student_record_metadata_extracts_student_name_from_table_cells() -> None:
+    payload = _build_payload(page_count=1)
+    payload.masked_artifact = {
+        "pages": [
+            {
+                "page_number": 1,
+                "masked_text": (
+                    "학교생활세부사항기록부 학생정보: 학생정보 | 성명 : | 이정훈 | 성별 : | 남 "
+                    "출결상황 교과학습발달상황 세부능력 및 특기사항 창의적 체험활동 행동특성 및 종합의견"
+                ),
+            }
+        ]
+    }
+
+    canonical = build_student_record_canonical_metadata(parsed=payload)
+
+    assert canonical is not None
+    assert canonical["student_name"] == "이정훈"
+    assert canonical["student_profile"]["student_name"] == "이정훈"
+
+
+def test_student_record_metadata_uses_filename_name_as_last_resort() -> None:
+    payload = _build_payload(page_count=1)
+    payload.metadata["filename"] = "윤홍일의 생기부.pdf"
+    payload.masked_artifact = {
+        "pages": [
+            {
+                "page_number": 1,
+                "masked_text": (
+                    "학교생활세부사항기록부 출결상황 교과학습발달상황 세부능력 및 특기사항 "
+                    "창의적 체험활동 행동특성 및 종합의견"
+                ),
+            }
+        ]
+    }
+
+    canonical = build_student_record_canonical_metadata(parsed=payload)
+
+    assert canonical is not None
+    assert canonical["student_name"] == "윤홍일"
+    assert canonical["student_profile"]["student_name_source"] == "filename"
+
+
+def test_generated_student_record_report_is_identity_only_not_primary_record(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    _patch_resolution(monkeypatch, _DeterministicPdfLLM())
+    payload = _build_payload(page_count=2)
+    payload.metadata["filename"] = "배한결 생기부 진단지 vibe on.pdf"
+    report_text = (
+        "생기부ON 배한결 우신고등학교 생기부기록:3학년 서울대학교 학생부종합전형 간호대학 "
+        "목차 Part1.생기부진단 목표대학진단 맞춤형보완점 AI전공추천 워드클라우드 "
+        "출결상황 세부능력 및 특기사항 행동특성 및 종합의견"
+    )
+    payload.content_text = report_text
+    payload.masked_artifact = {
+        "pages": [
+            {"page_number": 1, "masked_text": report_text},
+            {"page_number": 2, "masked_text": "Part1.생기부진단 맞춤형보완점 AI전공추천 워드클라우드"},
+        ]
+    }
+
+    metadata = build_pdf_analysis_metadata(payload)
+    canonical = build_student_record_canonical_metadata(parsed=payload, pdf_analysis=metadata)
+
+    assert metadata is not None
+    assert metadata["document_type"] == "student_record_diagnosis_report_pdf"
+    assert metadata["source_document_kind"] == "diagnosis_report"
+    assert metadata["likely_student_record"] is False
+    assert metadata["section_candidates"] == {}
+    assert canonical is not None
+    assert canonical["record_type"] == "student_record_diagnosis_report_pdf"
+    assert canonical["source_document_kind"] == "diagnosis_report"
+    assert canonical["is_primary_student_record"] is False
+    assert canonical["student_name"] == "배한결"
+    assert canonical["school_name"] == "우신고등학교"
+    assert "임현수" not in json.dumps(canonical, ensure_ascii=False)

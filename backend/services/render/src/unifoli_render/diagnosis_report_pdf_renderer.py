@@ -354,7 +354,7 @@ def _build_structured_report_story(
     render_hints: dict[str, Any],
 ) -> list[Any]:
     mode = _canonical_report_mode(str(report_payload.get("report_mode") or report_mode))
-    target_pages = int(render_hints.get("target_pages") or (9 if mode == "basic" else 32 if mode == "consultant" else 22))
+    target_pages = int(render_hints.get("target_pages") or (9 if mode == "basic" else 32 if mode == "consultant" else 24))
     pages = _structured_page_definitions(report_payload=report_payload, mode=mode, target_pages=target_pages)
     story: list[Any] = []
     for page_index, page in enumerate(pages[:target_pages]):
@@ -1723,7 +1723,7 @@ class _ComparisonBarChart(Flowable):
         y = self.height - 34
         canvas.setFont(self.font_bold, 10)
         canvas.setFillColor(_hex(self.color_tokens.get("text_primary"), "#111827"))
-        canvas.drawString(left, self.height - 18, "점수 비교")
+        canvas.drawString(left, self.height - 18, "역량 축 점수")
         for label, score, color_key in self.items:
             canvas.setFont(self.font_name, 8.6)
             canvas.setFillColor(_hex(self.color_tokens.get("text_muted"), "#6B7280"))
@@ -1967,30 +1967,74 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
 
 def _structured_page_definitions(*, report_payload: dict[str, Any], mode: str, target_pages: int) -> list[dict[str, Any]]:
     if mode == "basic":
-        return [
+        pages = [
             {"kind": "cover", "title": "Cover Hero Page"},
-            {"kind": "dashboard", "title": "종합 점수 대시보드"},
-            {"kind": "major_fit_dashboard", "title": "전공 적합성 분석"},
-            {"kind": "strengths", "title": "핵심 강점 TOP 5"},
-            {"kind": "risks", "title": "핵심 리스크 TOP 5"},
-            {"kind": "topics", "title": "추천 탐구 주제", "slice": (0, 4)},
+            {"kind": "toc", "title": "보고서 목차"},
+            {"kind": "dashboard", "title": "생기부 진단 요약"},
+            {"kind": "major_fit_dashboard", "title": "목표 전공 진단"},
+            {"kind": "competency", "title": "역량별 점수"},
+            {"kind": "record_structure", "title": "생기부 섹션 분석"},
+            {"kind": "topics", "title": "맞춤형 탐구 추천", "slice": (0, 4)},
             {"kind": "interviews", "title": "면접 예상 질문", "category": ""},
             {"kind": "action_plan", "title": "30일 액션 플랜"},
         ]
-    return [
+        return _fit_structured_pages(pages, target_pages)
+
+    pages = [
         {"kind": "cover", "title": "Cover Hero Page"},
-        {"kind": "dashboard", "title": "종합 점수 대시보드"},
-        {"kind": "major_fit_dashboard", "title": "전공 적합성 분석"},
-        {"kind": "strengths", "title": "핵심 강점 TOP 5"},
-        {"kind": "risks", "title": "핵심 리스크 TOP 5"},
-        {"kind": "growth", "title": "학년별 성장 타임라인"},
-        {"kind": "record_structure", "title": "생기부 근거 맵"},
-        {"kind": "subject_cards", "title": "과목별 세특 분석", "slice": (0, 6)},
-        {"kind": "competency", "title": "전공역량 매트릭스"},
-        {"kind": "topics", "title": "추천 탐구 주제", "slice": (0, 6)},
+        {"kind": "toc", "title": "보고서 목차"},
+        {
+            "kind": "part_intro",
+            "title": "Part 1. 생기부 진단",
+            "lead": "원본 학생부 근거만으로 현재 기록의 유형, 점수, 전공 연결성을 먼저 정리합니다.",
+            "items": ["생기부 유형", "목표 전공 진단", "생기부 총점", "역량별 점수", "학업역량", "진단 해석 원칙"],
+        },
+        {"kind": "summary", "title": "생기부 유형 및 핵심 판정"},
+        {"kind": "dashboard", "title": "생기부 총점"},
+        {"kind": "competency", "title": "생기부 역량별 점수"},
+        {"kind": "major_fit_dashboard", "title": "목표 전공 진단"},
+        {"kind": "subject_table", "title": "학업역량 / 과목별 세특 점검"},
+        {"kind": "subject_cards", "title": "과목별 세특 상세 분석", "slice": (0, 6)},
+        {"kind": "growth", "title": "학년별 성장 흐름"},
+        {
+            "kind": "part_intro",
+            "title": "Part 2. 생기부 분석",
+            "lead": "출결, 리더십, 자율·동아리·진로, 세특, 행동특성을 섹션별 근거 카드로 재배치합니다.",
+            "items": ["섹션별 기록 밀도", "활동 연결망", "강점", "약점/리스크", "문장 보완", "총평"],
+        },
+        {"kind": "record_structure", "title": "섹션별 생기부 분석"},
+        {"kind": "network", "title": "생기부 연결망 분석"},
+        {"kind": "strengths", "title": "강점 분석"},
+        {"kind": "risks", "title": "약점 및 리스크 분석"},
+        {"kind": "rewrites", "title": "기록 보완 문장 설계"},
+        {
+            "kind": "part_intro",
+            "title": "Part 3. 맞춤형 보완점",
+            "lead": "외부 표본 없이 현재 학생부에서 이어갈 수 있는 전공·탐구·면접 보완 전략만 제안합니다.",
+            "items": ["전공 적합성 보완", "탐구활동 추천", "키워드 클라우드", "피해야 할 주제", "로드맵", "검증 메모"],
+        },
+        {"kind": "major_strategy", "title": "전공 적합성 보완 방향"},
+        {"kind": "topics", "title": "탐구활동 추천", "slice": (0, 6)},
+        {"kind": "keyword_cloud", "title": "생기부 키워드 클라우드"},
+        {"kind": "avoid", "title": "피해야 할 탐구 주제"},
         {"kind": "interviews", "title": "면접 예상 질문", "category": ""},
-        {"kind": "action_plan", "title": "30일 액션 플랜"},
+        {"kind": "roadmap", "title": "맞춤형 실행 로드맵"},
+        {"kind": "appendix", "title": "검증 메모 / 부록"},
     ]
+    if mode == "consultant":
+        pages.extend(
+            [
+                {"kind": "subject_cards", "title": "과목별 세특 상세 분석 2", "slice": (6, 12)},
+                {"kind": "competency", "title": "역량별 근거 매트릭스 심화"},
+                {"kind": "record_structure", "title": "섹션별 근거 맵 심화"},
+                {"kind": "topics", "title": "추가 탐구활동 추천", "slice": (6, 12)},
+                {"kind": "interviews", "title": "면접 예상 질문: 전공 적합성", "category": "전공 적합성"},
+                {"kind": "interviews", "title": "면접 예상 질문: 탐구 과정 검증", "category": "탐구 과정 검증"},
+                {"kind": "action_plan", "title": "우선순위 액션 플랜"},
+                {"kind": "appendix", "title": "컨설턴트 검증 부록"},
+            ]
+        )
+    return _fit_structured_pages(pages, target_pages)
 
 
 def _render_structured_page(
@@ -2020,13 +2064,21 @@ def _render_structured_page(
 
     flowables: list[Any] = [
         Paragraph(_escape(title), style_tokens["h2"]),
-        Paragraph(_escape("Uni-Foli AI Student Record Analytics | Premium Dashboard"), style_tokens["subtitle"]),
+        Paragraph(_escape("Uni-Foli 생기부 진단 | 외부 표본 없는 근거 기반 분석"), style_tokens["subtitle"]),
         Spacer(1, 6),
     ]
-    if kind == "dashboard":
+    if kind == "toc":
+        flowables.extend(_toc_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "part_intro":
+        flowables.extend(_part_intro_flowables(page, doc, style_tokens, color_tokens))
+    elif kind == "summary":
+        flowables.extend(_summary_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "dashboard":
         flowables.extend(_dashboard_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
     elif kind == "major_fit_dashboard":
         flowables.extend(_major_fit_dashboard_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "major_strategy":
+        flowables.extend(_major_strategy_flowables(report_payload, doc, style_tokens, color_tokens))
     elif kind == "strengths":
         flowables.extend(_strength_risk_flowables(report_payload, doc, style_tokens, color_tokens, strengths=True))
     elif kind == "risks":
@@ -2035,17 +2087,274 @@ def _render_structured_page(
         flowables.extend(_growth_flowables(report_payload, doc, style_tokens, color_tokens))
     elif kind == "record_structure":
         flowables.extend(_record_structure_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "subject_table":
+        flowables.extend(_subject_table_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
     elif kind == "subject_cards":
         flowables.extend(_subject_card_flowables(report_payload, doc, style_tokens, color_tokens, page.get("slice")))
     elif kind == "competency":
         flowables.extend(_competency_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
+    elif kind == "network":
+        flowables.extend(_network_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
     elif kind == "topics":
         flowables.extend(_topics_flowables(report_payload, doc, style_tokens, color_tokens, page.get("slice")))
+    elif kind == "keyword_cloud":
+        flowables.extend(_keyword_cloud_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "avoid":
+        flowables.extend(_avoid_flowables(report_payload, doc, style_tokens, color_tokens))
+    elif kind == "rewrites":
+        flowables.extend(_rewrite_flowables(report_payload, doc, style_tokens, color_tokens))
     elif kind == "interviews":
         flowables.extend(_interview_flowables(report_payload, doc, style_tokens, color_tokens, str(page.get("category") or "")))
+    elif kind == "roadmap":
+        flowables.extend(_roadmap_flowables(report_payload, doc, style_tokens, font_name, font_bold, color_tokens))
+    elif kind == "appendix":
+        flowables.extend(_appendix_flowables(report_payload, doc, style_tokens, color_tokens))
     else:
         flowables.extend(_action_plan_flowables(report_payload, doc, style_tokens, color_tokens))
     return flowables
+
+
+def _fit_structured_pages(pages: list[dict[str, Any]], target_pages: int) -> list[dict[str, Any]]:
+    target = max(1, int(target_pages or len(pages) or 1))
+    result = [dict(page) for page in pages]
+    fillers = [
+        {"kind": "action_plan", "title": "추가 실행 체크리스트"},
+        {"kind": "topics", "title": "추가 탐구활동 추천", "slice": (0, 6)},
+        {"kind": "interviews", "title": "추가 면접 예상 질문", "category": ""},
+        {"kind": "appendix", "title": "추가 검증 메모"},
+    ]
+    filler_index = 0
+    while len(result) < target:
+        result.append(dict(fillers[filler_index % len(fillers)]))
+        filler_index += 1
+    return result[:target]
+
+
+def _toc_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    context = _dashboard_context(report_payload)
+    cards = [
+        {
+            "title": "Part 1. 생기부 진단",
+            "body": "생기부 유형, 목표 전공 진단, 총점, 역량별 점수, 학업역량을 먼저 확인합니다.",
+            "chips": ["Diagnosis"],
+            "tone": "action",
+        },
+        {
+            "title": "Part 2. 생기부 분석",
+            "body": "출결·리더십·자율·동아리·진로·세특·행동특성을 섹션별 근거 카드로 봅니다.",
+            "chips": ["Record Map"],
+            "tone": "plain",
+        },
+        {
+            "title": "Part 3. 맞춤형 보완점",
+            "body": "전공 적합성 보완, 탐구활동 추천, 키워드, 면접 질문, 실행 로드맵을 정리합니다.",
+            "chips": ["Action"],
+            "tone": "plain",
+        },
+    ]
+    return [
+        _dashboard_card(
+            "보고서 구성 원칙",
+            (
+                f"대상 학생: {context['student']} | 목표 학과: {context['target_major']}. "
+                "외부 표본, 합격자 데이터, 지원 적정 구간, 결과 단정 문구는 사용하지 않고 업로드된 학생부 근거와 우리 진단 축만 사용합니다."
+            ),
+            doc.width,
+            style_tokens,
+            color_tokens,
+            tone="plain",
+        ),
+        Spacer(1, 10),
+        _dashboard_card_grid(cards, doc, style_tokens, color_tokens, cols=3),
+        Spacer(1, 9),
+        _chip_row(["생기부 진단", "생기부 분석", "맞춤형 보완점", "검증 메모"], doc.width, style_tokens, color_tokens),
+    ]
+
+
+def _part_intro_flowables(page: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    title = str(page.get("title") or "Part")
+    lead = str(page.get("lead") or "이 파트의 핵심 흐름을 정리합니다.")
+    items = [str(item) for item in page.get("items", []) if str(item).strip()]
+    cards = [
+        {
+            "title": f"{index}. {item}",
+            "body": "현재 학생부에서 확인 가능한 근거만 연결해 해석합니다.",
+            "chips": ["근거 기반"],
+            "tone": "plain",
+        }
+        for index, item in enumerate(items[:6], start=1)
+    ]
+    return [
+        _dashboard_card(title, lead, doc.width, style_tokens, color_tokens, tone="action"),
+        Spacer(1, 11),
+        _dashboard_card_grid(cards, doc, style_tokens, color_tokens, cols=3),
+        Spacer(1, 8),
+        _dashboard_card(
+            "해석 범위",
+            "이 파트의 점수와 판단은 합격 예측이 아니라 학생부 원문 근거의 밀도, 연결성, 과정성, 설명 가능성을 재구성한 내부 진단입니다.",
+            doc.width,
+            style_tokens,
+            color_tokens,
+            tone="plain",
+        ),
+    ]
+
+
+def _major_strategy_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    premium = _premium_analysis(report_payload)
+    context = _dashboard_context(report_payload)
+    branding = premium.get("student_branding") if isinstance(premium.get("student_branding"), dict) else {}
+    matrix = [item for item in premium.get("major_competency_matrix", []) if isinstance(item, dict)]
+    strongest = max(matrix, key=lambda item: _safe_int(item.get("score"), 0), default={})
+    weakest = min(matrix, key=lambda item: _safe_int(item.get("score"), 100), default={})
+    cards = [
+        {
+            "title": "목표 전공",
+            "body": f"{context['target_university']} / {context['target_major']}",
+            "chips": ["Target"],
+            "tone": "action",
+        },
+        {
+            "title": "현재 브랜딩",
+            "body": _truncate_plain(str(branding.get("one_line_branding") or branding.get("core_narrative") or "전공 연결 문장을 학생부 근거 중심으로 재정리합니다."), 130),
+            "chips": ["Narrative"],
+            "tone": "plain",
+        },
+        {
+            "title": "가장 강한 연결",
+            "body": f"{strongest.get('competency') or '확인 필요'}: {_truncate_plain(str(strongest.get('evidence') or ''), 96)}",
+            "chips": ["Strength"],
+            "tone": "plain",
+        },
+        {
+            "title": "우선 보완축",
+            "body": f"{weakest.get('competency') or '확인 필요'}: {_truncate_plain(str(weakest.get('improvement') or '과정, 산출물, 한계 설명을 보강하세요.'), 96)}",
+            "chips": ["Priority"],
+            "tone": "risk",
+        },
+    ]
+    return [
+        _dashboard_card_grid(cards[:2], doc, style_tokens, color_tokens, cols=2),
+        Spacer(1, 8),
+        _dashboard_card_grid(cards[2:4], doc, style_tokens, color_tokens, cols=2),
+        Spacer(1, 8),
+        _dashboard_card(
+            "보완 원칙",
+            "새 활동을 억지로 만들기보다 기존 기록에서 문제의식, 사용 개념, 방법, 산출물, 한계를 분리해 전공 질문으로 다시 연결합니다.",
+            doc.width,
+            style_tokens,
+            color_tokens,
+            tone="plain",
+        ),
+    ]
+
+
+def _keyword_cloud_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
+    terms = _keyword_cloud_terms(report_payload)
+    flowables: list[Any] = [
+        _dashboard_card(
+            "키워드 해석",
+            "키워드는 학생부와 진단 결과에서 반복적으로 드러난 표현입니다. 외부 학생 데이터가 아니라 현재 문서 안의 전공 연결 단서를 압축해 보여줍니다.",
+            doc.width,
+            style_tokens,
+            color_tokens,
+            tone="plain",
+        ),
+        Spacer(1, 10),
+    ]
+    for index in range(0, min(len(terms), 24), 4):
+        flowables.append(_chip_row(terms[index: index + 4], doc.width, style_tokens, color_tokens))
+        flowables.append(Spacer(1, 6))
+    flowables.append(
+        _dashboard_card(
+            "활용법",
+            "상위 키워드 3개를 골라 세특 문장, 탐구보고서 제목, 면접 답변의 같은 축으로 반복 배치하면 기록의 일관성이 올라갑니다.",
+            doc.width,
+            style_tokens,
+            color_tokens,
+            tone="action",
+        )
+    )
+    return flowables
+
+
+def _keyword_cloud_terms(report_payload: dict[str, Any]) -> list[str]:
+    premium = _premium_analysis(report_payload)
+    candidates: list[Any] = []
+    candidates.extend(item.get("axis") for item in _dashboard_score_items(report_payload))
+    candidates.extend(report_payload.get("recommended_topics", []) if isinstance(report_payload.get("recommended_topics"), list) else [])
+    for key in ("major_competency_matrix", "evidence_map", "recommended_research_topics", "subject_analysis"):
+        values = premium.get(key)
+        if isinstance(values, list):
+            candidates.extend(values)
+    for key in ("strengths", "weaknesses"):
+        values = premium.get(key)
+        if isinstance(values, list):
+            candidates.extend(values)
+
+    terms: list[str] = []
+    seen: set[str] = set()
+    generic = {
+        "근거",
+        "분석",
+        "필요",
+        "보완",
+        "학생부",
+        "기록",
+        "확인",
+        "활동",
+        "추천",
+        "주제",
+        "결과",
+        "과정",
+        "점수",
+        "리스크",
+    }
+
+    def add(value: Any) -> None:
+        if isinstance(value, dict):
+            for nested_key in (
+                "competency",
+                "subject_or_activity",
+                "section",
+                "title",
+                "major_connection",
+                "major_relevance",
+                "competency_tags",
+            ):
+                add(value.get(nested_key))
+            return
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                add(item)
+            return
+        text = re.sub(r"[^0-9A-Za-z가-힣·/\s-]", " ", str(value or ""))
+        for chunk in re.split(r"[,/|·•\n]+", text):
+            chunk = " ".join(chunk.split()).strip(" -")
+            if not chunk:
+                continue
+            pieces = [chunk] if len(chunk) <= 10 else [piece for piece in chunk.split() if len(piece) >= 2]
+            for piece in pieces:
+                clean = _truncate_plain(piece.strip(" -"), 14)
+                key = clean.lower()
+                if len(clean) < 2 or key in seen or clean in generic:
+                    continue
+                seen.add(key)
+                terms.append(clean)
+
+    for candidate in candidates:
+        add(candidate)
+        if len(terms) >= 28:
+            break
+    fallback = ["전공 적합성", "탐구 심화", "서사 연결", "근거 밀도", "면접 방어", "과정성", "산출물", "후속 질문"]
+    for term in fallback:
+        if len(terms) >= 24:
+            break
+        key = term.lower()
+        if key not in seen:
+            seen.add(key)
+            terms.append(term)
+    return terms[:24]
 
 
 def _render_structured_cover(
@@ -2060,10 +2369,10 @@ def _render_structured_cover(
 ) -> list[Any]:
     premium = _premium_analysis(report_payload)
     context = _dashboard_context(report_payload)
-    score_400, score_100, percentile = _overall_score_metrics(report_payload)
+    score_400, score_100, _ = _overall_score_metrics(report_payload)
     branding = str((premium.get("student_branding") or {}).get("one_line_branding") or render_hints.get("one_line_verdict") or "생기부 근거를 전공 역량과 면접 전략으로 구조화한 프리미엄 진단서입니다.")
     hero_left = [
-        _badge("Premium AI Dashboard", doc.width * 0.30, style_tokens, color_tokens, tone="purple"),
+        _badge("Uni-Foli Record ON", doc.width * 0.30, style_tokens, color_tokens, tone="purple"),
         Spacer(1, 10),
         Paragraph("AI 생기부 분석 리포트", style_tokens["cover_title"]),
         Paragraph(_escape(_truncate_plain(branding, 150)), style_tokens["cover_subtitle"]),
@@ -2100,7 +2409,7 @@ def _render_structured_cover(
     stat_cards = _metric_grid(
         [
             ("종합 환산", f"{score_400}/400", "4개 핵심 축 기준"),
-            ("상위 퍼센트", f"상위 {max(1, 100 - percentile)}%", "내부 진단 점수 기준"),
+            ("100점 환산", f"{score_100}점", "우리 진단 축 기반"),
             ("분석 신뢰도", f"{int(round(float(render_hints.get('analysis_confidence_score', 0.72)) * 100))}%", "근거 연결 품질"),
         ],
         doc,
@@ -2122,14 +2431,14 @@ def _render_structured_cover(
             tone="plain",
         ),
         Spacer(1, 8),
-        _chip_row(["Dashboard", "Evidence Map", "Major Fit", "30-Day Plan"], doc.width, style_tokens, color_tokens),
+        _chip_row(["생기부 진단", "생기부 분석", "맞춤형 보완점", "검증 메모"], doc.width, style_tokens, color_tokens),
     ]
 
 
 def _dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> list[Any]:
     blocks = _dashboard_score_items(report_payload)
-    score_400, score_100, percentile = _overall_score_metrics(report_payload)
-    benchmark = _benchmark_items(score_100)
+    score_400, score_100, _ = _overall_score_metrics(report_payload)
+    axis_items = _axis_chart_items(report_payload)
     top_cards = [
         {
             "title": item["axis"],
@@ -2146,8 +2455,8 @@ def _dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate,
             [
                 _metric_grid(
                     [
-                        ("100점 환산", f"{score_100}점", "핵심 축 평균"),
-                        ("상위 퍼센트", f"상위 {max(1, 100 - percentile)}%", "내부 진단 기준"),
+                        ("100점 환산", f"{score_100}점", "핵심 축 환산"),
+                        ("역량 축", f"{len(axis_items)}개", "확인된 평가 항목"),
                     ],
                     doc,
                     style_tokens,
@@ -2156,7 +2465,7 @@ def _dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate,
                     cols=2,
                 ),
                 Spacer(1, 8),
-                _ComparisonBarChart(items=benchmark, width=doc.width * 0.56, height=112, color_tokens=color_tokens, font_name=font_name, font_bold=font_bold),
+                _ComparisonBarChart(items=axis_items, width=doc.width * 0.56, height=112, color_tokens=color_tokens, font_name=font_name, font_bold=font_bold),
             ],
         ]],
         colWidths=[doc.width * 0.38, doc.width * 0.58],
@@ -2168,7 +2477,7 @@ def _dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate,
         Spacer(1, 10),
         _dashboard_card_grid(top_cards, doc, style_tokens, color_tokens, cols=2),
         Spacer(1, 8),
-        Paragraph("동일 전공 평균과 전체 평균은 합격 예측이 아니라 리포트 내 비교 기준선입니다.", style_tokens["subtitle"]),
+        Paragraph("점수는 외부 표본 비교가 아니라 현재 학생부 근거의 밀도, 연결성, 과정성, 설명 가능성을 환산한 내부 진단 축입니다.", style_tokens["subtitle"]),
     ]
 
 
@@ -2539,7 +2848,12 @@ def _dashboard_card(
 
 def _dashboard_card_grid(cards: list[dict[str, Any]], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any], *, cols: int = 2) -> Table:
     cols = max(1, min(3, cols))
-    placeholder = {"title": "보완 메모", "body": "대표 활동, 원문 근거, 산출물을 추가로 정리하면 이 영역의 분석 밀도가 올라갑니다.", "tone": "plain", "chips": ["Next"]}
+    placeholder = {
+        "title": "추가 확인",
+        "body": "업로드 문서에서 이 영역을 판단할 근거가 충분하지 않습니다. 원문 근거가 확보되면 세부 분석을 보강합니다.",
+        "tone": "plain",
+        "chips": ["확인 필요"],
+    }
     cleaned = list(cards or [])
     if not cleaned:
         cleaned = [placeholder.copy() for _ in range(cols)]
@@ -2726,13 +3040,23 @@ def _overall_score_metrics(report_payload: dict[str, Any]) -> tuple[int, int, in
     return score_400, score_100, percentile
 
 
+def _axis_chart_items(report_payload: dict[str, Any]) -> list[tuple[str, int, str]]:
+    color_keys = ["brand_primary", "academic_blue", "success_green", "warning_orange"]
+    items: list[tuple[str, int, str]] = []
+    for index, item in enumerate(_dashboard_score_items(report_payload)[:4]):
+        items.append((item["axis"], item["score"], color_keys[index % len(color_keys)]))
+    while len(items) < 4:
+        fallback = _benchmark_items(72)[len(items)]
+        items.append(fallback)
+    return items[:4]
+
+
 def _benchmark_items(score_100: int) -> list[tuple[str, int, str]]:
-    same_major = max(48, min(92, score_100 - 4 if score_100 >= 58 else score_100 + 6))
-    overall = max(45, min(88, score_100 - 9 if score_100 >= 60 else score_100 + 3))
     return [
-        ("내 점수", score_100, "brand_primary"),
-        ("동일 전공 평균", same_major, "academic_blue"),
-        ("전체 평균", overall, "text_muted"),
+        ("전공 적합성", score_100, "brand_primary"),
+        ("탐구 심화", max(0, min(100, score_100 - 3)), "academic_blue"),
+        ("서사 연결", max(0, min(100, score_100 - 5)), "success_green"),
+        ("면접 방어", max(0, min(100, score_100 - 7)), "warning_orange"),
     ]
 
 
@@ -2763,11 +3087,11 @@ def _draw_page_chrome(
 ) -> None:
     width, height = A4
     canvas.saveState()
-    canvas.setFillColor(_hex(color_tokens.get("brand_primary"), "#7C3AED"))
+    canvas.setFillColor(_hex(color_tokens.get("brand_primary"), "#0F766E"))
     canvas.rect(0, height - 13, width, 13, stroke=0, fill=1)
     canvas.setFillColor(colors.white)
     canvas.setFont(font_bold, 7.2)
-    canvas.drawString(doc.leftMargin, height - 9, "Uni-Foli Premium Dashboard")
+    canvas.drawString(doc.leftMargin, height - 9, "Uni-Foli Record ON")
     canvas.setStrokeColor(_hex(color_tokens.get("line_soft"), "#E5E7EB"))
     canvas.setLineWidth(0.6)
     canvas.line(doc.leftMargin, 32, width - doc.rightMargin, 32)

@@ -74,10 +74,74 @@ _REPORT_FAILURE_FALLBACK = "진단 보고서 생성에 실패했습니다. 프�
 
 _REPORT_MODE_SPECS: dict[str, dict[str, Any]] = {
     "basic": {"label": "Basic Report", "min_pages": 8, "max_pages": 10, "target_pages": 9},
-    "premium": {"label": "Premium Report", "min_pages": 18, "max_pages": 24, "target_pages": 22},
+    "premium": {"label": "Premium Report", "min_pages": 18, "max_pages": 24, "target_pages": 24},
     "consultant": {"label": "Consultant Report", "min_pages": 28, "max_pages": 40, "target_pages": 32},
 }
 _MODE_ALIASES = {"compact": "basic", "premium_10p": "premium"}
+_LEGACY_MOJIBAKE_TARGET_MAJOR_PREFIXES: tuple[str, ...] = (
+    "紐⑺몴 ?꾧났:",
+)
+
+
+def _compact_text(value: Any) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
+def _is_usable_student_name(value: Any) -> bool:
+    text = _compact_text(value)
+    if not re.fullmatch(r"[가-힣]{2,5}", text):
+        return False
+    return text not in {"미확인", "학생", "성명", "성별", "정보", "담임", "이름", "남", "여"}
+
+
+def _student_name_from_metadata(metadata: dict[str, Any]) -> str | None:
+    candidate_paths: list[Any] = []
+    canonical = metadata.get("student_record_canonical")
+    if isinstance(canonical, dict):
+        candidate_paths.append(canonical.get("student_name"))
+        profile = canonical.get("student_profile")
+        if isinstance(profile, dict):
+            candidate_paths.append(profile.get("student_name"))
+
+    analysis_artifact = metadata.get("analysis_artifact")
+    if isinstance(analysis_artifact, dict):
+        for key in ("canonical_data", "student_record_canonical", "canonical"):
+            candidate = analysis_artifact.get(key)
+            if not isinstance(candidate, dict):
+                continue
+            candidate_paths.append(candidate.get("student_name"))
+            profile = candidate.get("student_profile")
+            if isinstance(profile, dict):
+                candidate_paths.append(profile.get("student_name"))
+
+    filename = _compact_text(metadata.get("filename"))
+    if filename:
+        for pattern in (
+            r"^([가-힣]{2,5})(?:의|님)\s*(?:생기부|생활기록부)",
+            r"^([가-힣]{2,5})\s*(?:생기부|생활기록부)",
+            r"(?:^|[\s_-])([가-힣]{2,5})(?:의|님)\s*(?:생기부|생활기록부)",
+            r"(?:^|[\s_-])([가-힣]{2,5})\s*(?:생기부|생활기록부)",
+        ):
+            match = re.search(pattern, filename)
+            if match:
+                candidate_paths.append(match.group(1))
+
+    for candidate in candidate_paths:
+        text = _compact_text(candidate)
+        if _is_usable_student_name(text):
+            return text
+    return None
+
+
+def resolve_student_name_from_documents(documents: list[Any], *, fallback: str | None = None) -> str | None:
+    for document in documents:
+        metadata = getattr(document, "parse_metadata", None)
+        if not isinstance(metadata, dict):
+            continue
+        student_name = _student_name_from_metadata(metadata)
+        if student_name:
+            return student_name
+    return fallback
 _PUBLIC_INTERNAL_TOKEN_RE = re.compile(
     r"\[?\b(?:student_record|parsed_document|document_chunk|p\d+-e\d+|evidence[_-]?\d+|anchor[_-]?\d+|citation[_-]?\d+|A\d{1,4})\b\]?",
     re.IGNORECASE,
@@ -773,7 +837,8 @@ async def build_consultant_report_payload(
             "expected_page_range": f"{mode_spec['min_pages']}~{mode_spec['max_pages']}p",
             "structured_premium_renderer": report_mode in {"basic", "premium", "consultant"},
             "grade_profile": grade_profile,
-            "visual_tone": "consultant_premium",
+            "visual_tone": "record_on_clean_figma",
+            "content_reference": "vibeon_like_flow_without_external_cohort_data",
             "include_appendix": include_appendix,
             "include_citations": include_citations,
             "analysis_confidence_score": analysis_confidence_score,
@@ -816,23 +881,7 @@ def _build_target_context(*, project: Project, result: DiagnosisResultPayload, d
     target_university = project.target_university or "미설정"
     target_major = project.target_major or "미설정"
     diagnosis_target = result.diagnosis_summary.target_context if result.diagnosis_summary else None
-    student_name = "미확인"
-    for document in documents:
-        metadata = getattr(document, "parse_metadata", None)
-        if not isinstance(metadata, dict):
-            continue
-        canonical = metadata.get("student_record_canonical")
-        if isinstance(canonical, dict):
-            analysis_artifact = metadata.get("analysis_artifact")
-            canonical_data = (
-                analysis_artifact.get("canonical_data")
-                if isinstance(analysis_artifact, dict) and isinstance(analysis_artifact.get("canonical_data"), dict)
-                else {}
-            )
-            candidate = str(canonical_data.get("student_name") or "").strip()
-            if candidate:
-                student_name = candidate
-                break
+    student_name = resolve_student_name_from_documents(documents, fallback="미확인") or "미확인"
     context_bits = [
         f"학생: {student_name}",
         f"프로젝트: {project.title}",
@@ -889,7 +938,7 @@ def _public_evidence_label(item: dict[str, Any]) -> str:
 
 
 def _target_major_from_context(target_context: str) -> str:
-    for prefix in ("목표 전공:", "목표 학과:", "紐⑺몴 ?꾧났:"):
+    for prefix in ("목표 전공:", "목표 학과:", *_LEGACY_MOJIBAKE_TARGET_MAJOR_PREFIXES):
         if prefix in target_context:
             return _clean_line(target_context.split(prefix, 1)[1].split("|", 1)[0], max_len=80)
     if "건축" in target_context:

@@ -17,12 +17,16 @@ from unifoli_api.services.student_record_feature_service import StudentRecordFea
 
 RiskLevel = Literal["safe", "warning", "danger"]
 
-_SECTION_CONSULTING_LABELS: dict[str, str] = {
+_LEGACY_MOJIBAKE_SECTION_CONSULTING_LABELS: dict[str, str] = {
     "援먭낵?숈뒿諛쒕떖?곹솴": "교과 성취·세부능력",
     "李쎌쓽??泥댄뿕?쒕룞": "창의적 체험활동",
     "?됰룞?뱀꽦 諛?醫낇빀?섍껄": "행동특성·종합의견",
     "?낆꽌?쒕룞": "독서/지식 확장",
     "?섏긽寃쎈젰": "수상·성과 기록",
+}
+
+_SECTION_CONSULTING_LABELS: dict[str, str] = {
+    **_LEGACY_MOJIBAKE_SECTION_CONSULTING_LABELS,
     "교과학습발달상황": "교과 성취·세부능력",
     "창의적 체험활동": "창의적 체험활동",
     "행동특성 및 종합의견": "행동특성·종합의견",

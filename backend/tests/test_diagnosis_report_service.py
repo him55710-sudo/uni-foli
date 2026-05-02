@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from unifoli_api.api.routes import diagnosis as diagnosis_route
 from unifoli_api.schemas.diagnosis import ConsultantDiagnosisReport, DiagnosisResultPayload
 from unifoli_api.services import diagnosis_report_service as report_service
 from unifoli_domain.enums import RenderFormat
@@ -418,6 +419,23 @@ def test_section_semantics_map_covers_both_modes() -> None:
     assert compact["risk_analysis"] == "uncertainty"
 
 
+def test_structured_pdf_flow_follows_record_on_parts_without_external_comparison_labels() -> None:
+    pages = pdf_renderer._structured_page_definitions(report_payload={}, mode="premium", target_pages=24)
+
+    assert len(pages) == 24
+    assert pages[0]["kind"] == "cover"
+    assert pages[1]["kind"] == "toc"
+    assert [page["title"] for page in pages if page["kind"] == "part_intro"] == [
+        "Part 1. 생기부 진단",
+        "Part 2. 생기부 분석",
+        "Part 3. 맞춤형 보완점",
+    ]
+
+    page_text = " ".join(str(page) for page in pages)
+    for forbidden in ("동일 전공 평균", "전체 평균", "상위 퍼센트", "지원적정구간", "합격률"):
+        assert forbidden not in page_text
+
+
 def test_pdf_renderer_smoke_renders_both_modes(tmp_path) -> None:
     for mode, template_id in (
         ("compact", "consultant_diagnosis_compact"),
@@ -456,6 +474,7 @@ def test_pdf_renderer_smoke_renders_both_modes(tmp_path) -> None:
                 "design_contract": design_contract,
                 "analysis_confidence_score": 0.5,
                 "one_line_verdict": "테스트 판정",
+                "structured_premium_renderer": True,
                 "public_appendix_enabled": True,
                 "public_citations_enabled": True,
             },
@@ -533,3 +552,55 @@ def test_report_generation_failure_keeps_diagnosis_payload_usable(monkeypatch) -
     metadata = json.loads(artifact.execution_metadata_json or "{}")
     assert metadata["fallback_used"] is True
     assert "forced report build failure" in artifact.error_message
+
+
+def test_report_target_context_prefers_uploaded_record_student_name() -> None:
+    project = SimpleNamespace(title="생기부 진단", target_university="서울대", target_major="건축학과")
+    document = SimpleNamespace(
+        parse_metadata={
+            "student_record_canonical": {
+                "student_profile": {"student_name": "이정훈"},
+            }
+        }
+    )
+
+    context = report_service._build_target_context(
+        project=project,
+        result=_result_payload(),
+        documents=[document],
+    )
+
+    assert "학생: 이정훈" in context
+
+
+def test_report_target_context_uses_identity_only_report_metadata() -> None:
+    project = SimpleNamespace(title="생기부 진단", target_university="서울대", target_major="간호학과")
+    document = SimpleNamespace(
+        parse_metadata={
+            "student_record_canonical": {
+                "record_type": "student_record_diagnosis_report_pdf",
+                "source_document_kind": "diagnosis_report",
+                "is_primary_student_record": False,
+                "student_name": "배한결",
+                "school_name": "우신고등학교",
+                "student_profile": {"student_name": "배한결", "school_name": "우신고등학교"},
+            }
+        }
+    )
+
+    context = report_service._build_target_context(
+        project=project,
+        result=_result_payload(),
+        documents=[document],
+    )
+
+    assert "학생: 배한결" in context
+    assert "임현수" not in context
+
+
+def test_report_download_filename_prefers_uploaded_record_student_name() -> None:
+    user = SimpleNamespace(name="임현수")
+
+    filename = diagnosis_route._build_diagnosis_download_filename(user, student_name="윤홍일")
+
+    assert filename == "윤홍일_school-record-diagnosis-report.pdf"

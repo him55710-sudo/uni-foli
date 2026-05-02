@@ -56,7 +56,7 @@ def get_diagnosis_report_design_contract(
     section_order = _DIAGNOSIS_SECTION_ORDER_PREMIUM if is_premium else _DIAGNOSIS_SECTION_ORDER_COMPACT
 
     return {
-        "contract_id": f"diagnosis_report_{canonical_mode}_v4_dashboard",
+        "contract_id": f"diagnosis_report_{canonical_mode}_v5_record_on",
         "template_id": template_id,
         "mode": canonical_mode,
         "figma_mapping": {
@@ -64,7 +64,7 @@ def get_diagnosis_report_design_contract(
             "source": "figma_mcp",
             "access_level": "view",
             "mapping_status": "code_first_contract_with_figma_reference",
-            "note": "Figma MCP availability confirmed. Renderer consumes deterministic code contract mapped to template registry.",
+            "note": "Renderer consumes a deterministic clean report contract. Exact Figma node mapping can be attached when a file link is provided.",
         },
         "canvas": {
             "page_size": "A4",
@@ -95,11 +95,11 @@ def get_diagnosis_report_design_contract(
             "table_cell_padding": 5,
         },
         "colors": {
-            "brand_primary": "#7C3AED",
-            "brand_secondary": "#5B21B6",
+            "brand_primary": "#0F766E",
+            "brand_secondary": "#1D4ED8",
             "academic_blue": "#2563EB",
-            "premium_gold": "#7C3AED",
-            "success_green": "#2563EB",
+            "premium_gold": "#F59E0B",
+            "success_green": "#059669",
             "warning_orange": "#F59E0B",
             "risk_red": "#EF4444",
             "text_primary": "#111827",
@@ -110,12 +110,12 @@ def get_diagnosis_report_design_contract(
             "surface_panel": "#FFFFFF",
             "surface_warning": "#FEF2F2",
             "line_warning": "#EF4444",
-            "surface_evidence": "#F5F3FF",
-            "line_evidence": "#C4B5FD",
+            "surface_evidence": "#ECFDF5",
+            "line_evidence": "#99F6E4",
             "surface_inferred": "#FAFAFA",
             "line_inferred": "#E5E7EB",
-            "surface_action": "#EDE9FE",
-            "line_action": "#7C3AED",
+            "surface_action": "#EFF6FF",
+            "line_action": "#2563EB",
         },
         "section_hierarchy": {
             "required_order": list(section_order),
@@ -158,6 +158,8 @@ def get_diagnosis_report_design_contract(
         },
         "components": {
             "ReportCover": {"variant": "premium_editorial"},
+            "ReportTableOfContents": {"variant": "three_part_record_on"},
+            "PartDivider": {"variant": "clean_catalog"},
             "SummaryCard": {"variant": "executive"},
             "MetricCard": {"variant": "dashboard"},
             "PositioningMap": {"variant": "admissions_fit_snapshot"},
@@ -168,6 +170,7 @@ def get_diagnosis_report_design_contract(
             "RiskCard": {"variant": "caution"},
             "ActionRoadmap": {"variant": "1m_3m_6m"},
             "InterviewQuestionCard": {"variant": "prompt_list"},
+            "KeywordCloud": {"variant": "record_terms_without_peer_data"},
             "ConfidenceBadge": {"variant": "coverage_score"},
             "CitationChip": {"variant": "page_anchor"},
         },

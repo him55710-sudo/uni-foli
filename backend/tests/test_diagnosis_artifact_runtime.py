@@ -152,7 +152,7 @@ def test_runtime_persists_artifacts_and_survives_trace_persistence_failure(monke
     assert payload.chatbot_context_json["major_alignment_hints"] == ["Robotics inquiry aligns with engineering majors."]
     assert payload.chatbot_context_json["missing_sections"] == ["behavior_opinion"]
     assert "artifact-rich diagnosis" in payload.diagnosis_report_markdown
-    assert completed.status_message.startswith("Diagnosis completed")
+    assert completed.status_message.startswith("진단이 완료")
     assert fake_db.rollback_count >= 1
 
 

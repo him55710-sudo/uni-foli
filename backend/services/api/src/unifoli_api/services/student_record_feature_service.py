@@ -294,7 +294,10 @@ def _extract_structured_data(metadata: dict[str, Any]) -> dict[str, Any] | None:
     """
     candidates: list[Any] = [
         {"canonical_data": metadata.get("student_record_canonical")}
-        if isinstance(metadata.get("student_record_canonical"), dict)
+        if (
+            isinstance(metadata.get("student_record_canonical"), dict)
+            and metadata["student_record_canonical"].get("is_primary_student_record") is not False
+        )
         else None,
         metadata.get("student_record_structure"),
         metadata.get("analysis_artifact"),

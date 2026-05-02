@@ -43,6 +43,35 @@ _SECTION_DISPLAY_LABELS: dict[str, str] = {
     "behavior_general_comments": "행동특성 및 종합의견",
 }
 
+_STUDENT_RECORD_REPORT_KEYWORDS: tuple[str, ...] = (
+    "생기부ON",
+    "생기부진단",
+    "생기부 진단",
+    "생기부 진단지",
+    "진단지",
+    "목표대학진단",
+    "맞춤형보완점",
+    "맞춤형 보완점",
+    "AI전공추천",
+    "AI 전공 추천",
+    "워드클라우드",
+    "바이브온AI분석리포트",
+    "분석리포트",
+)
+
+_ORIGINAL_STUDENT_RECORD_KEYWORDS: tuple[str, ...] = (
+    "학교생활기록부",
+    "학교생활세부사항기록부",
+    "인적사항",
+    "학적사항",
+    "학생정보",
+    "출결상황",
+    "교과학습발달상황",
+    "세부능력 및 특기사항",
+    "창의적 체험활동",
+    "행동특성 및 종합의견",
+)
+
 _REQUIRED_STUDENT_RECORD_SECTIONS: tuple[str, ...] = (
     "student_info",
     "attendance",
@@ -744,12 +773,18 @@ def _normalize_llm_final_output(
         limit=_MAX_STAGE_A_NOTES,
     )
 
-    document_type, confidence, likely_student_record = _normalize_document_type(
+    document_type, confidence, likely_student_record, source_document_kind = _normalize_document_type(
         document_type=stage_b_output.document_type,
         confidence=stage_b_output.document_type_confidence,
         likely_student_record=stage_b_output.likely_student_record,
         section_candidates=section_candidates,
+        parsed=parsed,
     )
+    if source_document_kind == "diagnosis_report":
+        section_candidates = {}
+        ambiguity_notes.append(
+            "Uploaded PDF appears to be a generated student-record diagnosis report, not the original student record."
+        )
 
     return {
         "schema_version": _PDF_ANALYSIS_SCHEMA_VERSION,
@@ -759,6 +794,7 @@ def _normalize_llm_final_output(
         "evidence_gaps": evidence_gaps,
         "document_type": document_type,
         "document_type_confidence": confidence,
+        "source_document_kind": source_document_kind,
         "likely_student_record": likely_student_record,
         "section_candidates": section_candidates,
         "ambiguity_notes": ambiguity_notes,
@@ -884,17 +920,33 @@ def _normalize_document_type(
     confidence: float,
     likely_student_record: bool,
     section_candidates: dict[str, dict[str, Any]],
-) -> tuple[str, float, bool]:
+    parsed: ParsedDocumentPayload | None = None,
+) -> tuple[str, float, bool, str]:
+    document_kind = classify_student_record_document_kind(parsed) if parsed is not None else {}
+    source_document_kind = str(document_kind.get("source_document_kind") or "unknown")
+    if source_document_kind == "diagnosis_report":
+        kind_confidence = float(document_kind.get("document_type_confidence") or 0.0)
+        return (
+            "student_record_diagnosis_report_pdf",
+            round(max(kind_confidence, 0.82), 3),
+            False,
+            source_document_kind,
+        )
+
     normalized_type = str(document_type or "").strip() or "generic_pdf"
     normalized_confidence = round(max(0.0, min(1.0, float(confidence))), 3)
     inferred_likely = bool(likely_student_record)
     if not inferred_likely:
         inferred_likely = "student_info" in section_candidates and "grades_subjects" in section_candidates
+    if source_document_kind == "original_student_record":
+        inferred_likely = True
     if normalized_type == "generic_pdf" and inferred_likely:
         normalized_type = "korean_student_record_pdf"
     if normalized_confidence <= 0.0:
         normalized_confidence = 0.65 if inferred_likely else 0.42
-    return normalized_type, normalized_confidence, inferred_likely
+    if source_document_kind == "unknown":
+        source_document_kind = "original_student_record" if inferred_likely else "generic_pdf"
+    return normalized_type, normalized_confidence, inferred_likely, source_document_kind
 
 
 def _build_pdf_analysis_heuristic_fallback(
@@ -909,9 +961,19 @@ def _build_pdf_analysis_heuristic_fallback(
 ) -> dict[str, Any]:
     page_texts = [page.text for page in masked_pages]
     section_candidates = _infer_section_candidates(masked_pages)
-    likely_student_record = "student_info" in section_candidates and "grades_subjects" in section_candidates
-    document_type = "korean_student_record_pdf" if likely_student_record else "generic_pdf"
-    document_type_confidence = round(0.67 if likely_student_record else 0.4, 3)
+    document_kind = classify_student_record_document_kind(parsed)
+    source_document_kind = str(document_kind.get("source_document_kind") or "unknown")
+    if source_document_kind == "diagnosis_report":
+        section_candidates = {}
+        likely_student_record = False
+        document_type = "student_record_diagnosis_report_pdf"
+        document_type_confidence = round(max(float(document_kind.get("document_type_confidence") or 0.0), 0.82), 3)
+    else:
+        likely_student_record = "student_info" in section_candidates and "grades_subjects" in section_candidates
+        if source_document_kind == "original_student_record":
+            likely_student_record = True
+        document_type = "korean_student_record_pdf" if likely_student_record else "generic_pdf"
+        document_type_confidence = round(0.67 if likely_student_record else 0.4, 3)
 
     payload = {
         "schema_version": _PDF_ANALYSIS_SCHEMA_VERSION,
@@ -921,11 +983,16 @@ def _build_pdf_analysis_heuristic_fallback(
         "evidence_gaps": _build_evidence_gaps(parsed, page_texts),
         "document_type": document_type,
         "document_type_confidence": document_type_confidence,
+        "source_document_kind": source_document_kind,
         "likely_student_record": likely_student_record,
         "section_candidates": section_candidates,
         "ambiguity_notes": ["LLM synthesis unavailable; using heuristic-only interpretation."],
         "extraction_limits": ["Fallback mode uses deterministic heuristics with masked text only."],
     }
+    if source_document_kind == "diagnosis_report":
+        payload["ambiguity_notes"].append(
+            "The uploaded PDF looks like a generated diagnosis report; original student-record evidence is not assumed."
+        )
     if fallback_reason:
         payload["extraction_limits"].append(f"fallback_reason={fallback_reason}")
 
@@ -1030,6 +1097,7 @@ def _compose_pdf_analysis_metadata(
             max(0.0, min(1.0, float(payload.get("document_type_confidence") or 0.0))),
             3,
         ),
+        "source_document_kind": str(payload.get("source_document_kind") or "unknown").strip() or "unknown",
         "likely_student_record": bool(payload.get("likely_student_record")),
         "section_candidates": _normalize_section_candidates(payload.get("section_candidates"), page_cap=999),
         "ambiguity_notes": _dedupe(
@@ -1153,6 +1221,9 @@ def build_student_record_canonical_metadata(
     analysis_artifact: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     pipeline_canonical = _extract_pipeline_canonical(analysis_artifact)
+    document_kind = classify_student_record_document_kind(parsed)
+    if document_kind.get("source_document_kind") == "diagnosis_report":
+        return _build_report_identity_metadata(parsed=parsed, document_kind=document_kind)
     if not _looks_like_student_record(parsed, pipeline_canonical):
         return None
 
@@ -1216,7 +1287,9 @@ def build_student_record_canonical_metadata(
         3,
     )
 
-    return {
+    student_profile = _extract_student_profile(text, pipeline_canonical, parsed=parsed)
+
+    payload = {
         "schema_version": _CANONICAL_SCHEMA_VERSION,
         "record_type": "korean_student_record_pdf",
         "analysis_source": "pipeline" if pipeline_canonical else "heuristic",
@@ -1255,9 +1328,14 @@ def build_student_record_canonical_metadata(
         },
         "page_count": parsed.page_count,
         "word_count": parsed.word_count,
-        "student_profile": _extract_student_profile(text, pipeline_canonical),
+        "student_profile": student_profile,
         "source_pages": len(page_texts),
     }
+    if student_profile.get("student_name"):
+        payload["student_name"] = student_profile["student_name"]
+    if student_profile.get("school_name"):
+        payload["school_name"] = student_profile["school_name"]
+    return payload
 
 
 def build_student_record_structure_metadata(
@@ -1273,6 +1351,8 @@ def build_student_record_structure_metadata(
         analysis_artifact=analysis_artifact,
     )
     if not isinstance(canonical, dict):
+        return None
+    if canonical.get("is_primary_student_record") is False:
         return None
 
     section_classification = canonical.get("section_classification")
@@ -1432,6 +1512,11 @@ def _build_evidence_gaps(parsed: ParsedDocumentPayload, page_texts: list[str]) -
 
 
 def _looks_like_student_record(parsed: ParsedDocumentPayload, pipeline_canonical: dict[str, Any]) -> bool:
+    document_kind = classify_student_record_document_kind(parsed)
+    if document_kind.get("source_document_kind") == "diagnosis_report":
+        return False
+    if document_kind.get("source_document_kind") == "original_student_record":
+        return True
     if pipeline_canonical:
         return True
     text = _combined_text(parsed).strip() or (parsed.content_text or "").strip()
@@ -1439,6 +1524,118 @@ def _looks_like_student_record(parsed: ParsedDocumentPayload, pipeline_canonical
         return False
     hits = sum(1 for keywords in _SECTION_KEYWORDS.values() if any(keyword in text for keyword in keywords))
     return parsed.source_extension.lower() == ".pdf" and hits >= 2
+
+
+def classify_student_record_document_kind(parsed: ParsedDocumentPayload | None) -> dict[str, Any]:
+    if parsed is None:
+        return {
+            "document_type": "generic_pdf",
+            "source_document_kind": "unknown",
+            "likely_student_record": False,
+            "document_type_confidence": 0.0,
+        }
+    source_extension = str(getattr(parsed, "source_extension", "") or "").lower()
+    text = _combined_text(parsed).strip() or str(getattr(parsed, "content_text", "") or "").strip()
+    if source_extension != ".pdf" or not text:
+        return {
+            "document_type": "generic_pdf",
+            "source_document_kind": "generic_pdf",
+            "likely_student_record": False,
+            "document_type_confidence": 0.35,
+        }
+
+    compact = _compact_document_kind_text(text)
+    report_hits = _keyword_hits(compact, _STUDENT_RECORD_REPORT_KEYWORDS)
+    original_hits = _keyword_hits(compact, _ORIGINAL_STUDENT_RECORD_KEYWORDS)
+    report_title_signal = "생기부on" in compact or ("생기부" in compact and "진단지" in compact)
+    report_structure_signal = report_hits >= 2 or ("워드클라우드" in compact and "맞춤형보완점" in compact)
+    if report_title_signal and report_structure_signal:
+        return {
+            "document_type": "student_record_diagnosis_report_pdf",
+            "source_document_kind": "diagnosis_report",
+            "likely_student_record": False,
+            "document_type_confidence": round(min(0.96, 0.78 + report_hits * 0.03), 3),
+            "report_indicator_count": report_hits,
+            "original_section_indicator_count": original_hits,
+        }
+
+    original_title_signal = "학교생활기록부" in compact or "학교생활세부사항기록부" in compact
+    student_info_signal = any(token in compact for token in ("학생정보", "인적사항", "학적사항", "성명"))
+    section_signal = original_hits >= 3
+    if original_title_signal or (student_info_signal and section_signal):
+        return {
+            "document_type": "korean_student_record_pdf",
+            "source_document_kind": "original_student_record",
+            "likely_student_record": True,
+            "document_type_confidence": round(min(0.95, 0.62 + original_hits * 0.04), 3),
+            "report_indicator_count": report_hits,
+            "original_section_indicator_count": original_hits,
+        }
+
+    return {
+        "document_type": "generic_pdf",
+        "source_document_kind": "generic_pdf",
+        "likely_student_record": False,
+        "document_type_confidence": 0.42,
+        "report_indicator_count": report_hits,
+        "original_section_indicator_count": original_hits,
+    }
+
+
+def _compact_document_kind_text(text: str) -> str:
+    return re.sub(r"\s+", "", str(text or "")).lower()
+
+
+def _keyword_hits(compact_text: str, keywords: tuple[str, ...]) -> int:
+    return sum(1 for keyword in keywords if _compact_document_kind_text(keyword) in compact_text)
+
+
+def _build_report_identity_metadata(
+    *,
+    parsed: ParsedDocumentPayload,
+    document_kind: dict[str, Any],
+) -> dict[str, Any] | None:
+    text = _combined_text(parsed).strip() or str(parsed.content_text or "").strip()
+    student_profile = _extract_student_profile(text, {}, parsed=parsed)
+    if not student_profile:
+        return None
+    payload: dict[str, Any] = {
+        "schema_version": _CANONICAL_SCHEMA_VERSION,
+        "record_type": "student_record_diagnosis_report_pdf",
+        "source_document_kind": "diagnosis_report",
+        "is_primary_student_record": False,
+        "analysis_source": "report_identity",
+        "document_confidence": round(float(document_kind.get("document_type_confidence") or 0.82), 3),
+        "student_profile": student_profile,
+        "page_count": parsed.page_count,
+        "word_count": parsed.word_count,
+        "source_pages": len(_extract_page_texts(parsed)),
+        "section_coverage": {
+            "coverage_score": 0.0,
+            "present_sections": [],
+            "missing_sections": list(_REQUIRED_STUDENT_RECORD_SECTIONS),
+            "reanalysis_required": True,
+        },
+        "quality_gates": {
+            "evidence_anchor_count": 0,
+            "missing_required_sections": list(_REQUIRED_STUDENT_RECORD_SECTIONS),
+            "reanalysis_required": True,
+            "notes": [
+                "Generated diagnosis report detected; use the original student-record PDF for full objective diagnosis."
+            ],
+        },
+        "uncertainties": [
+            {
+                "message": "업로드 문서는 원본 생활기록부가 아니라 생성된 진단 보고서로 보입니다. 학생 식별 정보만 제한적으로 사용합니다."
+            }
+        ],
+        "consulting_summary": "원본 학생부가 아닌 진단 보고서 PDF로 감지되어 학생명/학교명 식별에만 제한적으로 사용합니다.",
+    }
+    if student_profile.get("student_name"):
+        payload["student_name"] = student_profile["student_name"]
+    if student_profile.get("school_name"):
+        payload["school_name"] = student_profile["school_name"]
+    return payload
 
 
 def _extract_pipeline_canonical(analysis_artifact: dict[str, Any] | None) -> dict[str, Any]:
@@ -1600,25 +1797,128 @@ def _extract_behavior_opinion(text: str, pipeline_canonical: dict[str, Any]) -> 
     return [{"label": item} for item in _extract_keyword_sentences(text, _SECTION_KEYWORDS["behavior_general_comments"], limit=3)]
 
 
-def _extract_student_profile(text: str, pipeline_canonical: dict[str, Any]) -> dict[str, Any]:
+def _extract_student_profile(
+    text: str,
+    pipeline_canonical: dict[str, Any],
+    *,
+    parsed: ParsedDocumentPayload | None = None,
+) -> dict[str, Any]:
     profile: dict[str, Any] = {}
     if isinstance(pipeline_canonical.get("student_name"), str) and pipeline_canonical["student_name"].strip():
-        profile["student_name"] = pipeline_canonical["student_name"].strip()
+        candidate_name = _normalize_student_name(pipeline_canonical["student_name"])
+        if candidate_name:
+            profile["student_name"] = candidate_name
     if isinstance(pipeline_canonical.get("school_name"), str) and pipeline_canonical["school_name"].strip():
         profile["school_name"] = pipeline_canonical["school_name"].strip()
 
-    name_match = re.search(r"(?:학생명|성명)\s*[:：]?\s*([가-힣]{2,5})", text)
-    if name_match and "student_name" not in profile:
-        profile["student_name"] = name_match.group(1)
+    if "student_name" not in profile:
+        text_name = _extract_student_name_from_text(text)
+        if text_name:
+            profile["student_name"] = text_name
 
-    school_match = re.search(r"([가-힣A-Za-z0-9 ]+고등학교)", text)
-    if school_match and "school_name" not in profile:
-        profile["school_name"] = school_match.group(1).strip()
+    if "student_name" not in profile and parsed is not None:
+        filename_name = _extract_student_name_from_filename(parsed)
+        if filename_name:
+            profile["student_name"] = filename_name
+            profile["student_name_source"] = "filename"
+
+    school_name = _extract_school_name_from_text(text)
+    if school_name and "school_name" not in profile:
+        profile["school_name"] = school_name
 
     grade_match = re.search(r"([1-3])\s*학년", text)
     if grade_match:
         profile["latest_grade_detected"] = int(grade_match.group(1))
     return profile
+
+
+_INVALID_STUDENT_NAME_TOKENS = {
+    "성명",
+    "성별",
+    "학생",
+    "정보",
+    "주소",
+    "학년",
+    "학과",
+    "번호",
+    "담임",
+    "이름",
+    "남",
+    "여",
+}
+
+
+def _normalize_student_name(value: Any) -> str | None:
+    candidate = re.sub(r"[\[\]()*:_|·ㆍ.\s]+", "", str(value or "")).strip()
+    if not re.fullmatch(r"[가-힣]{2,5}", candidate):
+        return None
+    if candidate in _INVALID_STUDENT_NAME_TOKENS:
+        return None
+    if candidate.endswith(("고등학교", "중학교", "대학교")):
+        return None
+    return candidate
+
+
+def _extract_student_name_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    compact = re.sub(r"\s+", " ", text)
+    patterns = (
+        r"(?:생기부\s*ON|생기부ON)\s+([가-힣]{2,5})(?=\s+[가-힣A-Za-z0-9 ]{2,40}고등학교)",
+        r"^([가-힣]{2,5})\s+[가-힣A-Za-z0-9 ]{2,40}고등학교\s+생기부",
+        r"(?:학생정보|인적[·ㆍ.\s]*학적사항).{0,180}?(?<!담임)성\s*명\s*[:：]?\s*(?:\|\s*)?([가-힣]{2,5})(?=\s*(?:\||성별|주민|$))",
+        r"(?<!담임)성\s*명\s*[:：]\s*(?:\|\s*)?([가-힣]{2,5})(?=\s*(?:\||성별|주민|$))",
+        r"(?:학생명|성명)\s*[:：]\s*(?:\|\s*)?([가-힣]{2,5})(?=\s*(?:\||성별|주민|$))",
+        r"(?:학생명|이름)\s*[:：]\s*(?:\|\s*)?([가-힣]{2,5})(?=\s*(?:\||성별|주민|$))",
+        r"학교생활기록부\s+성\s*명\s+([가-힣]{2,5})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, compact)
+        if not match:
+            continue
+        candidate = _normalize_student_name(match.group(1))
+        if candidate:
+            return candidate
+    return None
+
+
+def _extract_school_name_from_text(text: str) -> str | None:
+    compact = re.sub(r"\s+", " ", text or "").strip()
+    patterns = (
+        r"(?:생기부\s*ON|생기부ON)\s+[가-힣]{2,5}\s+([가-힣A-Za-z0-9 ]{2,40}고등학교)",
+        r"(?:학교명|소속학교)\s*[:：]?\s*(?:\|\s*)?([가-힣A-Za-z0-9 ]{2,40}고등학교)",
+        r"([가-힣A-Za-z0-9]{2,30}고등학교)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, compact)
+        if not match:
+            continue
+        candidate = re.sub(r"\s+", " ", match.group(1)).strip(" |")
+        candidate = re.sub(r"^(?:생기부ON|생기부\s*ON)\s*", "", candidate).strip()
+        if 2 <= len(candidate) <= 40 and candidate.endswith("고등학교"):
+            return candidate
+    return None
+
+
+def _extract_student_name_from_filename(parsed: ParsedDocumentPayload) -> str | None:
+    metadata = parsed.metadata if isinstance(parsed.metadata, dict) else {}
+    filename = str(metadata.get("filename") or "").strip()
+    if not filename:
+        return None
+    stem = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", filename).strip()
+    for pattern in (
+        r"^([가-힣]{2,5})(?:의|님)\s*(?:생기부|생활기록부)",
+        r"^([가-힣]{2,5})\s*(?:생기부|생활기록부)",
+        r"(?:^|[\s_-])([가-힣]{2,5})(?:의|님)\s*(?:생기부|생활기록부)",
+        r"(?:^|[\s_-])([가-힣]{2,5})\s*(?:생기부|생활기록부)",
+    ):
+        match = re.search(pattern, stem)
+        if not match:
+            continue
+        candidate = _normalize_student_name(match.group(1))
+        if candidate:
+            return candidate
+    return None
 
 
 def _build_evidence_bank(

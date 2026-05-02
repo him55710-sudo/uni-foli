@@ -168,7 +168,10 @@ def _parse_reading(section: StudentRecordSection) -> list[str]:
 def _extract_student_info(section: StudentRecordSection, canonical: StudentRecordCanonicalSchema) -> None:
     text = section.raw_text or ""
 
-    name_match = re.search(r"(?:학생명|성명)\s*[:：]?\s*([가-힣]{2,5})", text)
+    name_match = re.search(
+        r"(?:학생정보|인적[·ㆍ.\s]*학적사항)?.{0,180}?(?<!담임)성\s*명\s*[:：]?\s*(?:\|\s*)?([가-힣]{2,5})(?=\s*(?:\||성별|주민|$))",
+        re.sub(r"\s+", " ", text),
+    )
     if name_match:
         canonical.student_name = name_match.group(1)
 

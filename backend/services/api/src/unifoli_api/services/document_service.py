@@ -16,6 +16,7 @@ from unifoli_api.services.pdf_analysis_service import (
     build_pdf_analysis_metadata,
     build_student_record_canonical_metadata,
     build_student_record_structure_metadata,
+    classify_student_record_document_kind,
 )
 from unifoli_api.services.student_record_pipeline_service import StudentRecordPipelineService
 from unifoli_api.schemas.pipeline_metadata import PipelineMetadata
@@ -350,11 +351,19 @@ def ingest_upload_asset(
             )
             document.parse_metadata["failure_stage"] = "base_parse"
 
+        document_kind = classify_student_record_document_kind(parsed)
+        if document_kind.get("source_document_kind"):
+            document.parse_metadata["source_document_kind"] = document_kind["source_document_kind"]
+            document.parse_metadata["document_type"] = document_kind.get("document_type")
+            document.parse_metadata["document_type_confidence"] = document_kind.get("document_type_confidence")
+
         # --- STAGE 2: Advanced Semantic Pipeline (Optional) ---
         is_student_record_candidate = _is_student_record_candidate(
             parser_name=parsed.parser_name,
             content_text=parsed.content_text,
         )
+        if document_kind.get("source_document_kind") == "diagnosis_report":
+            is_student_record_candidate = False
         if is_student_record_candidate and source_path.suffix.lower() == ".pdf":
             try:
                 logger.info(f"Applying advanced semantic parsing pipeline: {upload_asset.original_filename}")

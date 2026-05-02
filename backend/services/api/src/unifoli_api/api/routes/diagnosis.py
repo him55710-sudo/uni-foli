@@ -48,6 +48,7 @@ from unifoli_api.services.diagnosis_report_service import (
     load_report_artifact_pdf_bytes,
     report_artifact_file_path,
     report_artifact_storage_key,
+    resolve_student_name_from_documents,
 )
 from unifoli_api.services.diagnosis_service import (
     DiagnosisCitation,
@@ -60,6 +61,7 @@ from unifoli_api.services.diagnosis_service import (
     serialize_policy_flag,
 )
 from unifoli_api.services.draft_service import create_draft
+from unifoli_api.services.document_service import list_documents_for_project
 from unifoli_api.services.project_service import get_project
 from unifoli_domain.enums import AsyncJobType
 from unifoli_shared.paths import get_export_root, resolve_project_path
@@ -81,12 +83,21 @@ def _normalize_report_mode(value: str | None) -> str:
     return INTERNAL_REPORT_MODE
 
 
-def _build_diagnosis_download_filename(user: User) -> str:
-    raw_name = str(getattr(user, "name", "") or "").strip()
+def _build_diagnosis_download_filename(user: User, *, student_name: str | None = None) -> str:
+    raw_name = str(student_name or "").strip() or str(getattr(user, "name", "") or "").strip()
     safe_name = "".join(ch for ch in raw_name if ch not in '<>:"/\\|?*').strip()
     if not safe_name:
         safe_name = "user"
     return f"{safe_name}_school-record-diagnosis-report.pdf"
+
+
+def _resolve_download_student_name(db: Session, project_id: str) -> str | None:
+    try:
+        documents = list_documents_for_project(db, project_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to resolve student name for diagnosis download. project_id=%s", project_id)
+        return None
+    return resolve_student_name_from_documents(documents, fallback=None)
 
 
 def _content_disposition_header(filename: str) -> str:
@@ -577,8 +588,9 @@ async def download_consultant_report_pdf_route(
                 )
                 output_path = report_artifact_file_path(artifact)
                 storage_bytes = load_report_artifact_pdf_bytes(artifact)
+    student_name = _resolve_download_student_name(db, run.project_id)
     if storage_bytes is not None:
-        filename = _build_diagnosis_download_filename(current_user)
+        filename = _build_diagnosis_download_filename(current_user, student_name=student_name)
         return Response(
             content=storage_bytes,
             media_type="application/pdf",
@@ -594,7 +606,7 @@ async def download_consultant_report_pdf_route(
         )
 
     resolved = _resolve_report_output_path(str(output_path))
-    filename = _build_diagnosis_download_filename(current_user)
+    filename = _build_diagnosis_download_filename(current_user, student_name=student_name)
     return FileResponse(
         path=resolved,
         filename=filename,

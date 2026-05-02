@@ -93,7 +93,7 @@ def _collect_canonical_metadata(documents: list[Any]) -> dict[str, Any]:
         if not isinstance(metadata, dict):
             continue
         candidate = metadata.get("student_record_canonical")
-        if isinstance(candidate, dict) and candidate:
+        if isinstance(candidate, dict) and candidate and candidate.get("is_primary_student_record") is not False:
             return candidate
     return {}
 
