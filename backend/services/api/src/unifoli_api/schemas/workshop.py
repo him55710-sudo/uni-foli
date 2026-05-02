@@ -138,6 +138,8 @@ class WorkshopMessageRequest(BaseModel):
     draft_snapshot_markdown: str | None = Field(default=None, max_length=100000)
     mode: WorkshopMode = "planning"
     structured_draft: WorkshopStructuredDraftState | None = None
+    response_depth: Literal["standard", "report_long"] = "report_long"
+    research_depth: Literal["standard", "scholarly"] = "standard"
 
 class WorkshopSaveDraftRequest(BaseModel):
     document_content: str = Field(min_length=1, max_length=100000)

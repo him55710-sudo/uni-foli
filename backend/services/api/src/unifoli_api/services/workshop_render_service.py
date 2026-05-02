@@ -166,6 +166,12 @@ def _build_render_prompt(
         "- 차트와 수식은 실제 근거가 있고 설명 가치가 있을 때만 추가합니다.",
         "- 필요하지 않으면 visual_specs와 math_expressions는 빈 배열로 둡니다.",
     ] if advanced_mode else []
+    scholarly_rules = [
+        "- In advanced mode, structure report_markdown like a concise academic report: research question, background/literature lens, student evidence, analysis, limitations, and next research step.",
+        "- Use EXTERNAL_RESEARCH only for theory, comparisons, trends, or recommendation rationale; never use it as proof of what the student did.",
+        "- Include a short '검증할 참고문헌 후보' subsection only when external research context is provided, and mark unverified bibliographic details as '출처 확인 필요'.",
+        "- Prefer depth over brevity: produce enough Korean body text for the student to keep writing, while staying inside the evidence boundary.",
+    ] if advanced_mode else []
 
     rule_lines = [
         "- 학생이 말하지 않은 경험, 수치, 실험 결과, 인터뷰, 논문 사실을 새로 만들지 마세요.",
@@ -173,6 +179,7 @@ def _build_render_prompt(
         "- 학생 발화와 참고자료 해석을 섞지 말고 출처를 evidence_map에 남기세요.",
         "- JSON 외의 설명 텍스트는 출력하지 마세요.",
         *advanced_rules,
+        *scholarly_rules,
     ]
     rendered_rules = "\n".join(rule_lines)
 
@@ -387,10 +394,13 @@ async def stream_render(
     turns_text = _serialize_turns(turns)
     references_text = _serialize_references(references)
     requested_advanced_mode = advanced_mode
+    advanced_reference_count = len(references)
+    if rag_config and rag_config.enabled and not rag_config.pin_required:
+        advanced_reference_count = max(advanced_reference_count, 1)
     effective_advanced_mode, advanced_reason = resolve_advanced_features(
         requested=requested_advanced_mode,
         quality_level=profile.level,
-        reference_count=len(references),
+        reference_count=advanced_reference_count,
     )
 
     # 심화 모드 RAG 컨텍스트 빌드

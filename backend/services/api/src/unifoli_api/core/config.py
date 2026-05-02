@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     semantic_scholar_api_key: str | None = None
     semantic_scholar_max_limit: int = 10
     kci_api_key: str | None = None
-    live_web_search_enabled: bool = False
+    live_web_search_enabled: bool = True
     live_web_search_provider: str = "none"  # none | serpapi
     live_web_search_api_key: str | None = None
     live_web_search_endpoint: str = "https://serpapi.com/search.json"
@@ -209,7 +209,7 @@ class Settings(BaseSettings):
     ollama_fast_timeout_seconds: float | None = None
     ollama_standard_timeout_seconds: float | None = None
     ollama_render_timeout_seconds: float | None = None
-    workshop_chat_timeout_seconds: float = 25.0
+    workshop_chat_timeout_seconds: float = 60.0
     diagnosis_generation_timeout_seconds: float = 45.0
     pdf_analysis_llm_enabled: bool = True
     pdf_analysis_llm_provider: str = "gemini"

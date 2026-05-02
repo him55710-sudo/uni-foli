@@ -65,9 +65,11 @@ export function useResearchCandidates(options: UseResearchCandidatesOptions = {}
       setIsSearching(true);
       setError(null);
       try {
+        const requestedLimit = Math.max(1, Math.min(searchOptions.limit || 5, 20));
+        const crawlLimit = Math.min(6, Math.max(3, Math.ceil(requestedLimit / 2)));
         const result = await searchResearchPapers({
           query: normalizedQuery,
-          limit: searchOptions.limit || 5,
+          limit: requestedLimit,
           source: searchOptions.source || 'semantic',
         });
         const targetSection = searchOptions.targetSection || options.currentSectionId || 'background_theory';
@@ -96,7 +98,7 @@ export function useResearchCandidates(options: UseResearchCandidatesOptions = {}
           void (async () => {
             const urlsToCrawl = nextSources
               .filter(s => s.url && !getCachedCrawledPage(s.url))
-              .slice(0, 3)
+              .slice(0, crawlLimit)
               .map(s => s.url);
 
             if (urlsToCrawl.length > 0) {
@@ -147,7 +149,7 @@ export function useResearchCandidates(options: UseResearchCandidatesOptions = {}
         if (options.projectId && result.papers.length > 0) {
           void ingestResearchSources({
             projectId: options.projectId,
-            items: result.papers.slice(0, 5).map(paperToIngestItem),
+            items: result.papers.slice(0, Math.min(10, requestedLimit)).map(paperToIngestItem),
           }).catch(() => {
             // Search results remain usable even when background ingestion is rate-limited or unavailable.
           });
@@ -179,7 +181,7 @@ export function useResearchCandidates(options: UseResearchCandidatesOptions = {}
       const candidate = candidates.find((item) => item.id === candidateId);
       if (!candidate) return null;
       const query = [candidate.title, instruction, options.selectedTopic].filter(Boolean).join(' ');
-      return searchCandidates(query, { targetSection: candidate.sectionTarget, limit: 5 });
+      return searchCandidates(query, { targetSection: candidate.sectionTarget, limit: 8 });
     },
     [candidates, options.selectedTopic, searchCandidates],
   );

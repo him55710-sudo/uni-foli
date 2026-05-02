@@ -3,501 +3,293 @@ import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
   ArrowRight,
-  BarChart3,
+  BookOpenCheck,
   Check,
   ClipboardCheck,
-  Compass,
   FileSearch,
-  Layers3,
-  PieChart,
-  Rocket,
+  MessageSquareText,
   ShieldCheck,
-  Sparkles,
-  Target,
-  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-const quickMajors = ['건축공학', '컴퓨터공학', '바이오', '경영', '사회과학', '디자인'];
-
-const quickFeatures = [
+const workflowSteps = [
   {
-    title: 'PDF 진단',
-    subtitle: '생기부 업로드 후 전공 적합성, 탐구 흐름, 리스크를 자동 분석합니다.',
-    icon: FileSearch,
-    href: '/app/diagnosis',
+    title: '생기부 업로드',
+    copy: 'PDF를 올리면 학생명, 학교, 세특·진로·동아리 기록을 먼저 구조화합니다.',
   },
   {
-    title: '전공 탐색',
-    subtitle: '내 기록과 맞는 학과 흐름을 비교하고 다음 탐구 방향을 찾습니다.',
-    icon: Compass,
-    href: '/app/trends',
+    title: '근거 기반 진단',
+    copy: '전공 연결 근거, 탐구 깊이, 기록 공백, 설명 가능성을 문장 단위로 확인합니다.',
   },
   {
-    title: '보고서 작성',
-    subtitle: '분석 결과를 바탕으로 유의미한 탐구 보고서 초안을 만듭니다.',
-    icon: Layers3,
-    href: '/app/workshop',
+    title: '보완 탐구 추천',
+    copy: '부족한 근거를 채울 수 있는 세특·탐구 주제를 학생 수준에 맞게 제안합니다.',
   },
   {
-    title: '전략 정리',
-    subtitle: '면접 질문, 30일 액션 플랜, 보완 체크리스트까지 이어집니다.',
-    icon: Target,
-    href: '/app/workshop',
+    title: '보고서·면접 실행',
+    copy: '선택한 주제를 워크숍에서 보고서 초안, 면접 질문, 후속 탐구로 이어갑니다.',
   },
 ];
 
-const dashboardBars = [
-  { label: '전공 적합성', mine: 88, major: 76, total: 69 },
-  { label: '탐구 심화도', mine: 82, major: 71, total: 64 },
-  { label: '학업 엄밀성', mine: 79, major: 70, total: 63 },
-  { label: '서사 일관성', mine: 86, major: 73, total: 66 },
-];
-
-const proofCards = [
-  { title: '핵심 강점', value: '5개', copy: '학년별 반복 근거와 전공 연결성을 묶어 정리' },
-  { title: '리스크', value: '3개', copy: '면접에서 공격받을 수 있는 빈틈을 우선순위화' },
-  { title: '액션 플랜', value: '30일', copy: '보고서, 면접, 후속 탐구를 실행 단위로 변환' },
+const pricingPlans = [
+  {
+    name: 'Free',
+    price: '0원',
+    description: '처음 방향을 확인하는 체험 진단',
+    outputs: ['샘플 진단 흐름', '생기부 요약', '대표 강점 2개', '기본 탐구 아이디어'],
+    cta: '무료로 시작',
+    href: '/auth',
+  },
+  {
+    name: 'Pro',
+    price: '23,900원',
+    description: '생기부를 실제 보완 계획으로 바꾸는 리포트',
+    outputs: ['7쪽 진단 리포트', '핵심 세특 분석', '전공 연결망', '추천 탐구 주제 8개', '보완 액션 플랜'],
+    cta: 'Pro로 진단',
+    href: '/auth',
+    featured: true,
+  },
+  {
+    name: 'Ultra',
+    price: '49,900원',
+    description: '진단 이후 보고서와 면접까지 이어가는 실행 패키지',
+    outputs: ['Pro 전체 포함', '면접 질문 20개', '보고서 개요·초안', '학년별 후속 탐구 설계', '워크숍 저장·재작업'],
+    cta: 'Ultra로 실행',
+    href: '/auth',
+  },
 ];
 
 export function Landing() {
   const { isAuthenticated } = useAuth();
   const startHref = isAuthenticated ? '/app/diagnosis' : '/auth';
 
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  };
-
   return (
-    <div className="bg-[#FAFAFA] text-[#111827] selection:bg-violet-100">
-      <section className="relative overflow-hidden border-b border-[#E5E7EB] bg-white">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#7C3AED] to-transparent" />
-        <div className="mx-auto grid min-h-[calc(86vh-72px)] max-w-7xl items-center gap-12 px-4 py-12 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:px-8 lg:py-14">
+    <div className="bg-[#f8fafc] text-slate-950">
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto grid min-h-[calc(88vh-72px)] max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-[0.92fr_1.08fr] lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="space-y-8"
+            transition={{ duration: 0.45 }}
+            className="max-w-3xl"
           >
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#DDD6FE] bg-[#F5F3FF] px-4 py-2 text-xs font-black text-[#5B21B6] shadow-sm">
-              <Sparkles size={14} />
-              최고의 온라인 입시컨설팅 | 업계 최저가 보장
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-black text-slate-700">
+              <ShieldCheck size={15} className="text-emerald-600" />
+              합격 가능성이 아니라 기록의 근거와 보완 방향을 진단합니다
             </div>
-
-            <div className="space-y-5">
-              <h1 className="max-w-3xl text-4xl font-black leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
-                최고의 온라인
-                <span className="block text-[#7C3AED]">입시 컨설팅.</span>
-              </h1>
-              <p className="max-w-2xl text-base font-semibold leading-8 text-[#4B5563] sm:text-xl">
-                오프라인 컨설팅의 1/10 가격으로 만나는 프리미엄 리포트.
-                과목별 세특, 창체, 진로활동을 데이터로 분석하여 전공 적합성을 한눈에 보여줍니다.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
+            <h1 className="text-4xl font-black leading-[1.08] tracking-tight sm:text-6xl">
+              생기부를 읽고,
+              <span className="block text-indigo-600">보완할 탐구까지 이어줍니다</span>
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg font-semibold leading-8 text-slate-600">
+              Uni Foli는 업로드한 학생 기록을 기준으로 전공 연결성, 세특 흐름, 탐구 깊이, 면접 리스크를 분석하고
+              다음 보고서와 후속 세특 준비로 연결하는 AI 입시 진단 플랫폼입니다.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 to={startHref}
-                onClick={scrollToTop}
-                className="group inline-flex items-center gap-2 rounded-2xl bg-[#7C3AED] px-7 py-4 text-base font-black text-white shadow-xl shadow-violet-200 transition hover:bg-[#5B21B6] active:scale-[0.98] sm:text-lg"
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-4 text-base font-black text-white shadow-lg shadow-indigo-100 transition hover:bg-indigo-700"
               >
-                <Rocket size={20} />
-                생기부 PDF 진단하기
-                <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                생기부 진단 시작
+                <ArrowRight size={18} />
               </Link>
               <Link
-                to="/app/trends"
-                onClick={scrollToTop}
-                className="inline-flex items-center gap-2 rounded-2xl border border-[#E5E7EB] bg-white px-7 py-4 text-base font-black text-[#374151] shadow-sm transition hover:border-[#C4B5FD] hover:bg-[#F5F3FF] sm:text-lg"
+                to="/help/student-record-pdf"
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-base font-black text-slate-700 transition hover:bg-slate-50"
               >
-                샘플 대시보드 보기
+                PDF 준비 방법
               </Link>
-            </div>
-
-            <div className="flex flex-wrap gap-2 pt-2">
-              <p className="w-full text-xs font-black text-[#6B7280]">인기 전공 분석</p>
-              {quickMajors.map((major) => (
-                <span
-                  key={major}
-                  className="rounded-full border border-[#EDE9FE] bg-[#F5F3FF] px-3 py-1 text-xs font-black text-[#5B21B6]"
-                >
-                  #{major}
-                </span>
-              ))}
             </div>
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 22 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.65, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.55, delay: 0.1 }}
           >
-            <DashboardMockup />
+            <EvidenceReportPreview />
           </motion.div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          {quickFeatures.map((item, index) => (
-            <motion.div
-              key={item.title}
-              initial={{ opacity: 0, y: 18 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.36, delay: index * 0.05 }}
-            >
-              <Link
-                to={item.href}
-                onClick={scrollToTop}
-                className="group block h-full rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-[#C4B5FD] hover:shadow-xl hover:shadow-violet-100"
-              >
-                <div className="mb-6 inline-flex rounded-2xl bg-[#F5F3FF] p-3 text-[#7C3AED] ring-1 ring-[#EDE9FE]">
-                  <item.icon size={23} />
-                </div>
-                <h3 className="text-lg font-black text-[#111827]">{item.title}</h3>
-                <p className="mt-2 text-sm font-semibold leading-6 text-[#6B7280]">{item.subtitle}</p>
-                <div className="mt-6 inline-flex items-center gap-1.5 text-sm font-black text-[#7C3AED]">
-                  바로가기
-                  <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
-                </div>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+      <WorkflowSection />
 
-      <section className="border-y border-[#E5E7EB] bg-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
-          <div className="space-y-4">
-            <div className="inline-flex rounded-full bg-[#EDE9FE] px-3 py-1 text-xs font-black text-[#5B21B6]">
-              프리미엄 리포트 구조
-            </div>
-            <h2 className="text-3xl font-black tracking-tight text-[#111827] sm:text-4xl">
-              AI가 쓴 긴 문장이 아니라,
-              <span className="block text-[#7C3AED]">분석 JSON을 템플릿에 배치합니다.</span>
+      <section className="border-y border-slate-200 bg-white">
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-indigo-600">Evidence first</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+              점수보다 먼저 보여줘야 할 것은 판단 근거입니다
             </h2>
-            <p className="text-base font-semibold leading-8 text-[#6B7280]">
-              내부 근거 코드나 텍스트 그래프를 노출하지 않고, 고정된 카드와 차트에
-              학생별 데이터를 자동 배치해 학부모가 바로 이해할 수 있게 만듭니다.
+            <p className="mt-5 text-base font-semibold leading-8 text-slate-600">
+              모든 판단은 학생부 문장, 근거 강도, 부족한 근거, 다음 행동으로 이어집니다.
+              점수는 합격 가능성이 아니라 기록의 완성도와 설명 가능성을 보는 참고 지표로만 사용합니다.
             </p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {proofCards.map((card) => (
-              <div key={card.title} className="rounded-2xl border border-[#E5E7EB] bg-[#FAFAFA] p-5">
-                <p className="text-sm font-black text-[#6B7280]">{card.title}</p>
-                <p className="mt-3 text-3xl font-black text-[#7C3AED]">{card.value}</p>
-                <p className="mt-3 text-sm font-semibold leading-6 text-[#4B5563]">{card.copy}</p>
-              </div>
-            ))}
+          <div className="space-y-3 rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+            <EvidenceRow label="판단" value="전공 연결 근거는 충분하지만 탐구 심화 근거가 부족합니다." />
+            <EvidenceRow label="근거" value="2학년 물리 세특, 진로활동, 건축 관련 탐구 기록" />
+            <EvidenceRow label="신뢰도" value="중간: 수학적 모델링 기록은 추가 확인이 필요합니다." />
+            <EvidenceRow label="다음 행동" value="구조역학 또는 환경공학 연결 탐구 1개를 보고서로 보완" />
           </div>
         </div>
       </section>
 
-      <section id="pricing" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+      <section id="pricing" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-indigo-600">Pricing by outputs</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">결제하면 받는 결과물이 보여야 합니다</h2>
+          <p className="mt-4 text-base font-semibold leading-7 text-slate-600">
+            기능 이름보다 진단서, 세특 분석, 탐구 주제, 면접 질문, 보고서 초안 같은 산출물을 기준으로 나눴습니다.
+          </p>
+        </div>
         <PricingSection />
       </section>
     </div>
   );
 }
 
-function DashboardMockup() {
+function EvidenceReportPreview() {
   return (
-    <div className="mx-auto w-full max-w-[560px] rounded-[28px] border border-[#E5E7EB] bg-white p-4 shadow-[0_28px_70px_-28px_rgba(17,24,39,0.35)] sm:p-5">
-      <div className="rounded-[22px] border border-[#EDE9FE] bg-[#F5F3FF] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto max-w-[620px] rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_30px_80px_-36px_rgba(15,23,42,0.35)]">
+      <div className="rounded-[24px] bg-slate-950 p-5 text-white">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-black text-[#7C3AED]">PREMIUM DIAGNOSIS</p>
-            <h2 className="mt-1 text-xl font-black text-[#111827]">AI 생기부 진단 대시보드</h2>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-indigo-200">Diagnosis report</p>
+            <h2 className="mt-2 text-2xl font-black">진단 → 보완 → 실행</h2>
           </div>
-          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-[#5B21B6] shadow-sm">
-            상위 7.8%
-          </span>
+          <FileSearch className="text-indigo-200" size={28} />
         </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-3xl border border-[#E5E7EB] bg-white p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-black text-[#6B7280]">종합 점수</p>
-              <p className="mt-1 text-3xl font-black text-[#111827]">347</p>
-              <p className="text-xs font-black text-[#9CA3AF]">/ 400점</p>
-            </div>
-            <PieChart className="text-[#7C3AED]" size={24} />
-          </div>
-          <div className="relative mx-auto mt-5 flex h-36 w-36 items-center justify-center">
-            <svg className="h-36 w-36 -rotate-90" viewBox="0 0 144 144">
-              <circle cx="72" cy="72" r="58" fill="none" stroke="#EDE9FE" strokeWidth="14" />
-              <motion.circle
-                cx="72"
-                cy="72"
-                r="58"
-                fill="none"
-                stroke="#7C3AED"
-                strokeWidth="14"
-                strokeLinecap="round"
-                strokeDasharray="364.4"
-                initial={{ strokeDashoffset: 364.4 }}
-                whileInView={{ strokeDashoffset: 48.3 }}
-                viewport={{ once: true }}
-                transition={{ duration: 1, delay: 0.2 }}
-              />
-            </svg>
-            <div className="absolute text-center">
-              <p className="text-2xl font-black text-[#111827]">86.8%</p>
-              <p className="text-[11px] font-black text-[#6B7280]">전공 적합</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-[#E5E7EB] bg-white p-5">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-black text-[#6B7280]">비교 분석</p>
-              <h3 className="text-base font-black text-[#111827]">내 점수 vs 평균</h3>
-            </div>
-            <BarChart3 className="text-[#7C3AED]" size={22} />
-          </div>
-
-          <div className="space-y-4">
-            {dashboardBars.map((item) => (
-              <div key={item.label} className="space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-black">
-                  <span className="text-[#374151]">{item.label}</span>
-                  <span className="text-[#7C3AED]">{item.mine}점</span>
-                </div>
-                <CompareBars mine={item.mine} major={item.major} total={item.total} />
+        <div className="mt-6 grid gap-3">
+          {[
+            ['전공 연결성', '근거 충분', 'bg-emerald-400'],
+            ['탐구 심화', '보완 필요', 'bg-amber-300'],
+            ['면접 설명력', '질문 대비', 'bg-sky-300'],
+          ].map(([label, value, color]) => (
+            <div key={label} className="rounded-2xl bg-white/8 p-4">
+              <div className="flex items-center justify-between text-sm font-black">
+                <span>{label}</span>
+                <span>{value}</span>
               </div>
-            ))}
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-2 text-[10px] font-black text-[#6B7280]">
-            <Legend color="bg-[#7C3AED]" label="내 점수" />
-            <Legend color="bg-[#2563EB]" label="동일 전공" />
-            <Legend color="bg-[#D1D5DB]" label="전체 평균" />
-          </div>
+              <div className="mt-3 h-2 rounded-full bg-white/12">
+                <div className={cn('h-2 rounded-full', color)} style={{ width: label === '탐구 심화' ? '54%' : '78%' }} />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <MiniMetric icon={TrendingUp} label="강점" value="전공 연결성" tone="purple" />
-        <MiniMetric icon={ShieldCheck} label="리스크" value="근거 분산" tone="red" />
-        <MiniMetric icon={ClipboardCheck} label="다음 액션" value="대표 탐구 3개" tone="blue" />
+      <div className="mt-5 space-y-3">
+        <PreviewLine icon={ClipboardCheck} title="핵심 약점" copy="수학적 모델링 근거가 부족해 탐구 깊이 설명이 약합니다." />
+        <PreviewLine icon={BookOpenCheck} title="보완 주제" copy="하중 분산을 함수 모델로 해석하는 구조역학 탐구" />
+        <PreviewLine icon={MessageSquareText} title="실행" copy="워크숍에서 보고서 초안과 면접 질문으로 이어 작업" />
       </div>
     </div>
   );
 }
 
-function CompareBars({ mine, major, total }: { mine: number; major: number; total: number }) {
-  const rows = [
-    { value: mine, color: 'bg-[#7C3AED]' },
-    { value: major, color: 'bg-[#2563EB]' },
-    { value: total, color: 'bg-[#D1D5DB]' },
-  ];
-
+function WorkflowSection() {
   return (
-    <div className="space-y-1">
-      {rows.map((row, index) => (
-        <div key={index} className="h-2 overflow-hidden rounded-full bg-[#F3F4F6]">
-          <motion.div
-            initial={{ width: 0 }}
-            whileInView={{ width: `${row.value}%` }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8, delay: index * 0.05 }}
-            className={`h-full rounded-full ${row.color}`}
-          />
+    <section className="mx-auto max-w-7xl px-5 py-16 lg:px-8">
+      <div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-indigo-600">Core workflow</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">하나의 흐름만 강하게 밀어갑니다</h2>
         </div>
-      ))}
-    </div>
+        <p className="max-w-xl text-sm font-semibold leading-6 text-slate-600">
+          목표 학과가 있으면 그 기준으로, 아직 없으면 생기부를 먼저 읽어 어울리는 전공군과 탐구 방향을 찾습니다.
+        </p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-4">
+        {workflowSteps.map((step, index) => (
+          <div key={step.title} className="rounded-[24px] border border-slate-200 bg-white p-5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-indigo-50 text-sm font-black text-indigo-700">
+              {index + 1}
+            </div>
+            <h3 className="mt-5 text-lg font-black text-slate-950">{step.title}</h3>
+            <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">{step.copy}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function EvidenceRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className={`h-2 w-2 rounded-full ${color}`} />
-      <span>{label}</span>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <p className="text-xs font-black text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-bold leading-6 text-slate-800">{value}</p>
     </div>
   );
 }
 
-function MiniMetric({
+function PreviewLine({
   icon: Icon,
-  label,
-  value,
-  tone,
+  title,
+  copy,
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  value: string;
-  tone: 'purple' | 'red' | 'blue';
+  title: string;
+  copy: string;
 }) {
-  const toneClass = {
-    purple: 'bg-[#F5F3FF] text-[#7C3AED] border-[#EDE9FE]',
-    red: 'bg-red-50 text-[#EF4444] border-red-100',
-    blue: 'bg-blue-50 text-[#2563EB] border-blue-100',
-  }[tone];
-
   return (
-    <div className={`rounded-2xl border p-4 ${toneClass}`}>
-      <Icon size={18} />
-      <p className="mt-3 text-[11px] font-black opacity-70">{label}</p>
-      <p className="mt-1 text-sm font-black">{value}</p>
+    <div className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <Icon size={19} className="mt-0.5 text-indigo-600" />
+      <div>
+        <p className="text-sm font-black text-slate-950">{title}</p>
+        <p className="mt-1 text-sm font-semibold leading-5 text-slate-600">{copy}</p>
+      </div>
     </div>
   );
 }
 
 function PricingSection() {
-  const [billingCycle, setBillingCycle] = React.useState<'monthly' | 'semester'>('semester');
-
-  const plans = [
-    {
-      name: 'Free',
-      description: 'AI 분석 흐름을 가볍게 체험',
-      price: { monthly: 0, semester: 0 },
-      features: ['샘플 리포트 열람', '생기부 간단 분석 1회', '기본 탐구 아이디어 추천', '문서 편집기 체험'],
-      buttonText: '체험하기',
-      highlight: false,
-      dark: false,
-    },
-    {
-      name: 'Pro',
-      description: '본격적인 입시 전략 설계',
-      price: { monthly: 5900, semester: 23900 },
-      features: ['프리미엄 진단서 3회 제공', '워터마크 없는 PDF 다운로드', '과목별 세특 분석 카드', '추천 탐구 주제와 액션 플랜'],
-      buttonText: 'Pro 시작하기',
-      highlight: true,
-      dark: false,
-      popular: true,
-      originalPrice: { semester: 35400 },
-    },
-    {
-      name: 'Ultra',
-      description: '면접과 보고서까지 연결',
-      price: { monthly: 12900, semester: 49900 },
-      features: ['프리미엄 진단 리포트 월간 업데이트', 'AI 모의 면접 질문 생성', '보고서 초안 자동 구성', '전공별 30일 로드맵'],
-      buttonText: 'Ultra 시작하기',
-      highlight: false,
-      dark: true,
-      originalPrice: { semester: 77400 },
-    },
-  ];
+  const { isAuthenticated } = useAuth();
 
   return (
-    <div className="space-y-10">
-      <div className="mx-auto max-w-3xl text-center">
-        <h2 className="text-3xl font-black tracking-tight text-[#111827] sm:text-4xl">
-          업계 최저가로 누리는 <span className="text-[#7C3AED]">고퀄리티 컨설팅</span>
-        </h2>
-        <p className="mt-3 text-base font-semibold leading-7 text-[#6B7280]">
-          오프라인 컨설팅의 거품을 걷어냈습니다. 
-          PDF 진단부터 보고서, 면접 준비까지 가장 합리적인 가격으로 시작하세요.
-        </p>
-        <div className="mt-7 inline-flex rounded-2xl border border-[#E5E7EB] bg-white p-1 shadow-sm">
-          <button
-            onClick={() => setBillingCycle('monthly')}
+    <div className="mt-10 grid gap-5 lg:grid-cols-3">
+      {pricingPlans.map((plan) => (
+        <motion.div
+          key={plan.name}
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.35 }}
+          className={cn(
+            'flex flex-col rounded-[28px] border bg-white p-6',
+            plan.featured ? 'border-indigo-500 shadow-xl shadow-indigo-100' : 'border-slate-200',
+          )}
+        >
+          {plan.featured && (
+            <span className="mb-4 inline-flex w-fit rounded-full bg-indigo-600 px-3 py-1 text-xs font-black text-white">
+              가장 명확한 진단
+            </span>
+          )}
+          <h3 className="text-2xl font-black text-slate-950">{plan.name}</h3>
+          <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">{plan.description}</p>
+          <p className="mt-7 text-4xl font-black tracking-tight text-slate-950">{plan.price}</p>
+          <ul className="mt-7 flex-1 space-y-3">
+            {plan.outputs.map((output) => (
+              <li key={output} className="flex gap-3 text-sm font-bold leading-6 text-slate-700">
+                <Check size={17} className="mt-1 shrink-0 text-emerald-600" />
+                {output}
+              </li>
+            ))}
+          </ul>
+          <Link
+            to={isAuthenticated ? '/app/diagnosis' : plan.href}
             className={cn(
-              'rounded-xl px-6 py-2 text-sm font-black transition',
-              billingCycle === 'monthly' ? 'bg-[#F5F3FF] text-[#7C3AED]' : 'text-[#6B7280] hover:text-[#111827]',
+              'mt-8 inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black transition',
+              plan.featured ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-100 text-slate-800 hover:bg-slate-200',
             )}
           >
-            월간 결제
-          </button>
-          <button
-            onClick={() => setBillingCycle('semester')}
-            className={cn(
-              'rounded-xl px-6 py-2 text-sm font-black transition',
-              billingCycle === 'semester' ? 'bg-[#F5F3FF] text-[#7C3AED]' : 'text-[#6B7280] hover:text-[#111827]',
-            )}
-          >
-            학기 결제
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        {plans.map((plan, index) => (
-          <motion.div
-            key={plan.name}
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.4, delay: index * 0.06 }}
-            className={cn(
-              'relative flex flex-col rounded-3xl p-7 transition hover:-translate-y-1',
-              plan.dark
-                ? 'bg-[#111827] text-white shadow-2xl shadow-violet-200'
-                : 'border border-[#E5E7EB] bg-white shadow-sm hover:shadow-xl hover:shadow-violet-100',
-              plan.highlight && 'ring-2 ring-[#7C3AED] ring-offset-4',
-            )}
-          >
-            {plan.popular && (
-              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2">
-                <span className="rounded-full bg-[#7C3AED] px-5 py-2 text-[10px] font-black tracking-widest text-white shadow-lg">
-                  RECOMMENDED
-                </span>
-              </div>
-            )}
-
-            <div>
-              <h3 className={cn('text-2xl font-black', plan.dark ? 'text-white' : 'text-[#111827]')}>{plan.name}</h3>
-              <p className={cn('mt-2 text-sm font-semibold leading-6', plan.dark ? 'text-slate-300' : 'text-[#6B7280]')}>
-                {plan.description}
-              </p>
-            </div>
-
-            <div className="my-9">
-              <div className="h-5">
-                {billingCycle === 'semester' && plan.originalPrice && (
-                  <span className="text-sm font-bold text-[#9CA3AF] line-through">
-                    {plan.originalPrice.semester.toLocaleString()}원
-                  </span>
-                )}
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black tracking-tight">{plan.price[billingCycle].toLocaleString()}원</span>
-                <span className={cn('text-sm font-black', plan.dark ? 'text-slate-400' : 'text-[#9CA3AF]')}>
-                  /{billingCycle === 'monthly' ? '월' : '학기'}
-                </span>
-              </div>
-            </div>
-
-            <ul className="mb-9 flex-1 space-y-4">
-              {plan.features.map((feature) => (
-                <li key={feature} className="flex items-start gap-3">
-                  <span
-                    className={cn(
-                      'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
-                      plan.dark ? 'bg-[#7C3AED]/20 text-[#C4B5FD]' : 'bg-[#F5F3FF] text-[#7C3AED]',
-                    )}
-                  >
-                    <Check size={12} strokeWidth={4} />
-                  </span>
-                  <span className={cn('text-sm font-semibold leading-6', plan.dark ? 'text-slate-200' : 'text-[#374151]')}>
-                    {feature}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <button
-              className={cn(
-                'w-full rounded-2xl py-4 text-base font-black transition active:scale-[0.98]',
-                plan.dark
-                  ? 'bg-[#7C3AED] text-white hover:bg-[#8B5CF6]'
-                  : plan.highlight
-                    ? 'bg-[#7C3AED] text-white hover:bg-[#5B21B6]'
-                    : 'bg-[#F5F3FF] text-[#5B21B6] hover:bg-[#EDE9FE]',
-              )}
-            >
-              {plan.buttonText}
-            </button>
-          </motion.div>
-        ))}
-      </div>
+            {plan.cta}
+            <ArrowRight size={16} />
+          </Link>
+        </motion.div>
+      ))}
     </div>
   );
 }
 
-const cn = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(' ');
+const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ');

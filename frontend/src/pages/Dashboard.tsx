@@ -401,6 +401,58 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12 sm:space-y-8">
+      <motion.section
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45 }}
+        className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
+      >
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#3182f6]">Uni Foli workflow</p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-[#191f28] sm:text-4xl">
+              진단에서 끝내지 않고, 보완 탐구와 보고서까지 이어갑니다
+            </h1>
+            <p className="mt-4 text-sm font-semibold leading-7 text-[#4e5968] sm:text-base">
+              목표 학과가 있으면 전공 기준으로 진단하고, 아직 목표가 없으면 생기부를 먼저 읽어 어울리는 전공군과
+              탐구 방향을 찾습니다. 모든 결과는 점수보다 근거 문장과 다음 행동을 우선합니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => navigate('/app/diagnosis')}
+              className="inline-flex h-11 items-center gap-2 rounded-2xl bg-[#3182f6] px-5 text-sm font-black text-white shadow-lg shadow-blue-100 transition hover:bg-[#1b64da]"
+            >
+              생기부 업로드
+              <ArrowRight size={16} />
+            </button>
+            <button
+              onClick={() => navigate(activeStoredDiagnosis?.projectId ? `/app/workshop/${activeStoredDiagnosis.projectId}` : '/app/workshop')}
+              className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-[#333d4b] transition hover:bg-slate-50"
+            >
+              워크숍 이어가기
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-7 grid gap-3 md:grid-cols-4">
+          {[
+            ['1', '생기부 업로드', '목표가 없어도 기록 먼저 분석'],
+            ['2', '근거 기반 진단', '판단 근거와 부족한 근거 확인'],
+            ['3', '보완 탐구 추천', '세특/전공 연결 주제 제안'],
+            ['4', '보고서·면접 실행', '저장하고 다시 이어 쓰는 워크숍'],
+          ].map(([index, title, copy]) => (
+            <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white text-sm font-black text-[#3182f6] ring-1 ring-slate-200">
+                {index}
+              </span>
+              <h2 className="mt-4 text-sm font-black text-[#191f28]">{title}</h2>
+              <p className="mt-2 text-xs font-semibold leading-5 text-[#6b7280]">{copy}</p>
+            </div>
+          ))}
+        </div>
+      </motion.section>
+
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}

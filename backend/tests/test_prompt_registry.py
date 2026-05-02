@@ -26,6 +26,19 @@ def test_prompt_registry_loads_known_asset() -> None:
     assert "community_contribution" in composed
 
 
+def test_prompt_registry_loads_workshop_copilot_v2() -> None:
+    registry = PromptRegistry()
+
+    asset = registry.get_asset("chat.workshop-copilot-v2")
+    composed = registry.compose_prompt("chat.workshop-copilot-v2")
+
+    assert asset.meta.category == "chat"
+    assert asset.meta.version == "2.0.0"
+    assert "student-record-grounded report copilot" in composed
+    assert "report_drafting" in composed
+    assert "[DRAFT_PATCH]" in composed
+
+
 def test_prompt_registry_falls_back_to_backend_registry_assets() -> None:
     registry = PromptRegistry()
 

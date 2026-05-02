@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  BookOpen,
   Bot,
   ChevronDown,
   ChevronUp,
@@ -36,7 +37,7 @@ import {
 } from '../lib/chatStream';
 import { cn } from '../lib/cn';
 import { DIAGNOSIS_STORAGE_KEY, type DiagnosisRunResponse, type StoredDiagnosis } from '../lib/diagnosis';
-import { saveArchiveItem } from '../lib/archiveStore';
+import { getArchiveItem, saveArchiveItem, type ArchiveItem } from '../lib/archiveStore';
 import { readQuestStart } from '../lib/questStart';
 import type { AuthTokenSource } from '../lib/requestAuth';
 import { AdvancedPreview } from '../components/AdvancedPreview';
@@ -72,6 +73,7 @@ import type { FormatValidationResult } from '../features/workshop/validators/rep
 import { useDocumentPatch } from '../features/workshop/hooks/useDocumentPatch';
 import { useEditorBridge } from '../features/workshop/hooks/useEditorBridge';
 import { useResearchCandidates } from '../features/workshop/hooks/useResearchCandidates';
+import type { ResearchSearchSource } from '../features/workshop/api/researchClient';
 import {
   ensureThreeSuggestions,
   type GuidedChoiceGroup,
@@ -232,13 +234,39 @@ interface StreamFoliReplyResult {
   authSource: AuthTokenSource;
 }
 
+interface WorkshopStreamTokenResponse {
+  stream_token: string;
+  workshop_id: string;
+  expires_in: number;
+}
+
+interface WorkshopRenderStartResponse {
+  artifact_id: string;
+  status: string;
+  advanced_mode?: string;
+  rag_source?: string;
+}
+
+interface WorkshopArtifactReadyPayload {
+  artifact_id?: string;
+  report_markdown?: string;
+  teacher_record_summary_500?: string;
+  student_submission_note?: string;
+  evidence_map?: Record<string, any> | null;
+  visual_specs?: any[];
+  math_expressions?: any[];
+  structured_draft?: WorkshopStructuredDraftState | null;
+}
+
+type WorkshopResearchDepth = 'standard' | 'scholarly';
+
 const QUALITY_META_MAP: Record<QualityLevel, { label: string; status: 'success' | 'active' | 'warning' }> = {
   low: { label: '빠른 ?�답', status: 'success' },
   mid: { label: '균형 모드', status: 'active' },
   high: { label: '?�화 모드', status: 'warning' },
 };
 
-const GUIDED_CHAT_GREETING = '?�녕?�세?? ?�떤 주제�?보고?��? ?�성?�볼까요?';
+const GUIDED_CHAT_GREETING = '안녕하세요. 어떤 주제로 보고서를 작성해볼까요?';
 const DIAGNOSIS_RISK_LABEL_MAP: Record<string, string> = {
   safe: '근거 충분',
   warning: '보완 ?�요',
@@ -410,6 +438,9 @@ function resolveGuidedSelectionFromText(text: string, suggestions: GuidedTopicSu
 }
 
 function buildFoliFallback(message: string) {
+  const readableFallback = buildReadableFoliFallback(message);
+  if (readableFallback) return readableFallback;
+
   const clean = (message || '').toLowerCase().trim();
   const greetings = ['?�녕', 'hi', 'hello', 'hey', 'good morning', 'good evening'];
 
@@ -429,6 +460,99 @@ function buildFoliFallback(message: string) {
     '2. �?주제�??�정???�유�?간단???�려 주세??',
     '3. 마�?막으�?보고?�에 �??�함?�고 ?��? ?�워??3가지�?말�???주세??',
   ].join('\n');
+}
+
+function buildReadableFoliFallback(message: string): string {
+  const clean = (message || '').toLowerCase().trim();
+  const isGreeting = ['안녕', 'hi', 'hello', 'hey', 'good morning', 'good evening'].some((token) =>
+    clean.includes(token),
+  );
+
+  if (isGreeting) {
+    return [
+      '안녕하세요. UniFoli 워크숍입니다.',
+      '',
+      '지금 Gemini 기반 AI 응답 연결이 잠시 불안정해서 로컬 안내 모드로 전환했어요. 대화와 작성 흐름은 유지되니 그대로 이어가면 됩니다.',
+      '',
+      '바로 이어갈 수 있는 방법',
+      '1. 과목이나 주제를 한 문장으로 보내 주세요.',
+      '2. 이미 주제가 있으면 “이 주제로 보고서 써줘”라고 말해 주세요.',
+      '3. 자료가 필요하면 “웹 자료 찾아줘” 또는 “논문 근거 찾아줘”처럼 원하는 리서치 범위를 구분해 주세요.',
+    ].join('\n');
+  }
+
+  return [
+    '현재 AI 응답이 지연되어 로컬 안내 모드로 전환했어요.',
+    '',
+    '초안 작성 흐름은 계속 이어갈 수 있습니다. 제가 받은 메시지를 바탕으로 다음 작업을 준비해둘게요.',
+    '',
+    '바로 이어갈 수 있는 방법',
+    '1. 보고서 주제를 한 문장으로 알려 주세요.',
+    '2. 원하는 분량이나 학교 과목을 같이 적어 주세요.',
+    '3. 리서치가 필요하면 웹 자료, 논문, 또는 둘 다 중 원하는 범위를 말해 주세요.',
+  ].join('\n');
+}
+
+function wantsScholarlyResearch(text: string): boolean {
+  return /논문|학술|선행\s*연구|저널|학회|kci|semantic\s*scholar|paper|scholar|doi/i.test(text);
+}
+
+function wantsLiveWebResearch(text: string): boolean {
+  return /웹|웹리서치|인터넷|최신|최근|뉴스|기사|통계|자료|출처|근거|검색|사이트|공식|정책|web|internet|latest|news|source|evidence|data|statistics/i.test(
+    text,
+  );
+}
+
+function resolveWorkshopResearchDepth(text: string): WorkshopResearchDepth {
+  return wantsScholarlyResearch(text) ? 'scholarly' : 'standard';
+}
+
+function resolveWorkshopResearchSource(text: string, advancedMode: boolean): ResearchSearchSource {
+  if (wantsScholarlyResearch(text)) {
+    return 'both';
+  }
+  if (wantsLiveWebResearch(text)) {
+    return 'live_web';
+  }
+  return advancedMode ? 'live_web' : 'semantic';
+}
+
+function formatResearchSourceLabel(source: ResearchSearchSource): string {
+  if (source === 'live_web') return '웹 자료';
+  if (source === 'both') return '논문/학술 자료';
+  if (source === 'kci') return 'KCI 논문';
+  return '내부/학술 인덱스';
+}
+
+function buildResearchPendingMessage(sourceLabel: string): string {
+  return `${sourceLabel}를 찾고 있어요. 검색 결과가 나오면 바로 문서에 반영할 수 있는 근거 카드로 정리해드릴게요.`;
+}
+
+function buildResearchResultMessage(candidateCount: number, sourceLabel: string): string {
+  if (candidateCount > 0) {
+    return `${sourceLabel} 후보 ${candidateCount}개를 찾았어요. 필요한 근거를 고르면 문서 반영 제안 카드로 바로 이어갈 수 있습니다.`;
+  }
+  return `${sourceLabel} 후보를 찾지 못했어요. 주제, 과목, 핵심 키워드를 조금 더 구체적으로 적어 주세요.`;
+}
+
+function buildResearchErrorMessage(message: string): string {
+  return `자료 검색에 실패했어요.\n\n${message}\n\n잠시 후 다시 시도하거나 검색어를 더 구체적으로 바꿔 주세요.`;
+}
+
+function showReadableLimitedModeToast(reason: string | null): boolean {
+  if (reason === 'llm_unavailable') {
+    toast.error('Gemini 기반 AI 모델 연결이 불안정해 안전 안내 모드로 전환했어요.');
+    return true;
+  }
+  if (reason === 'llm_not_configured') {
+    toast.error('Gemini API 키 또는 LLM 서버 설정이 없어 안전 안내 모드로 전환했어요.');
+    return true;
+  }
+  if (reason === 'llm_timeout') {
+    toast.error('AI 응답이 시간 안에 도착하지 않아 안전 안내 모드로 전환했어요.');
+    return true;
+  }
+  return false;
 }
 
 interface StreamFoliReplyResult {
@@ -452,15 +576,19 @@ function normalizeStructuredDraftPatch(patch: unknown): WorkshopDraftPatchPropos
 }
 
 function extractPatchTagFromRaw(raw: string): { cleaned: string; patch: WorkshopDraftPatchProposal | null } {
-  const markerStart = '<workshop-patch>';
-  const markerEnd = '</workshop-patch>';
-  const startIdx = raw.indexOf(markerStart);
-  const endIdx = raw.indexOf(markerEnd);
+  const markerPairs = [
+    ['<workshop-patch>', '</workshop-patch>'],
+    ['[DRAFT_PATCH]', '[/DRAFT_PATCH]'],
+  ] as const;
+  const pair = markerPairs.find(([start, end]) => raw.indexOf(start) !== -1 && raw.indexOf(end) > raw.indexOf(start));
 
-  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+  if (!pair) {
     return { cleaned: raw, patch: null };
   }
 
+  const [markerStart, markerEnd] = pair;
+  const startIdx = raw.indexOf(markerStart);
+  const endIdx = raw.indexOf(markerEnd);
   const jsonStr = raw.slice(startIdx + markerStart.length, endIdx).trim();
   const cleaned = (raw.slice(0, startIdx) + raw.slice(endIdx + markerEnd.length)).trim();
 
@@ -480,6 +608,7 @@ async function streamFoliReply(
   documentContent: string,
   mode: WorkshopMode,
   structuredDraft: WorkshopStructuredDraftState,
+  researchDepth: WorkshopResearchDepth,
   onToken: (token: string) => void,
   onMeta: (meta: ChatStreamMetaPayload) => void,
   onPatch: (patch: any) => void,
@@ -507,6 +636,8 @@ async function streamFoliReply(
         document_content: documentContent,
         mode,
         structured_draft: structuredDraft,
+        response_depth: 'report_long',
+        research_depth: researchDepth,
       },
     });
 
@@ -531,6 +662,78 @@ async function streamFoliReply(
     }
     throw err;
   }
+}
+
+function buildWorkshopEventsUrl(
+  workshopId: string,
+  streamToken: string,
+  artifactId: string,
+  advancedMode: boolean,
+  ragSource: string,
+) {
+  const baseUrl = resolveApiBaseUrl() || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8000');
+  const url = new URL(`/api/v1/workshops/${encodeURIComponent(workshopId)}/events`, baseUrl);
+  url.searchParams.set('stream_token', streamToken);
+  url.searchParams.set('artifact_id', artifactId);
+  url.searchParams.set('advanced_mode', advancedMode ? 'true' : 'false');
+  url.searchParams.set('rag_source', ragSource);
+  return url.toString();
+}
+
+function createDraftArtifactFromPayload(payload: WorkshopArtifactReadyPayload, fallbackArtifactId: string): DraftArtifact {
+  const reportMarkdown = String(payload.report_markdown || '');
+  const structuredDraft =
+    payload.structured_draft || (reportMarkdown ? markdownToStructuredDraft(reportMarkdown, 'revision') : null);
+
+  return {
+    id: String(payload.artifact_id || fallbackArtifactId),
+    report_markdown: reportMarkdown,
+    visual_specs: Array.isArray(payload.visual_specs) ? payload.visual_specs : [],
+    math_expressions: Array.isArray(payload.math_expressions) ? payload.math_expressions : [],
+    evidence_map: payload.evidence_map && typeof payload.evidence_map === 'object' ? payload.evidence_map : {},
+    structured_draft: structuredDraft,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function downloadMarkdownFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename.endsWith('.md') ? filename : `${filename}.md`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function serializeWorkshopMessages(messages: Message[]): ArchiveItem['chatMessages'] {
+  return messages
+    .filter((message) => message.content.trim())
+    .map((message) => ({
+      id: message.id,
+      role: message.role === 'user' ? 'user' : 'foli',
+      content: message.content,
+      createdAt: new Date().toISOString(),
+    }));
+}
+
+function restoreMessagesFromArchive(item: ArchiveItem): Message[] {
+  const savedMessages = item.chatMessages || [];
+  if (savedMessages.length > 0) {
+    return savedMessages.map((message) => ({
+      id: message.id || crypto.randomUUID(),
+      role: message.role === 'user' ? 'user' : 'foli',
+      content: message.content || '',
+    }));
+  }
+
+  return [
+    {
+      id: `archive-${item.id}-intro`,
+      role: 'foli',
+      content: '저장된 작업을 불러왔어요. 이어서 수정하거나 보고서 생성을 계속할 수 있습니다.',
+    },
+  ];
 }
 
 interface ChatBubbleProps {
@@ -720,6 +923,7 @@ export function Workshop() {
   const { projectId } = useParams<{ projectId: string }>();
   const location = useLocation();
   const workshopLocationState = (location.state as WorkshopLocationState | null) ?? null;
+  const archiveResumeId = useMemo(() => new URLSearchParams(location.search).get('archiveId'), [location.search]);
   const storedWorkshopProjectId = useMemo(() => readStoredWorkshopProjectId(), []);
   const requestedChatbotMode = useMemo(
     () =>
@@ -741,6 +945,7 @@ export function Workshop() {
   const [renderArtifact, setRenderArtifact] = useState<DraftArtifact | null>(null);
   const [latestDraftUpdatedAt, setLatestDraftUpdatedAt] = useState<string | null>(null);
   const [isDraftOutOfSync, setIsDraftOutOfSync] = useState(false);
+  const [lastLocalSnapshotAt, setLastLocalSnapshotAt] = useState<string | null>(null);
   const [workshopMode, setWorkshopMode] = useState<WorkshopMode>('planning');
   const [showDraftControls, setShowDraftControls] = useState(false);
   const [showAdvancedTools, setShowAdvancedTools] = useState(false);
@@ -752,6 +957,7 @@ export function Workshop() {
   const [diagnosisReport, setDiagnosisReport] = useState<Record<string, unknown> | null>(null);
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
+  const [renderProgressMessage, setRenderProgressMessage] = useState<string | null>(null);
   const [guidedSubject, setGuidedSubject] = useState<string | null>(null);
   const [guidedSuggestions, setGuidedSuggestions] = useState<GuidedTopicSuggestion[]>([]);
   const [guidedPhase, setGuidedPhase] = useState<GuidedConversationPhase>('subject_input');
@@ -785,9 +991,13 @@ export function Workshop() {
   const preferredDiagnosisRunId = workshopLocationState?.diagnosisRunId ?? null;
   const openedFromDiagnosis = workshopLocationState?.fromDiagnosis === true;
   const isProjectBacked = Boolean(projectId && projectId !== 'demo');
-  const shouldRedirectToStoredProject = !isProjectBacked && Boolean(storedWorkshopProjectId);
+  const shouldRedirectToStoredProject = !archiveResumeId && !isProjectBacked && Boolean(storedWorkshopProjectId);
   const guidedProjectId = isProjectBacked ? projectId ?? null : null;
   const fileName = useMemo(() => `${(questStart?.title || 'draft').replace(/\s+/g, '_')}.hwpx`, [questStart]);
+  const reportDownloadContent = useMemo(
+    () => (renderArtifact?.report_markdown || documentContent || '').trim(),
+    [documentContent, renderArtifact?.report_markdown],
+  );
   const researchCandidates = useResearchCandidates({
     projectId: guidedProjectId,
     selectedTopic: guidedSubject || questStart?.title || null,
@@ -810,6 +1020,7 @@ export function Workshop() {
     setIsGuidedActionLoading(false);
     setChatMeta(null);
     setLatestDraftUpdatedAt(null);
+    setLastLocalSnapshotAt(null);
     setIsDraftOutOfSync(false);
     setPendingDraftPatch(null);
     setShowDraftControls(false);
@@ -1027,10 +1238,17 @@ export function Workshop() {
       }
     } catch (error) {
       console.error('Workshop init failed:', error);
-      toast.error('?�크?�을 불러?��? 못했?�니?? 로컬 모드�??�환?�니??');
+      toast.error('워크숍을 불러오지 못했어요. 로컬 모드로 전환합니다.');
       setGuidedPhase('freeform_coauthoring');
       setIsGuidedTopicSelected(true);
-      setMessages([{ id: 'fallback', role: 'foli', content: '?�션 ?�결???�패?�습?�다. 로컬?�서 초안 ?�성??진행?�실 ???�습?�다.' }]);
+      setMessages([
+        {
+          id: 'fallback',
+          role: 'foli',
+          content:
+            '세션 연결에 실패했습니다. 로컬에서 초안 작성은 계속 진행할 수 있어요. 백엔드 연결이 복구되면 Gemini 기반 응답과 저장 흐름으로 다시 이어집니다.',
+        },
+      ]);
     } finally {
       setIsSessionLoading(false);
     }
@@ -1065,12 +1283,27 @@ export function Workshop() {
     if (isProjectBacked) {
       void initWorkshop();
     } else {
+      const archived = archiveResumeId ? getArchiveItem(archiveResumeId) : null;
+      if (archived) {
+        const restoredStructured =
+          normalizeStructuredDraft(archived.structuredDraft, 'revision') ||
+          markdownToStructuredDraft(archived.contentMarkdown || '', 'revision');
+        setDocumentContent(archived.contentMarkdown || structuredDraftToMarkdown(restoredStructured));
+        setStructuredDraft(restoredStructured);
+        setWorkshopMode(restoredStructured.mode);
+        setMessages(restoreMessagesFromArchive(archived));
+        setLatestDraftUpdatedAt(archived.updatedAt || archived.createdAt);
+        setLastLocalSnapshotAt(archived.updatedAt || archived.createdAt);
+        setIsEditorOpen(true);
+        setMobileView('draft');
+      } else {
+        setMessages([{ id: 'demo-init', role: 'foli', content: '데모 모드입니다. 질문을 보내면 초안 작성을 이어갈 수 있게 도와드릴게요.' }]);
+      }
       setIsSessionLoading(false);
       setGuidedPhase('freeform_coauthoring');
       setIsGuidedTopicSelected(true);
-      setMessages([{ id: 'demo-init', role: 'foli', content: '?�모 모드?�니?? ?�니?�리?�게 질문?�면 초안 ?�성???�어???��??�릴게요.' }]);
     }
-  }, [initialMajor, isProjectBacked, initWorkshop, questStart, shouldRedirectToStoredProject]);
+  }, [archiveResumeId, initialMajor, isProjectBacked, initWorkshop, questStart, shouldRedirectToStoredProject]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1155,6 +1388,59 @@ export function Workshop() {
     }, 3000);
     return () => clearTimeout(timeout);
   }, [documentContent, latestDraftUpdatedAt, saveDraftWithSync, workshopState?.session.id]);
+
+  const persistWorkshopSnapshot = useCallback(
+    (reason: 'auto' | 'manual' = 'auto') => {
+      const content = (documentContent || structuredDraftToMarkdown(structuredDraft)).trim();
+      const hasConversation = messages.some((message) => message.content.trim());
+      if (!content && !hasConversation) return null;
+
+      const now = new Date().toISOString();
+      const sessionId = workshopState?.session.id ?? null;
+      const snapshotId = sessionId
+        ? `workshop-${sessionId}`
+        : archiveResumeId || `workshop-local-${projectId || 'draft'}`;
+      const previous = getArchiveItem(snapshotId);
+      const titleBase = fileName.replace('.hwpx', '') || '워크숍 보고서';
+
+      saveArchiveItem({
+        id: snapshotId,
+        kind: 'workshop',
+        projectId: isProjectBacked ? projectId ?? workshopState?.session.project_id ?? null : null,
+        workshopId: sessionId,
+        title: titleBase,
+        subject: initialMajor || guidedSubject || '탐구',
+        createdAt: previous?.createdAt || now,
+        updatedAt: now,
+        contentMarkdown: content,
+        structuredDraft,
+        chatMessages: serializeWorkshopMessages(messages),
+      });
+      setLastLocalSnapshotAt(now);
+      return { id: snapshotId, reason };
+    },
+    [
+      archiveResumeId,
+      documentContent,
+      fileName,
+      guidedSubject,
+      initialMajor,
+      isProjectBacked,
+      messages,
+      projectId,
+      structuredDraft,
+      workshopState?.session.id,
+      workshopState?.session.project_id,
+    ],
+  );
+
+  useEffect(() => {
+    if (!documentContent.trim() && messages.length <= 1) return;
+    const timeout = window.setTimeout(() => {
+      persistWorkshopSnapshot('auto');
+    }, 5000);
+    return () => window.clearTimeout(timeout);
+  }, [documentContent, messages, persistWorkshopSnapshot]);
 
   useEffect(() => {
     const nextMarkdown = structuredDraftToMarkdown(structuredDraft);
@@ -1517,6 +1803,8 @@ export function Workshop() {
         targetMajor: initialMajor,
         currentSectionId: targetSection,
       });
+      const researchSource = resolveWorkshopResearchSource(text, advancedMode);
+      const researchSourceLabel = formatResearchSourceLabel(researchSource);
 
       setIsTyping(true);
       const pendingId = crypto.randomUUID();
@@ -1528,12 +1816,17 @@ export function Workshop() {
           content: '관???�문�??�료�?찾고 ?�어?? 검??결과??바로 문서???��? ?�고 ?�보 카드�?보여?�릴게요.',
         },
       ]);
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === pendingId ? { ...message, content: buildResearchPendingMessage(researchSourceLabel) } : message,
+        ),
+      );
 
       try {
         const result = await researchCandidates.searchCandidates(query || text, {
           targetSection,
-          source: 'both',
-          limit: 5,
+          source: researchSource,
+          limit: advancedMode ? 12 : 8,
         });
         setMessages((prev) =>
           prev.map((message) =>
@@ -1546,6 +1839,13 @@ export function Workshop() {
                   researchCandidates: result.candidates,
                   researchSources: result.sources,
                 }
+              : message,
+          ),
+        );
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === pendingId
+              ? { ...message, content: buildResearchResultMessage(result.candidates.length, researchSourceLabel) }
               : message,
           ),
         );
@@ -1563,13 +1863,18 @@ export function Workshop() {
               : item,
           ),
         );
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === pendingId ? { ...item, content: buildResearchErrorMessage(message) } : item,
+          ),
+        );
       } finally {
         setIsTyping(false);
       }
 
       return true;
     },
-    [guidedSubject, initialMajor, questStart?.title, researchCandidates, structuredDraft],
+    [advancedMode, guidedSubject, initialMajor, questStart?.title, researchCandidates, structuredDraft],
   );
 
   const handleSend = async (overriddenText?: string, options?: { displayText?: string }) => {
@@ -1696,6 +2001,7 @@ export function Workshop() {
     let streamAuthSource: AuthTokenSource | null = null;
     let streamLimitedReason: string | null = null;
     let flushTimer: number | null = null;
+    const researchDepth = resolveWorkshopResearchDepth(text);
 
     const flushBufferedDelta = () => {
       if (!pendingDelta) {
@@ -1716,6 +2022,7 @@ export function Workshop() {
         documentContent,
         workshopMode,
         structuredDraft,
+        researchDepth,
         delta => {
           pendingDelta += delta;
           if (flushTimer === null) {
@@ -1766,16 +2073,17 @@ export function Workshop() {
           project_id: projectId ?? null,
           workshop_id: workshopState?.session.id ?? null,
         });
-        if (streamLimitedReason === 'llm_unavailable') {
+        const handledLimitedModeToast = showReadableLimitedModeToast(streamLimitedReason);
+        if (!handledLimitedModeToast && streamLimitedReason === 'llm_unavailable') {
           toast.error('AI 모델 ?�결??불안?�하???�한 모드 ?�내�??�환?�었?�요.');
-        } else if (streamLimitedReason === 'llm_not_configured') {
+        } else if (!handledLimitedModeToast && streamLimitedReason === 'llm_not_configured') {
           toast.error('AI 모델 ?��? ?�버???�정?��? ?�아 ?�한 모드�??�환?�었?�니??');
         }
       }
 
       const extracted = extractPatchTagFromRaw(raw);
       const resolvedPatch = streamedPatch || extracted.patch;
-      const responseContent = extracted.cleaned || raw || accumulated || '?��????�성?��? 못했?�니??';
+      const responseContent = extracted.cleaned || raw || accumulated || '응답을 생성하지 못했어요.';
       setMessages(prev =>
         prev.map(message =>
           message.id === foliId
@@ -1808,12 +2116,16 @@ export function Workshop() {
         });
         toast.error(resolveChatStreamToastMessage(error));
         const hint = resolveChatStreamFallbackHint(error);
-        if (hint) {
+        const readableHint = hint ? `${fallbackContent}\n\n참고 안내: ${hint}` : null;
+        if (readableHint) {
+          fallbackContent = readableHint;
+        }
+        if (!readableHint && hint) {
           fallbackContent = `${fallbackContent}\n\n참고 ?�내: ${hint}`;
         }
       } else {
         console.error('AI reply stream failed with unexpected error:', error);
-        toast.error('채팅 ?�답 ?�성???�패?�습?�다. ?�시 ???�시 ?�도??주세??');
+        toast.error('채팅 응답 생성에 실패했어요. 잠시 후 다시 시도해 주세요.');
       }
       setMessages(prev =>
         prev.map(message =>
@@ -2014,14 +2326,14 @@ export function Workshop() {
       const candidate = message.researchCandidates?.find((item) => item.id === candidateId);
       if (!candidate) return;
       try {
-        const result = await researchCandidates.refineCandidate(candidateId, `${candidate.title} ??구체?�인 근거`);
+        const result = await researchCandidates.refineCandidate(candidateId, `${candidate.title} 더 구체적인 근거`);
         if (!result) return;
         setMessages((prev) =>
           prev.map((item) =>
             item.id === message.id
               ? {
                   ...item,
-                  content: `??구체?�한 ?�료 ?�보 ${result.candidates.length}개�? ?�시 찾았?�요.`,
+                  content: `더 구체적인 자료 후보 ${result.candidates.length}개를 다시 찾았어요.`,
                   researchCandidates: result.candidates,
                   researchSources: result.sources,
                   reportPatch: undefined,
@@ -2032,7 +2344,7 @@ export function Workshop() {
         );
       } catch (error) {
         console.error('Research candidate refine failed:', error);
-        toast.error(error instanceof Error ? error.message : '?�료 ?�보�?구체?�하지 못했?�니??');
+        toast.error(error instanceof Error ? error.message : '자료 후보를 구체화하지 못했어요.');
       }
     },
     [researchCandidates],
@@ -2055,30 +2367,158 @@ export function Workshop() {
     [researchCandidates],
   );
 
+  const handleToggleDeepResearchMode = useCallback(async () => {
+    const nextValue = !advancedMode;
+    setAdvancedMode(nextValue);
+    if (!nextValue || !workshopState?.session.id || qualityLevel === 'high') {
+      return;
+    }
+
+    try {
+      const nextState = await api.patch<WorkshopStateResponse>(
+        `/api/v1/workshops/${workshopState.session.id}/quality-level`,
+        { quality_level: 'high' },
+      );
+      setWorkshopState(nextState);
+      setQualityLevel(nextState.session.quality_level);
+      localStorage.setItem('uni_foli_quality_level', nextState.session.quality_level);
+    } catch (error) {
+      console.warn('Failed to upgrade workshop quality level for deep research:', error);
+      toast.error('웹/논문 리서치 모드를 켰지만 품질 단계 변경에 실패했어요. 보고서 생성 때 다시 시도할게요.');
+    }
+  }, [advancedMode, qualityLevel, workshopState?.session.id]);
+
+  const handleDownloadReport = useCallback(() => {
+    if (!reportDownloadContent) {
+      toast.error('다운로드할 보고서 내용이 아직 없어요.');
+      return;
+    }
+    downloadMarkdownFile(fileName.replace('.hwpx', '_report.md'), reportDownloadContent);
+  }, [fileName, reportDownloadContent]);
+
   const handleGenerateDraft = async () => {
     if (!workshopState || isRendering) return;
+
     setIsRendering(true);
+    setRenderProgressMessage('대화 내용을 정리해 보고서 생성을 시작하고 있어요.');
+
     try {
-      await api.post(`/api/v1/workshops/${workshopState.session.id}/render`);
-      toast.success('결과�??�성???�청?�습?�다.');
+      let activeState = workshopState;
+      if (advancedMode && qualityLevel !== 'high') {
+        const nextState = await api.patch<WorkshopStateResponse>(
+          `/api/v1/workshops/${workshopState.session.id}/quality-level`,
+          { quality_level: 'high' },
+        );
+        activeState = nextState;
+        setWorkshopState(nextState);
+        setQualityLevel(nextState.session.quality_level);
+        localStorage.setItem('uni_foli_quality_level', nextState.session.quality_level);
+      }
+
+      const workshopId = activeState.session.id;
+      const deepResearchEnabled = advancedMode || activeState.session.quality_level === 'high';
+      const ragSource = deepResearchEnabled ? 'both' : 'semantic';
+      const tokenResponse = await api.post<WorkshopStreamTokenResponse>(`/api/v1/workshops/${workshopId}/stream-token`);
+      const renderResponse = await api.post<WorkshopRenderStartResponse>(`/api/v1/workshops/${workshopId}/render`, {
+        force: true,
+        advanced_mode: deepResearchEnabled,
+        rag_source: ragSource,
+      });
+      const artifactId = renderResponse.artifact_id;
+      const eventsUrl = buildWorkshopEventsUrl(
+        workshopId,
+        tokenResponse.stream_token,
+        artifactId,
+        deepResearchEnabled,
+        ragSource,
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        const source = new EventSource(eventsUrl);
+        let artifactReady = false;
+
+        const close = () => {
+          source.close();
+        };
+        const parseData = <T,>(event: MessageEvent<string>): T | null => {
+          try {
+            return JSON.parse(event.data || '{}') as T;
+          } catch {
+            return null;
+          }
+        };
+
+        source.addEventListener('render.started', (event) => {
+          const payload = parseData<{ message?: string }>(event as MessageEvent<string>);
+          setRenderProgressMessage(payload?.message || '보고서 렌더링을 시작했어요.');
+        });
+
+        source.addEventListener('render.progress', (event) => {
+          const payload = parseData<{ message?: string; chars_generated?: number }>(event as MessageEvent<string>);
+          const generated = payload?.chars_generated ? ` (${payload.chars_generated}자 생성)` : '';
+          setRenderProgressMessage(`${payload?.message || '보고서를 쓰는 중이에요.'}${generated}`);
+        });
+
+        source.addEventListener('artifact.ready', (event) => {
+          const payload = parseData<WorkshopArtifactReadyPayload>(event as MessageEvent<string>);
+          if (!payload) return;
+
+          const nextArtifact = createDraftArtifactFromPayload(payload, artifactId);
+          const nextStructuredDraft =
+            nextArtifact.structured_draft || markdownToStructuredDraft(nextArtifact.report_markdown, 'revision');
+
+          artifactReady = true;
+          setRenderArtifact(nextArtifact);
+          setDocumentContent(nextArtifact.report_markdown);
+          setStructuredDraft(nextStructuredDraft);
+          setWorkshopMode(nextStructuredDraft.mode);
+          setLatestDraftUpdatedAt(nextArtifact.updated_at || new Date().toISOString());
+          setIsDraftOutOfSync(false);
+          setIsEditorOpen(true);
+          setMobileView('draft');
+          setWorkshopState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  session: { ...prev.session, status: 'done' },
+                  latest_artifact: nextArtifact,
+                }
+              : prev,
+          );
+          setRenderProgressMessage('보고서가 완성됐어요. 오른쪽 문서 패널에서 확인하고 다운로드할 수 있어요.');
+        });
+
+        source.addEventListener('render.completed', () => {
+          close();
+          resolve();
+        });
+
+        source.addEventListener('error', (event) => {
+          close();
+          if (artifactReady) {
+            resolve();
+          } else {
+            reject(event);
+          }
+        });
+      });
+
+      toast.success('보고서가 완성됐어요. 다운로드할 수 있습니다.');
     } catch (error) {
       console.error('Failed to render draft:', error);
-      toast.error('?�성 ?�청???�패?�습?�다.');
+      toast.error('보고서 생성에 실패했어요. 대화 내용을 조금 더 보강한 뒤 다시 시도해 주세요.');
+      setRenderProgressMessage('보고서 생성에 실패했어요. 다시 시도해 주세요.');
     } finally {
       setIsRendering(false);
     }
   };
 
-  const handleSaveDraft = () => {
-    saveArchiveItem({
-      id: crypto.randomUUID(),
-      projectId: projectId ?? null,
-      title: fileName.replace('.hwpx', ''),
-      subject: initialMajor,
-      createdAt: new Date().toISOString(),
-      contentMarkdown: documentContent,
-    });
-    toast.success('?�크??초안???�?�했?�요.');
+  const handleSaveDraft = async () => {
+    const snapshot = persistWorkshopSnapshot('manual');
+    if (workshopState?.session.id && documentContent.trim()) {
+      await saveDraftWithSync(documentContent, latestDraftUpdatedAt);
+    }
+    toast.success(snapshot ? '대화와 초안을 저장했어요. 아카이브에서 이어서 작업할 수 있습니다.' : '저장할 내용이 아직 없어요.');
     confetti({ particleCount: 80, spread: 62, origin: { y: 0.65 } });
   };
 
@@ -2220,7 +2660,38 @@ export function Workshop() {
         <div className="relative mt-2 flex min-h-0 flex-1 justify-center overflow-hidden">
           <div className={cn("flex flex-col min-h-0 flex-1 transition-all duration-500 items-center w-full", isEditorOpen ? "lg:mr-[400px] xl:mr-[500px]" : "")}>
             <div className="w-full max-w-4xl flex-1 flex flex-col relative h-full">
-              <div className="absolute top-2 right-4 z-20 hidden lg:block">
+              <div className="absolute top-2 right-4 z-20 hidden lg:flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleToggleDeepResearchMode()}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 border rounded-full text-sm font-bold shadow-sm transition-all",
+                    advancedMode
+                      ? "bg-slate-900 border-slate-900 text-white hover:bg-slate-800"
+                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-indigo-600",
+                  )}
+                >
+                  <BookOpen size={16} />
+                  웹/논문 리서치 {advancedMode ? 'ON' : 'OFF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateDraft()}
+                  disabled={isRendering || !workshopState}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 border border-indigo-600 rounded-full text-sm font-bold text-white shadow-sm hover:bg-indigo-700 disabled:bg-slate-200 disabled:border-slate-200 disabled:text-slate-500 transition-all"
+                >
+                  {isRendering ? <Loader2 size={16} className="animate-spin" /> : <Presentation size={16} />}
+                  대화 종료·보고서 생성
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadReport}
+                  disabled={!reportDownloadContent}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-50 transition-all"
+                >
+                  <Download size={16} />
+                  보고서 다운로드
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsEditorOpen(!isEditorOpen)}
@@ -2327,6 +2798,60 @@ export function Workshop() {
                   {/* Input Area */}
                   <div className="px-4 pb-8 pt-4 bg-gradient-to-t from-slate-50/50 to-transparent">
                     <div className="max-w-4xl mx-auto w-full">
+                      <div className="mb-3 flex gap-2 lg:hidden">
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleDeepResearchMode()}
+                          className={cn(
+                            "flex h-10 w-10 items-center justify-center rounded-2xl border shadow-sm",
+                            advancedMode
+                              ? "bg-slate-900 border-slate-900 text-white"
+                              : "bg-white border-slate-200 text-slate-700",
+                          )}
+                          aria-label="웹/논문 리서치 모드 전환"
+                        >
+                          <BookOpen size={17} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleGenerateDraft()}
+                          disabled={isRendering || !workshopState}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-3 py-2 text-sm font-black text-white shadow-sm disabled:bg-slate-200 disabled:text-slate-500"
+                        >
+                          {isRendering ? <Loader2 size={16} className="animate-spin" /> : <Presentation size={16} />}
+                          보고서 생성
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadReport}
+                          disabled={!reportDownloadContent}
+                          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm disabled:opacity-40"
+                          aria-label="보고서 다운로드"
+                        >
+                          <Download size={17} />
+                        </button>
+                      </div>
+                      {renderProgressMessage && (
+                        <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-white/90 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
+                          <span className="flex items-center gap-2">
+                            {isRendering ? (
+                              <Loader2 size={16} className="animate-spin text-indigo-600" />
+                            ) : (
+                              <FileText size={16} className="text-indigo-600" />
+                            )}
+                            {renderProgressMessage}
+                          </span>
+                          {reportDownloadContent && !isRendering && (
+                            <button
+                              type="button"
+                              onClick={handleDownloadReport}
+                              className="shrink-0 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-black text-slate-700 hover:border-indigo-200 hover:text-indigo-600"
+                            >
+                              다운로드
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div className="relative group">
                         <div className="absolute -inset-1 bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500 rounded-[32px] opacity-15 group-focus-within:opacity-30 transition duration-500 blur-md"></div>
                         <div className="relative flex items-center gap-3 bg-white p-2.5 pl-7 rounded-[30px] border border-slate-200/80 shadow-2xl shadow-indigo-100/30 transition-all duration-300 group-focus-within:border-violet-300 group-focus-within:shadow-violet-200/40">
@@ -2376,22 +2901,24 @@ export function Workshop() {
                 <FileText size={16} className="text-indigo-600"/>
                 문서 편집기
               </h2>
+              {lastLocalSnapshotAt && (
+                <span className="hidden rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 sm:inline-flex">
+                  자동 저장 {new Date(lastLocalSnapshotAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
               <div className="flex items-center gap-2">
-                <PrimaryButton size="sm" onClick={handleSaveDraft} className="shadow-sm py-1.5 px-3 h-auto text-xs">
+                <PrimaryButton size="sm" onClick={() => void handleSaveDraft()} className="shadow-sm py-1.5 px-3 h-auto text-xs">
                   <Save size={14} className="mr-1.5" />
                   저장
                 </PrimaryButton>
-                <SecondaryButton size="sm" className="shadow-sm bg-white py-1.5 px-3 h-auto text-xs" onClick={() => {
-                  const blob = new Blob([documentContent], { type: 'text/markdown' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = fileName.replace('.hwpx', '.md');
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}>
+                <SecondaryButton
+                  size="sm"
+                  className="shadow-sm bg-white py-1.5 px-3 h-auto text-xs"
+                  onClick={handleDownloadReport}
+                  disabled={!reportDownloadContent}
+                >
                   <Download size={14} className="mr-1.5" />
-                  내보내기
+                  보고서 다운로드
                 </SecondaryButton>
                 <button 
                   onClick={() => setIsEditorOpen(false)}
@@ -2447,9 +2974,3 @@ export function Workshop() {
     </div>
   );
 }
-
-
-
-
-
-

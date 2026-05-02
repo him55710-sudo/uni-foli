@@ -50,106 +50,74 @@ export const Timeline: React.FC<TimelineProps> = ({ grade, events }) => {
   const displayEvents = events || DEFAULT_EVENTS[grade] || DEFAULT_EVENTS['1'];
 
   return (
-    <div className="space-y-12 py-8">
+    <div className="space-y-12 py-4">
       {/* Timeline Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-8">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-8">
         <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-sm">
             <Calendar size={24} />
           </div>
           <div>
-            <h4 className="text-2xl font-black text-white italic">{displayGrade}</h4>
+            <h4 className="text-xl font-bold text-slate-900">{displayGrade}</h4>
             <div className="flex items-center gap-2">
               <Sparkles size={14} className="text-amber-500" />
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Strategic Growth Journey</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Strategic Growth Journey</p>
             </div>
-          </div>
-        </div>
-        <div className="hidden md:flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Completed</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Ongoing</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-slate-700" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Upcoming</span>
           </div>
         </div>
       </div>
 
-      <div className="relative space-y-12 before:absolute before:left-[24px] before:top-4 before:h-[calc(100%-32px)] before:w-px before:bg-gradient-to-b before:from-indigo-500 before:via-indigo-500/50 before:to-transparent">
+      <div className="relative space-y-10 before:absolute before:left-[24px] before:top-4 before:h-[calc(100%-32px)] before:w-px before:bg-slate-200">
         {displayEvents.map((event, index) => (
           <motion.div
             key={index}
-            initial={{ opacity: 0, x: -20 }}
+            initial={{ opacity: 0, x: -10 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            transition={{ delay: index * 0.1, duration: 0.6 }}
-            className="relative pl-16 group"
+            transition={{ delay: index * 0.1, duration: 0.5 }}
+            className="relative pl-14 group"
           >
             {/* Node Indicator */}
-            <div className={`absolute left-0 top-0 flex h-12 w-12 items-center justify-center rounded-full border-[6px] border-slate-950 bg-slate-900 z-10 transition-all duration-500 group-hover:scale-110 ${
-              event.status === 'completed' ? 'text-blue-500' : 
-              event.status === 'ongoing' ? 'text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 
-              'text-slate-700'
+            <div className={`absolute left-0 top-0 flex h-12 w-12 items-center justify-center rounded-full border-4 border-white z-10 transition-all duration-300 shadow-sm ${
+              event.status === 'completed' ? 'bg-blue-50 text-blue-600' : 
+              event.status === 'ongoing' ? 'bg-indigo-50 text-indigo-600 ring-2 ring-indigo-100' : 
+              'bg-slate-50 text-slate-300'
             }`}>
-              {event.status === 'completed' ? <CheckCircle2 size={24} fill="currentColor" className="text-blue-500/10" /> : 
-               event.status === 'ongoing' ? <div className="relative"><Clock size={20} /><div className="absolute inset-0 animate-ping opacity-20"><Clock size={20} /></div></div> : 
-               <div className="w-2 h-2 rounded-full bg-current" />}
+              {event.status === 'completed' ? <CheckCircle2 size={20} /> : 
+               event.status === 'ongoing' ? <Clock size={20} className="animate-spin-slow" /> : 
+               <Circle size={12} fill="currentColor" />}
             </div>
 
             {/* Event Content */}
-            <SurfaceCard className={`relative overflow-hidden border-slate-800 bg-slate-900/40 backdrop-blur-xl p-8 hover:border-indigo-500/30 transition-all duration-500 ${
-              event.status === 'ongoing' ? 'ring-1 ring-indigo-500/20' : ''
+            <div className={`relative p-6 rounded-2xl border transition-all duration-300 ${
+              event.status === 'ongoing' 
+              ? 'bg-white border-indigo-200 shadow-md ring-1 ring-indigo-50' 
+              : 'bg-slate-50/50 border-slate-100'
             }`}>
-              {/* Decorative accent */}
-              <div className={`absolute top-0 right-0 w-32 h-32 -mr-16 -mt-16 opacity-10 rounded-full blur-3xl ${
-                event.type === 'academic' ? 'bg-blue-500' :
-                event.type === 'activity' ? 'bg-violet-500' :
-                'bg-emerald-500'
-              }`} />
-
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+              <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-3">
-                  <span className={`text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${
-                    event.type === 'academic' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                    event.type === 'activity' ? 'bg-violet-500/10 text-violet-400 border-violet-500/20' :
-                    'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                    event.type === 'academic' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                    event.type === 'activity' ? 'bg-violet-50 text-violet-600 border-violet-100' :
+                    'bg-emerald-50 text-emerald-600 border-emerald-100'
                   }`}>
                     {event.period}
                   </span>
-                  <div className="h-1 w-1 rounded-full bg-slate-700" />
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-tight">
                     {event.type === 'academic' ? 'Academic Mastery' : event.type === 'activity' ? 'Extracurricular' : 'Career Strategy'}
                   </span>
                 </div>
                 
-                {event.status === 'ongoing' && (
-                  <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20">
-                    <TrendingUp size={12} className="text-indigo-400" />
-                    <span className="text-[10px] font-black text-indigo-400 uppercase">Focusing</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-start gap-4">
-                <div className="hidden sm:block mt-1">
-                  <Target size={20} className="text-slate-700 group-hover:text-indigo-400 transition-colors" />
-                </div>
                 <div>
-                  <h5 className="text-xl font-black text-white group-hover:text-indigo-300 transition-colors mb-2 tracking-tight">
+                  <h5 className="text-base font-bold text-slate-900 mb-1">
                     {event.title}
                   </h5>
-                  <p className="text-slate-400 font-medium leading-relaxed max-w-2xl italic">
+                  <p className="text-slate-600 text-sm font-medium leading-relaxed">
                     {event.description}
                   </p>
                 </div>
               </div>
-            </SurfaceCard>
+            </div>
           </motion.div>
         ))}
       </div>

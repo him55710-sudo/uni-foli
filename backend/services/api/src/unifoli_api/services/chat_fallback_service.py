@@ -18,7 +18,7 @@ def _intent_key(message: str) -> str:
         return "intro"
     if any(token in lowered for token in ("제목", "title")):
         return "title"
-    if any(token in lowered for token in ("근거", "증거", "출처", "자료")):
+    if any(token in lowered for token in ("근거", "증거", "출처", "자료", "논문", "웹")):
         return "evidence"
     if "?" in message or any(token in lowered for token in ("왜", "어떻게", "무엇", "질문")):
         return "question"
@@ -55,15 +55,15 @@ def _draft_snippet(intent: str, *, topic: str | None, thesis: str | None) -> lis
 
     if intent == "outline":
         return [
-            f"- 1단락: `{topic_label}`의 배경과 맥락을 2~3문장으로 정리",
-            f"- 2단락: `{thesis_label}`에 답하는 근거 2개를 연결",
-            "- 3단락: 이번 탐구에서 이어 갈 다음 행동 1개 제안",
+            f"- 1단락: `{topic_label}`의 배경과 문제의식을 2~3문장으로 정리합니다.",
+            f"- 2단락: `{thesis_label}`을 중심으로 근거 2개를 연결합니다.",
+            "- 3단락: 이번 탐구에서 이어 갈 다음 행동 1개를 제안합니다.",
         ]
     if intent == "intro":
         return [
             f"`{topic_label}`을 다루게 된 이유를 학생의 실제 기록 흐름과 연결해 시작합니다.",
-            f"첫 문단은 `{thesis_label}`을 중심축으로 잡고 사실과 해석을 분리합니다.",
-            "확인되지 않은 내용은 '(추가 확인 필요)'로 남기고 문단 구조는 먼저 완성합니다.",
+            f"첫 문단은 `{thesis_label}`을 중심축으로 두고 사실과 해석을 분리합니다.",
+            "확인되지 않은 내용은 '(추가 확인 필요)'로 남겨두고 문단 구조를 먼저 완성합니다.",
         ]
     if intent == "title":
         base = topic or "탐구 보고서"
@@ -74,20 +74,20 @@ def _draft_snippet(intent: str, *, topic: str | None, thesis: str | None) -> lis
         ]
     if intent == "evidence":
         return [
-            "- 문장을 쓸 때 사실 주장과 해석 주장을 한 줄씩 분리합니다.",
-            "- 사실 주장 뒤에는 출처나 문서 단서를 짧게 붙입니다.",
+            "- 문장 안의 사실 주장과 해석 주장을 줄바꿈으로 분리합니다.",
+            "- 사실 주장 옆에는 학생부, 웹 자료, 논문 등 출처 유형을 붙입니다.",
             "- 근거가 비어 있으면 '(추가 확인 필요)'로 표시하고 초안을 계속 전개합니다.",
         ]
     if intent == "question":
         return [
-            f"- 핵심 질문은 `{thesis_label}` 형태로 1문장 고정",
-            "- 질문 바로 아래에 근거 2개를 짧은 bullet로 정리",
-            "- 마지막 줄에 '그래서 다음에 확인할 것'을 명시",
+            f"- 핵심 질문은 `{thesis_label}` 형태로 1문장 고정합니다.",
+            "- 질문 바로 아래에 근거 2개를 짧은 bullet로 정리합니다.",
+            "- 마지막 줄에 '그래서 다음에 확인할 것'을 명시합니다.",
         ]
     return [
-        f"- `{topic_label}` 기준으로 이번 문장을 3~5문장 정도로 짧게 확장",
-        "- 문장마다 사실과 해석의 역할이 드러나도록 배치",
-        "- 불확실한 정보는 '(추가 확인 필요)'로 남기고 전체 흐름은 유지",
+        f"- `{topic_label}` 기준으로 이번 문장을 3~5문장 정도로 확장합니다.",
+        "- 문장마다 사실과 해석이 드러나도록 배치합니다.",
+        "- 불확실한 정보는 '(추가 확인 필요)'로 남기고 전체 흐름을 유지합니다.",
     ]
 
 
@@ -104,8 +104,8 @@ def build_conversational_fallback(
     unresolved_gaps = _safe_list(summary, "unresolved_evidence_gaps", limit=2)
 
     lines = [
-        "모델 응답이 잠시 불안정해서 지금은 코칭 모드로 이어갈게요.",
-        "작업은 계속 진행하고, 바로 이어서 쓸 수 있는 초안 가이드를 드립니다.",
+        "Gemini 기반 AI 응답이 잠시 불안정해서 로컬 안내 모드로 이어갈게요.",
+        "작업은 중단하지 않고, 바로 이어 쓸 수 있는 초안 가이드를 먼저 정리합니다.",
         "",
         f"요청 요약: {_clip(user_message, 120) or '문장 보강 요청'}",
     ]
@@ -113,11 +113,11 @@ def build_conversational_fallback(
     if topic:
         lines.append(f"현재 주제: {topic}")
     if thesis:
-        lines.append(f"현재 중심 질문: {thesis}")
+        lines.append(f"현재 핵심 질문: {thesis}")
     if reason and reason != "llm_unavailable":
         lines.append(f"상태 코드: {reason}")
 
-    lines.extend(["", "지금 바로 쓸 수 있는 초안 가이드"])
+    lines.extend(["", "지금 바로 사용할 수 있는 초안 가이드"])
     lines.extend(_draft_snippet(intent, topic=topic, thesis=thesis))
 
     if evidence_points:
@@ -130,10 +130,10 @@ def build_conversational_fallback(
     lines.extend(
         [
             "",
-            "다음 메시지에서 바로 도와드릴 수 있는 작업",
-            "1. 지금 문장을 자연스럽게 다듬기",
+            "다음 메시지에서 바로 이어갈 수 있는 작업",
+            "1. 지금 문장을 자연스럽게 다시 쓰기",
             "2. 개요를 3단락 구조로 다시 잡기",
-            "3. 근거 태그를 붙여 더 안전한 초안으로 정리하기",
+            "3. 근거 태그를 붙여 안전한 초안으로 정리하기",
         ]
     )
     return "\n".join(lines)

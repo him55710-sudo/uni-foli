@@ -1,10 +1,20 @@
 export interface ArchiveItem {
   id: string;
   projectId: string | null;
+  workshopId?: string | null;
+  kind?: 'report' | 'workshop';
   title: string;
   subject: string;
   createdAt: string;
+  updatedAt?: string;
   contentMarkdown: string;
+  structuredDraft?: unknown;
+  chatMessages?: Array<{
+    id: string;
+    role: 'user' | 'foli';
+    content: string;
+    createdAt?: string;
+  }>;
 }
 
 const STORAGE_KEY = 'uni_foli_archive_items';
@@ -26,12 +36,23 @@ function writeItems(items: ArchiveItem[]): void {
 }
 
 export function listArchiveItems(): ArchiveItem[] {
-  return readItems().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return readItems().sort((a, b) => ((a.updatedAt || a.createdAt) < (b.updatedAt || b.createdAt) ? 1 : -1));
+}
+
+export function getArchiveItem(id: string): ArchiveItem | null {
+  return readItems().find((item) => item.id === id) ?? null;
 }
 
 export function saveArchiveItem(item: ArchiveItem): void {
   const items = readItems();
-  const next = [item, ...items.filter((entry) => entry.id !== item.id)].slice(0, 100);
+  const previous = items.find((entry) => entry.id === item.id);
+  const merged: ArchiveItem = {
+    ...previous,
+    ...item,
+    createdAt: previous?.createdAt || item.createdAt,
+    updatedAt: item.updatedAt || new Date().toISOString(),
+  };
+  const next = [merged, ...items.filter((entry) => entry.id !== item.id)].slice(0, 100);
   writeItems(next);
 }
 

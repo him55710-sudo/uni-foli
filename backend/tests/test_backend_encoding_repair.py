@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from unifoli_api.api.routes.workshops import _build_draft_snapshot_context, _build_user_message_prompt
+from unifoli_api.api.routes.workshops import (
+    _build_chat_system_instruction,
+    _build_draft_snapshot_context,
+    _build_user_message_prompt,
+)
 from unifoli_api.services.document_service import _is_student_record_candidate
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -62,7 +66,27 @@ def test_workshop_korean_prompt_snapshot() -> None:
     snapshot = "가" * 5002
     assert _build_draft_snapshot_context(snapshot) == f"[유저 최신 초안 스냅샷]\n{'가' * 5000}..."
     assert _build_draft_snapshot_context("   ") == ""
-    assert _build_user_message_prompt("  안녕하세요  ") == "[현재 사용자 메시지]\n안녕하세요"
+    prompt = _build_user_message_prompt("  안녕하세요  ")
+    assert "Latest student message:" in prompt
+    assert "안녕하세요" in prompt
+    assert "report coauthor" in prompt
+
+
+def test_workshop_chat_instruction_defaults_to_long_report_coauthoring() -> None:
+    instruction = _build_chat_system_instruction(
+        base_instruction="base",
+        memory_context="memory",
+        document_grounding_context="grounding",
+        diagnosis_copilot_brief="diagnosis",
+        draft_snapshot_context="draft",
+        coauthoring_context="coauthoring",
+        response_depth="report_long",
+        research_depth="scholarly",
+    )
+
+    assert "900-1500 Korean characters" in instruction
+    assert "paper-level lens" in instruction
+    assert "concise Korean" not in instruction
 
 
 @pytest.mark.parametrize(

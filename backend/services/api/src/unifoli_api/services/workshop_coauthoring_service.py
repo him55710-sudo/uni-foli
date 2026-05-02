@@ -88,15 +88,15 @@ def build_coauthoring_system_context(
         "[초안 공동작성 모드]",
         f"- 현재 모드: {mode}",
         "- 기본 초안 구조: title, introduction/background, body1, body2, body3, conclusion/reflection/next step",
-        "- 사용자가 본문 작성을 요청하면 [DRAFT_PATCH] JSON [/DRAFT_PATCH] 블록을 함께 제안할 수 있습니다.",
+        "- 사용자가 본문 작성을 요청하면 실제 답변을 먼저 쓰고, 삽입 가능한 경우 [DRAFT_PATCH] JSON [/DRAFT_PATCH] 블록을 정확히 1개만 제안할 수 있습니다.",
         "- DRAFT_PATCH JSON 예시:",
         (
             '  {"mode":"section_drafting","block_id":"body_section_1","heading":"소제목",'
-            '"content_markdown":"본문","rationale":"왜 이 블록에 들어가는지",'
-            '"evidence_boundary_note":"근거 경계","requires_approval":true}'
+            '"content_markdown":"본문","rationale":"이 블록에 들어가는 이유",'
+            '"evidence_boundary_note":"근거 경계와 추가 확인 필요 사항","requires_approval":true}'
         ),
         "- 학생이 직접 쓴 문장을 임의로 덮어쓰지 말고, 제안은 반드시 승인 전 상태로 둡니다.",
-        "- 생기부에 없는 활동이나 성과를 추정해서 만들지 마세요.",
+        "- 생기부에 없는 활동, 수상, 실험, 독서, 성과를 추정해서 만들지 마세요.",
         "",
         "[현재 구조화 초안 상태]",
     ]

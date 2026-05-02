@@ -157,6 +157,20 @@
         "backend/services/api/src/unifoli_api/api/routes/drafts.py"
       ]
     },
+    "chat.workshop-copilot-v2": {
+      "category": "chat",
+      "version": "2.0.0",
+      "relative_path": "chat/workshop-copilot-v2/prompt.md",
+      "description": "Student-record-grounded workshop copilot for diagnosis Q&A, topic planning, direct report drafting, revision, and research.",
+      "output_mode": "markdown",
+      "wiring_status": "wired",
+      "dependencies": [
+        "system.guardrails.admissions-authenticity"
+      ],
+      "runtime_targets": [
+        "backend/services/api/src/unifoli_api/api/routes/workshops.py"
+      ]
+    },
     "chat.workshop-choice-copy": {
       "category": "chat",
       "version": "1.0.0",

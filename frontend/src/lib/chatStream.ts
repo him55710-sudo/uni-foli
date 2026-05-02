@@ -430,6 +430,9 @@ export async function consumeChatEventStream(params: ConsumeChatEventStreamParam
   } catch (error) {
     const partial = full.trim();
     if (partial) return partial;
+    if (error instanceof ChatStreamError) {
+      throw error;
+    }
     throw new ChatStreamError(
       'stream_payload_error',
       'Chat stream was interrupted before returning a usable response.',
@@ -461,6 +464,8 @@ export async function consumeChatEventStream(params: ConsumeChatEventStreamParam
 }
 
 export function resolveChatStreamToastMessage(error: ChatStreamError): string {
+  const readable = resolveReadableChatStreamToastMessage(error);
+  if (readable) return readable;
   if (error.code === 'auth_failure') {
     return '로그인 상태를 확인하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.';
   }
@@ -483,6 +488,8 @@ export function resolveChatStreamToastMessage(error: ChatStreamError): string {
 }
 
 export function resolveChatStreamFallbackHint(error: ChatStreamError): string | null {
+  const readable = resolveReadableChatStreamFallbackHint(error);
+  if (readable) return readable;
   if (error.code === 'auth_failure') {
     return 'Firebase 토큰을 새로고침해도 백엔드 인증을 통과하지 못했습니다.';
   }
@@ -497,6 +504,47 @@ export function resolveChatStreamFallbackHint(error: ChatStreamError): string | 
   }
   if (error.code === 'llm_unavailable') {
     return 'LLM 또는 Gemini 연결이 불안정해 제한 모드가 적용되었습니다.';
+  }
+  return null;
+}
+
+function resolveReadableChatStreamToastMessage(error: ChatStreamError): string {
+  if (error.code === 'auth_failure') {
+    return '로그인 상태를 확인하지 못했어요. 새로고침 후 다시 시도해 주세요.';
+  }
+  if (error.code === 'backend_startup_failed') {
+    return '채팅 백엔드가 아직 준비되지 않았어요. 서버와 데이터베이스 설정을 확인해 주세요.';
+  }
+  if (error.code === 'backend_misroute') {
+    return '채팅 요청이 API가 아닌 화면 경로로 연결됐어요. API 주소 설정을 확인해 주세요.';
+  }
+  if (error.code === 'sse_protocol_mismatch') {
+    return '채팅 응답 형식이 올바르지 않아요. 백엔드 SSE 설정을 확인해 주세요.';
+  }
+  if (error.code === 'llm_unavailable') {
+    return 'Gemini 기반 AI 모델 연결이 불안정해 안전 안내 모드로 전환했어요.';
+  }
+  if (error.code === 'network_error') {
+    return '채팅 서버에 연결할 수 없어요. 백엔드 실행 상태와 API 주소를 확인해 주세요.';
+  }
+  return '채팅 요청에 실패했어요. 잠시 후 다시 시도해 주세요.';
+}
+
+function resolveReadableChatStreamFallbackHint(error: ChatStreamError): string | null {
+  if (error.code === 'auth_failure') {
+    return 'Firebase 토큰이 백엔드 인증을 통과하지 못했습니다.';
+  }
+  if (error.code === 'backend_startup_failed') {
+    return '백엔드 부팅에 실패했습니다. DATABASE_URL, 마이그레이션, 서버 로그를 확인해 주세요.';
+  }
+  if (error.code === 'backend_misroute') {
+    return 'VITE_API_URL이 백엔드가 아닌 프론트엔드 origin을 가리키는지 확인해 주세요.';
+  }
+  if (error.code === 'sse_protocol_mismatch') {
+    return '백엔드가 text/event-stream 대신 일반 응답을 반환했습니다.';
+  }
+  if (error.code === 'llm_unavailable') {
+    return 'Gemini API 키나 LLM 런타임 설정이 준비되지 않아 제한 모드가 적용됐습니다.';
   }
   return null;
 }

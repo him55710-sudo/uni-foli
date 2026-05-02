@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Download, Filter, FileText } from 'lucide-react';
+import { Download, Edit3, Filter, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   downloadArchiveAsText,
@@ -13,6 +14,7 @@ interface ArchiveCardItem {
   title: string;
   subject: string;
   createdAt: string;
+  updatedAt?: string;
   emoji: string;
   color: string;
   contentMarkdown: string;
@@ -91,6 +93,7 @@ function mapStoredItemToCard(item: StoredArchiveItem): ArchiveCardItem {
     title: item.title,
     subject: item.subject || '탐구',
     createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
     emoji: emojis[index],
     color: colorPalette[index],
     contentMarkdown: item.contentMarkdown,
@@ -99,6 +102,7 @@ function mapStoredItemToCard(item: StoredArchiveItem): ArchiveCardItem {
 }
 
 export function Archive() {
+  const navigate = useNavigate();
   const { user, isGuestSession } = useAuth();
   const [sortMode, setSortMode] = useState<'latest' | 'oldest'>('latest');
 
@@ -111,8 +115,8 @@ export function Archive() {
 
     return merged.sort((a, b) =>
       sortMode === 'latest'
-        ? Number(new Date(b.createdAt)) - Number(new Date(a.createdAt))
-        : Number(new Date(a.createdAt)) - Number(new Date(b.createdAt)),
+        ? Number(new Date(b.updatedAt || b.createdAt)) - Number(new Date(a.updatedAt || a.createdAt))
+        : Number(new Date(a.updatedAt || a.createdAt)) - Number(new Date(b.updatedAt || b.createdAt)),
     );
   }, [sortMode]);
 
@@ -124,11 +128,20 @@ export function Archive() {
         title: item.title,
         subject: item.subject,
         createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
         contentMarkdown: item.contentMarkdown,
       },
       format,
     );
     toast.success(`${format.toUpperCase()} 파일을 내려받았습니다.`);
+  };
+
+  const handleContinue = (item: ArchiveCardItem) => {
+    if (item.projectId) {
+      navigate(`/app/workshop/${encodeURIComponent(item.projectId)}`);
+      return;
+    }
+    navigate(`/app/workshop?archiveId=${encodeURIComponent(item.id)}`);
   };
 
   return (
@@ -171,16 +184,22 @@ export function Archive() {
               </div>
               <h3 className="line-clamp-2 min-h-[3.5rem] text-lg font-extrabold leading-snug text-slate-800">{item.title}</h3>
 
-              <div className="mt-auto flex gap-2 border-t border-slate-100 pt-4">
+              <div className="mt-auto grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
+                <button
+                  onClick={() => handleContinue(item)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-white py-2.5 text-sm font-black text-slate-700 ring-1 ring-slate-200 transition-all hover:-translate-y-0.5 hover:bg-slate-50"
+                >
+                  <Edit3 size={16} /> 이어서
+                </button>
                 <button
                   onClick={() => handleDownload(item, 'hwpx')}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2.5 text-sm font-black text-white shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-0.5"
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2.5 text-sm font-black text-white shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-0.5"
                 >
                   <FileText size={16} /> HWPX
                 </button>
                 <button
                   onClick={() => handleDownload(item, 'pdf')}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-2.5 text-sm font-black text-white shadow-lg shadow-slate-200 transition-all hover:bg-black hover:-translate-y-0.5"
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-2.5 text-sm font-black text-white shadow-lg shadow-slate-200 transition-all hover:bg-black hover:-translate-y-0.5"
                 >
                   <Download size={16} /> PDF
                 </button>
