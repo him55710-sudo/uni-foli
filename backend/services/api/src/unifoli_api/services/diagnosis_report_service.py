@@ -7,6 +7,7 @@ import re
 import tempfile
 import time
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Callable
 
@@ -192,6 +193,71 @@ _ARCHITECTURE_EVIDENCE_KEYWORDS = (
     "영종도",
     "역삼투압",
 )
+_PUBLIC_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("하위노드", "세부 근거"),
+    ("상위노드", "핵심 주제"),
+    ("앵커", "원문 근거"),
+    ("anchor", "원문 근거"),
+    ("근거 밀도", "학생부에 얼마나 자주, 구체적으로 드러나는지"),
+    ("파싱 신뢰도", "원문 인식 정확도"),
+    ("파싱 커버리지", "원문 인식 범위"),
+    ("탐구 심화도", "탐구가 얼마나 깊게 이어졌는지"),
+    ("탐구 심화", "탐구 깊이"),
+    ("리스크", "보완 필요점"),
+)
+_REPORT_MAJOR_TRACK_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "architecture": (
+        "건축",
+        "건축학",
+        "건축공학",
+        "건축환경",
+        "스마트빌딩",
+        "구조설계",
+        "구조 안전",
+        "도시설계",
+        "공간설계",
+        "건축자재",
+        "하중",
+        "내진",
+        "제진",
+        "면진",
+        "BIM",
+        "CLT",
+    ),
+    "mechanical_computer": (
+        "기계",
+        "기계공학",
+        "전자",
+        "전자공학",
+        "컴퓨터",
+        "컴퓨터공학",
+        "하드웨어",
+        "소프트웨어",
+        "프로그래밍",
+        "알고리즘",
+        "전동화",
+        "배터리",
+        "반도체",
+        "공정",
+        "센서",
+        "제어",
+        "로봇",
+        "모빌리티",
+        "자동차",
+    ),
+    "bio_medical": ("생명", "생명과학", "의학", "의료", "간호", "바이오", "유전", "세포", "약학"),
+    "business_social": ("경영", "경제", "회계", "마케팅", "사회", "정책", "행정", "법학", "국제"),
+    "humanities_education": ("국어", "문학", "역사", "철학", "교육", "심리", "언어", "영어", "인문"),
+    "energy_environment": ("환경", "에너지", "기후", "탄소", "재생", "전력", "수소", "태양광", "풍력"),
+}
+_REPORT_MAJOR_TRACK_LABELS: dict[str, str] = {
+    "architecture": "건축·도시",
+    "mechanical_computer": "기계·컴퓨터",
+    "bio_medical": "생명·의학",
+    "business_social": "경영·사회",
+    "humanities_education": "인문·교육",
+    "energy_environment": "환경·에너지",
+}
 
 
 def _canonical_report_mode(report_mode: str | None) -> str:
@@ -920,6 +986,8 @@ def _sanitize_public_text(value: str | None, *, max_len: int) -> str:
     if not text:
         return ""
     text = _PUBLIC_INTERNAL_TOKEN_RE.sub("", text)
+    for source, target in _PUBLIC_TERM_REPLACEMENTS:
+        text = re.sub(re.escape(source), target, text, flags=re.IGNORECASE)
     text = re.sub(r"\s*\|\s*\|\s*", " | ", text)
     text = re.sub(r"^\s*\|\s*|\s*\|\s*$", "", text).strip(" -|")
     return _clean_line(text, max_len=max_len)
@@ -950,18 +1018,128 @@ def _is_architecture_context(target_context: str) -> bool:
     return "건축" in target_context or "architecture" in target_context.lower()
 
 
-def _is_architecture_evidence_context(target_context: str, evidence_bank: list[dict[str, Any]]) -> bool:
-    if _is_architecture_context(target_context):
-        return True
+def _architecture_evidence_hit_count(evidence_bank: list[dict[str, Any]]) -> int:
     hits: set[str] = set()
-    for item in evidence_bank[:100]:
+    for item in evidence_bank[:120]:
         quote = _evidence_quote(item).lower()
         for keyword in _ARCHITECTURE_EVIDENCE_KEYWORDS:
             if keyword.lower() in quote:
                 hits.add(keyword)
-        if len(hits) >= 4:
-            return True
-    return False
+    return len(hits)
+
+
+def _is_architecture_evidence_context(target_context: str, evidence_bank: list[dict[str, Any]]) -> bool:
+    hit_count = _architecture_evidence_hit_count(evidence_bank)
+    if hit_count >= 4:
+        return True
+    return _is_architecture_context(target_context) and hit_count >= 2
+
+
+def _major_track_signal_counts_from_evidence(evidence_bank: list[dict[str, Any]]) -> dict[str, int]:
+    corpus = " ".join(_evidence_quote(item) for item in evidence_bank[:160]).lower()
+    counts: dict[str, int] = {}
+    for track, keywords in _REPORT_MAJOR_TRACK_KEYWORDS.items():
+        score = 0
+        for keyword in keywords:
+            normalized = str(keyword).lower()
+            if not normalized:
+                continue
+            score += min(len(re.findall(re.escape(normalized), corpus)), 4)
+        counts[track] = score
+    return counts
+
+
+def _infer_report_major_track(text: str | None) -> str | None:
+    lowered = str(text or "").lower()
+    counts: dict[str, int] = {}
+    for track, keywords in _REPORT_MAJOR_TRACK_KEYWORDS.items():
+        counts[track] = sum(1 for keyword in keywords if str(keyword).lower() in lowered)
+    if not counts:
+        return None
+    track, count = max(counts.items(), key=lambda item: item[1])
+    return track if count > 0 else None
+
+
+def _dominant_report_major_track(counts: dict[str, int]) -> str | None:
+    if not counts:
+        return None
+    track, count = max(counts.items(), key=lambda item: item[1])
+    return track if count > 0 else None
+
+
+def _build_major_direction_validation(
+    *,
+    target_context: str,
+    evidence_bank: list[dict[str, Any]],
+) -> dict[str, Any]:
+    target_major = _target_major_from_context(target_context)
+    target_track = _infer_report_major_track(target_context)
+    signal_counts = _major_track_signal_counts_from_evidence(evidence_bank)
+    dominant_track = _dominant_report_major_track(signal_counts)
+    target_count = int(signal_counts.get(target_track or "", 0)) if target_track else 0
+    dominant_count = int(signal_counts.get(dominant_track or "", 0)) if dominant_track else 0
+    target_label = _REPORT_MAJOR_TRACK_LABELS.get(target_track or "", "목표 전공")
+    dominant_label = _REPORT_MAJOR_TRACK_LABELS.get(dominant_track or "", "확인된 우세 계열")
+
+    alignment = "unknown"
+    judgement = "목표 전공과 학생부 원문 흐름을 추가 확인해야 합니다."
+    strategy = "학생부 원문 근거를 대표 활동 3개로 압축한 뒤 목표 전공 문제와 연결해야 합니다."
+    if target_track and dominant_track and dominant_track != target_track and dominant_count >= max(3, target_count + 2):
+        alignment = "mismatch"
+        judgement = (
+            f"현재 학생부 원문 기준으로는 {dominant_label} 계열 근거가 더 강하며, "
+            f"{target_major} 지원을 목표로 할 경우 전공 연결 근거가 부족합니다."
+        )
+        strategy = _major_bridge_strategy(
+            target_major=target_major,
+            target_track=target_track,
+            dominant_track=dominant_track,
+        )
+    elif target_track and target_count >= 3 and (not dominant_track or dominant_track == target_track or target_count >= dominant_count - 1):
+        alignment = "strong"
+        judgement = f"학생부 원문에서 {target_label} 계열 근거가 반복적으로 확인됩니다."
+        strategy = "강한 근거 3개를 대표 탐구, 세특 문장, 면접 답변으로 압축하면 좋습니다."
+    elif target_track and target_count >= 2:
+        alignment = "partial"
+        judgement = f"{target_label} 관련 단서는 일부 확인되지만, 목표 전공을 설명할 대표 탐구가 더 필요합니다."
+        strategy = "기존 활동의 문제 설정, 방법, 산출물을 한 줄씩 보강해 전공 연결성을 높여야 합니다."
+    elif target_track:
+        alignment = "weak"
+        judgement = f"학생부 원문에서 {target_label} 계열 직접 근거가 부족합니다."
+        strategy = _major_bridge_strategy(
+            target_major=target_major,
+            target_track=target_track,
+            dominant_track=dominant_track,
+        )
+
+    return {
+        "input_target": target_major,
+        "target_record_track": target_label if target_track else "미확인",
+        "dominant_record_track": dominant_label if dominant_track else "미확인",
+        "alignment": alignment,
+        "target_evidence_count": target_count,
+        "dominant_evidence_count": dominant_count,
+        "signal_counts": {
+            _REPORT_MAJOR_TRACK_LABELS.get(track, track): count
+            for track, count in signal_counts.items()
+        },
+        "judgement": judgement,
+        "strategy": strategy,
+    }
+
+
+def _major_bridge_strategy(
+    *,
+    target_major: str,
+    target_track: str | None,
+    dominant_track: str | None,
+) -> str:
+    if target_track == "architecture" and dominant_track == "mechanical_computer":
+        return "기계·컴퓨터 관심을 스마트빌딩, 건축환경 제어, 구조 안전 센서 탐구로 재해석해야 합니다."
+    source = _REPORT_MAJOR_TRACK_LABELS.get(dominant_track or "", "기존 관심")
+    target = target_major or _REPORT_MAJOR_TRACK_LABELS.get(target_track or "", "목표 전공")
+    return f"{source} 관심을 {target}의 실제 문제, 자료 분석, 산출물로 전환해야 합니다."
+
 
 
 def _select_subject_evidence(
@@ -1291,12 +1469,28 @@ def _build_research_topics(
         f"{major} 학문적 방법론을 적용한 미니 연구",
         f"{major} 관련 진로 독서 기반 탐구 확장",
     ]
+    direction_validation = _build_major_direction_validation(
+        target_context=target_context,
+        evidence_bank=evidence_bank,
+    )
+    bridge_titles = _major_bridge_topic_titles(direction_validation)
     architecture = _is_architecture_evidence_context(target_context, evidence_bank)
-    titles = architecture_titles if architecture else generic_titles
+    if bridge_titles:
+        titles = [*bridge_titles, *generic_titles]
+    else:
+        titles = architecture_titles if architecture else generic_titles
     result_topics = [str(item).strip() for item in result.recommended_topics or [] if str(item).strip()]
-    titles = _dedupe([*result_topics, *titles], limit=target_count)
+    result_topics = [
+        topic
+        for topic in result_topics
+        if not _research_topic_is_too_similar_to_evidence(topic, evidence_bank)
+    ]
+    titles = _dedupe([*result_topics, *titles], limit=target_count * 2)
     topics: list[ConsultantResearchTopicRecommendation] = []
-    for idx, title in enumerate(titles[:target_count], start=1):
+    for title in titles:
+        if _research_topic_is_too_similar_to_evidence(title, evidence_bank):
+            continue
+        idx = len(topics) + 1
         analysis = subject_analyses[(idx - 1) % max(1, len(subject_analyses))]
         has_direct_evidence = bool(analysis.evidence_refs) and idx <= max(4, len(evidence_bank) // 2)
         topics.append(
@@ -1314,7 +1508,59 @@ def _build_research_topics(
                 priority=idx,
             )
         )
+        if len(topics) >= target_count:
+            break
     return topics
+
+
+def _major_bridge_topic_titles(direction_validation: dict[str, Any]) -> list[str]:
+    target = str(direction_validation.get("input_target") or "목표 전공").strip()
+    target_track = str(direction_validation.get("target_record_track") or "")
+    dominant_track = str(direction_validation.get("dominant_record_track") or "")
+    alignment = str(direction_validation.get("alignment") or "")
+    if alignment not in {"mismatch", "weak"}:
+        return []
+    if "건축" in target_track and "기계" in dominant_track:
+        return [
+            "스마트빌딩 센서 데이터 기반 실내 환경 제어 탐구",
+            "건물 에너지 저장 시스템의 열관리 방식 비교",
+            "건축물 안전 모니터링용 MEMS 센서 활용 가능성 탐구",
+            "경기장 구조와 관람 동선 설계의 안전성 분석",
+            "전동화 기술을 건축 설비 에너지 제어 문제로 전환하는 연구",
+            "컴퓨터 하드웨어 관심을 실내 환경 자동 제어 모델로 확장하는 탐구",
+        ]
+    source = dominant_track if dominant_track != "미확인" else "기존 관심"
+    return [
+        f"{source} 관심을 {target} 문제로 전환하는 탐구 설계",
+        f"{target} 지원 서사를 보완하는 자료 분석형 보고서",
+        f"{target} 면접에서 설명 가능한 대표 활동 재구성 프로젝트",
+    ]
+
+
+def _research_topic_is_too_similar_to_evidence(title: str, evidence_bank: list[dict[str, Any]]) -> bool:
+    normalized_title = _similarity_text(title)
+    if not normalized_title:
+        return False
+    title_tokens = set(_similarity_tokens(title))
+    for item in evidence_bank[:120]:
+        raw_quote = _evidence_quote(item)
+        quote = _similarity_text(raw_quote)
+        if not quote:
+            continue
+        sequence_ratio = SequenceMatcher(None, normalized_title, quote[: max(len(normalized_title) * 3, 60)]).ratio()
+        quote_tokens = set(_similarity_tokens(raw_quote))
+        token_ratio = (len(title_tokens & quote_tokens) / max(len(title_tokens), 1)) if title_tokens else 0.0
+        if max(sequence_ratio, token_ratio) >= 0.4:
+            return True
+    return False
+
+
+def _similarity_text(value: str | None) -> str:
+    return re.sub(r"\s+", "", str(value or "").lower())
+
+
+def _similarity_tokens(value: str | None) -> list[str]:
+    return [token for token in re.findall(r"[a-z가-힣0-9]{2,}", str(value or "").lower()) if len(token) >= 2]
 
 
 def _build_interview_questions(
@@ -1346,6 +1592,23 @@ def _build_interview_questions(
         for analysis in subject_analyses
         if analysis.core_record_summary
     ]
+    direction_validation = _build_major_direction_validation(
+        target_context=target_context,
+        evidence_bank=evidence_bank,
+    )
+    major_mismatch_answer_direction = ""
+    if str(direction_validation.get("alignment") or "") in {"mismatch", "weak"}:
+        dominant = str(direction_validation.get("dominant_record_track") or "기존 관심")
+        major_mismatch_answer_direction = str(
+            direction_validation.get("strategy") or "기존 관심을 목표 전공 문제로 전환했다는 흐름으로 답변해야 합니다."
+        )
+        base_questions.insert(
+            0,
+            (
+                "약점 방어",
+                f"학생부에는 {dominant} 관련 활동이 더 많은데, 왜 {major}에 지원하려고 하나요?",
+            ),
+        )
     if _is_architecture_evidence_context(target_context, evidence_bank):
         base_questions.extend(
             [
@@ -1366,14 +1629,19 @@ def _build_interview_questions(
     frames: list[ConsultantInterviewQuestionFrame] = []
     for idx, (category, question) in enumerate(base_questions[:target_count], start=1):
         analysis = subject_analyses[(idx - 1) % max(1, len(subject_analyses))]
+        is_mismatch_question = bool(major_mismatch_answer_direction and "관련 활동이 더 많은데" in question)
         frames.append(
             ConsultantInterviewQuestionFrame(
                 category=category,  # type: ignore[arg-type]
                 question=question,
                 intent="기록의 진정성, 전공 이해도, 학생 본인의 판단 과정을 확인하려는 질문입니다.",
-                answer_frame="활동 배경 - 선택한 개념/방법 - 본인 역할 - 결과 해석 - 다음 질문 순서로 답변합니다.",
+                answer_frame=major_mismatch_answer_direction
+                if is_mismatch_question
+                else "활동 배경 - 선택한 개념/방법 - 본인 역할 - 결과 해석 - 다음 질문 순서로 답변합니다.",
                 connected_evidence=_clean_line(analysis.core_record_summary, max_len=120),
-                good_direction=f"{analysis.subject} 기록을 근거로 말하되, 결과보다 선택 이유와 배운 점을 먼저 설명합니다.",
+                good_direction=major_mismatch_answer_direction
+                if is_mismatch_question
+                else f"{analysis.subject} 기록을 근거로 말하되, 결과보다 선택 이유와 배운 점을 먼저 설명합니다.",
                 avoid="좋아서 했다, 열심히 했다처럼 감상 중심으로 답하거나 학생부에 없는 성과를 과장하는 방식",
             )
         )
@@ -1678,6 +1946,10 @@ def _build_premium_analysis_json(
     quality_gates: list[ConsultantReportQualityGate],
 ) -> dict[str, Any]:
     architecture = _is_architecture_evidence_context(target_context, evidence_bank)
+    direction_validation = _build_major_direction_validation(
+        target_context=target_context,
+        evidence_bank=evidence_bank,
+    )
     evidence_map = _build_premium_evidence_map(evidence_bank=evidence_bank, target_context=target_context)
     score_dashboard = [
         {
@@ -1690,20 +1962,48 @@ def _build_premium_analysis_json(
         for block in score_blocks[:10]
     ]
     strongest_evidence = evidence_map[:6]
-    branding_sentence = (
-        "지속가능한 건축환경과 구조 안전을 실제 문제로 탐구해 온 건축공학형 학생"
-        if architecture
-        else f"{_target_major_from_context(target_context)} 지원 근거를 교과·활동·진로 기록으로 연결하는 학생"
-    )
-    core_narrative = (
-        "공간에 대한 관심을 도시·환경·구조 안전 문제로 확장하고, 이를 설계·실험·제작형 탐구로 압축하는 방향이 가장 강합니다."
-        if architecture
-        else "학생부의 교과 개념, 활동 경험, 진로 선택 이유를 하나의 질문으로 묶는 전략이 필요합니다."
-    )
+    alignment = str(direction_validation.get("alignment") or "")
+    target_major = _target_major_from_context(target_context)
+    dominant_track = str(direction_validation.get("dominant_record_track") or "")
+    if alignment in {"mismatch", "weak"}:
+        branding_sentence = (
+            f"{dominant_track if dominant_track != '미확인' else '기존 관심'} 관심을 "
+            f"{target_major} 분야로 확장할 가능성이 있는 학생"
+        )
+        core_narrative = str(direction_validation.get("judgement") or "")
+    else:
+        branding_sentence = (
+            "지속가능한 건축환경과 구조 안전을 실제 문제로 탐구해 온 건축공학형 학생"
+            if architecture
+            else f"{target_major} 지원 근거를 교과·활동·진로 기록으로 연결하는 학생"
+        )
+        core_narrative = (
+            "공간에 대한 관심을 도시·환경·구조 안전 문제로 확장하고, 이를 설계·실험·제작형 탐구로 압축하는 방향이 가장 강합니다."
+            if architecture
+            else str(direction_validation.get("judgement") or "학생부의 교과 개념, 활동 경험, 진로 선택 이유를 하나의 질문으로 묶는 전략이 필요합니다.")
+        )
+    validation_risk = str(direction_validation.get("judgement") or "").strip()
+    top_risks = _premium_weaknesses(architecture=architecture)
+    if alignment in {"mismatch", "weak"} and validation_risk:
+        top_risks = _dedupe([validation_risk, *top_risks], limit=5)
+    first_actions = _premium_first_actions(architecture=architecture)
+    validation_action = str(direction_validation.get("strategy") or "").strip()
+    if alignment in {"mismatch", "weak", "partial"} and validation_action:
+        first_actions = _dedupe([validation_action, *first_actions], limit=5)
+    risk_analysis = _premium_risk_analysis(architecture=architecture)
+    if alignment in {"mismatch", "weak"}:
+        risk_analysis = [
+            {
+                "risk": "목표 전공과 학생부 흐름 불일치",
+                "impact": validation_risk,
+                "mitigation": validation_action,
+            },
+            *risk_analysis,
+        ][:5]
     return {
         "report_meta": {
             "report_mode": report_mode,
-            "target_major": _target_major_from_context(target_context),
+            "target_major": target_major,
             "contract_version": "premium_structured_json_v1",
             "generated_at": datetime.now(timezone.utc).isoformat(),
         },
@@ -1716,11 +2016,12 @@ def _build_premium_analysis_json(
             "core_narrative": core_narrative,
             "theme": "architecture_engineering" if architecture else "general_premium",
         },
+        "major_direction_validation": direction_validation,
         "executive_summary": {
             "overall_judgement": core_narrative,
             "top_strengths": _premium_strengths(architecture=architecture, evidence_map=evidence_map),
-            "top_risks": _premium_weaknesses(architecture=architecture),
-            "first_actions": _premium_first_actions(architecture=architecture),
+            "top_risks": top_risks,
+            "first_actions": first_actions,
         },
         "score_dashboard": score_dashboard,
         "evidence_map": evidence_map,
@@ -1747,7 +2048,7 @@ def _build_premium_analysis_json(
         ),
         "strengths": _premium_strengths(architecture=architecture, evidence_map=evidence_map),
         "weaknesses": _premium_weaknesses(architecture=architecture),
-        "risk_analysis": _premium_risk_analysis(architecture=architecture),
+        "risk_analysis": risk_analysis,
         "recommended_research_topics": [
             {
                 "title": _sanitize_public_text(topic.title, max_len=120),

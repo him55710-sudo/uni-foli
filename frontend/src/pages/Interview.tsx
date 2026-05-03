@@ -32,6 +32,7 @@ import {
 } from '../components/primitives';
 import { api } from '../lib/api';
 import { DIAGNOSIS_STORAGE_KEY, type StoredDiagnosis } from '../lib/diagnosis';
+import { useOnboardingStore } from '../store/onboardingStore';
 
 interface InterviewQuestion {
   id: string;
@@ -46,15 +47,19 @@ interface InterviewEvaluation {
   coaching_advice: string;
 }
 
+type CachedDiagnosis = StoredDiagnosis & {
+  diagnosisRunId?: string | null;
+};
+
 const AXIS_LABELS = ['구체성', '진정성', '생기부 근거', '전공 연결'];
 const AXIS_ICONS = [Target, UserCheck, BookOpen, Award];
 
-function readStoredDiagnosis(): StoredDiagnosis | null {
+function readStoredDiagnosis(): CachedDiagnosis | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(DIAGNOSIS_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredDiagnosis;
+    const parsed = JSON.parse(raw) as CachedDiagnosis;
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
     return null;
@@ -74,7 +79,14 @@ export const Interview: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const storedDiagnosis = useMemo(readStoredDiagnosis, []);
-  const activeProjectId = projectId ?? storedDiagnosis?.projectId ?? null;
+  const storeProjectId = useOnboardingStore((state) => state.activeProjectId);
+  const candidateProjectIds = useMemo(
+    () => Array.from(new Set([projectId, storeProjectId, storedDiagnosis?.projectId].filter(Boolean) as string[])),
+    [projectId, storeProjectId, storedDiagnosis?.projectId],
+  );
+  const activeProjectId = candidateProjectIds[0] ?? null;
+  const activeStoredDiagnosis =
+    storedDiagnosis?.projectId && storedDiagnosis.projectId === activeProjectId ? storedDiagnosis : null;
 
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -88,8 +100,8 @@ export const Interview: React.FC = () => {
 
   const currentQuestion = questions[currentIndex] ?? null;
   const targetLabel = [
-    storedDiagnosis?.targetUniversity ?? storedDiagnosis?.target_university,
-    storedDiagnosis?.targetMajor ?? storedDiagnosis?.target_major ?? storedDiagnosis?.major,
+    activeStoredDiagnosis?.targetUniversity ?? activeStoredDiagnosis?.target_university,
+    activeStoredDiagnosis?.targetMajor ?? activeStoredDiagnosis?.target_major ?? activeStoredDiagnosis?.major,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -109,9 +121,25 @@ export const Interview: React.FC = () => {
     setCurrentIndex(0);
 
     try {
-      const data = await api.post<InterviewQuestion[]>('/api/v1/interview/generate-questions', {
-        project_id: activeProjectId,
-      });
+      let data: InterviewQuestion[] | null = null;
+      let lastError: any = null;
+
+      for (const candidateProjectId of candidateProjectIds) {
+        try {
+          data = await api.post<InterviewQuestion[]>('/api/v1/interview/generate-questions', {
+            project_id: candidateProjectId,
+          });
+          break;
+        } catch (candidateError: any) {
+          lastError = candidateError;
+          if (candidateError?.response?.status !== 404) break;
+        }
+      }
+
+      if (!data) {
+        throw lastError;
+      }
+
       if (!data.length) {
         setQuestions([]);
         setErrorMessage('생성된 질문이 없습니다. AI 진단을 다시 확인해 주세요.');
@@ -128,7 +156,7 @@ export const Interview: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeProjectId, navigate]);
+  }, [activeProjectId, candidateProjectIds, navigate]);
 
   const submitAnswer = async () => {
     if (!currentQuestion) return;
@@ -142,7 +170,7 @@ export const Interview: React.FC = () => {
       const data = await api.post<InterviewEvaluation>('/api/v1/interview/evaluate-answer', {
         question: currentQuestion.question,
         answer,
-        context: storedDiagnosis?.diagnosis?.headline ?? '',
+        context: activeStoredDiagnosis?.diagnosis?.headline ?? '',
       });
       setEvaluation(data);
     } catch (error) {

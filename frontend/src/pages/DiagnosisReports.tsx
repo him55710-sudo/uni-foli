@@ -7,6 +7,7 @@ import {
   FileText,
   Loader2,
   MessageSquareQuote,
+  Trash2,
 } from 'lucide-react';
 
 import { DiagnosisReportPanel } from '../components/DiagnosisReportPanel';
@@ -220,6 +221,19 @@ export function DiagnosisReports() {
         <Link to="/app/archive" className="inline-flex items-center rounded-2xl px-4 py-2 text-sm font-black text-slate-500 hover:bg-slate-100">
           탐구 보관함 보기
         </Link>
+        <button
+          onClick={() => {
+            if (confirm('현재 진단 결과를 삭제하고 처음으로 돌아가시겠습니까?')) {
+              localStorage.removeItem(DIAGNOSIS_STORAGE_KEY);
+              navigate('/app/diagnosis');
+              toast.success('진단 결과가 삭제되었습니다.');
+            }
+          }}
+          className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-black text-rose-500 hover:bg-rose-50 transition-colors"
+        >
+          <Trash2 size={16} />
+          결과 삭제
+        </button>
       </div>
     </div>
   );

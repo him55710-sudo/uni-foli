@@ -77,3 +77,8 @@ export function downloadArchiveAsText(item: ArchiveItem, format: 'hwpx' | 'pdf')
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+export function deleteArchiveItem(id: string): void {
+  const items = readItems();
+  const next = items.filter((item) => item.id !== id);
+  writeItems(next);
+}

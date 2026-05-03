@@ -19,6 +19,7 @@ interface DiagnosisReportPanelProps {
   reportAsyncJobStatus?: string | null;
   reportArtifactId?: string | null;
   reportErrorMessage?: string | null;
+  variant?: 'default' | 'minimal';
 }
 
 const FIXED_REPORT_MODE: DiagnosisReportMode = 'premium';
@@ -77,11 +78,11 @@ function formatDateTimeLabel(value: string | null | undefined): string | null {
 }
 
 function buildStatusSummary(status: string | null, retries: number): string {
-  if (status === 'READY') return '진단 보고서가 준비되었습니다. 바로 내려받을 수 있습니다.';
-  if (status === 'FAILED') return '보고서 생성 중 문제가 발생했습니다. 다시 생성 버튼으로 복구해 주세요.';
+  if (status === 'READY') return '진단 보고서가 준비되었습니다.';
+  if (status === 'FAILED') return '보고서 생성 중 문제가 발생했습니다.';
   if (status && REPORT_IN_PROGRESS_STATUS.has(status)) {
-    if (retries > 0) return `보고서를 준비하는 중입니다. 동기화 재시도 ${retries}회 진행 중입니다.`;
-    return '진단 결과를 바탕으로 보고서를 생성하고 있습니다.';
+    if (retries > 0) return `보고서 준비 중 (재시도 ${retries}회)`;
+    return '진단 보고서를 생성하고 있습니다.';
   }
   return '아직 보고서가 생성되지 않았습니다.';
 }
@@ -130,6 +131,7 @@ export function DiagnosisReportPanel({
   reportAsyncJobStatus,
   reportArtifactId,
   reportErrorMessage,
+  variant = 'default',
 }: DiagnosisReportPanelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -296,9 +298,9 @@ export function DiagnosisReportPanel({
       setArtifact(regenerated);
 
       const readyArtifact =
-        regenerated.status === 'READY'
-          ? regenerated
-          : await waitForReadyArtifact(regenerated.id);
+          regenerated.status === 'READY'
+              ? regenerated
+              : await waitForReadyArtifact(regenerated.id);
 
       if (!readyArtifact || readyArtifact.status !== 'READY') {
         throw new Error('보고서 준비가 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.');
@@ -320,6 +322,41 @@ export function DiagnosisReportPanel({
   const statusSummary = buildStatusSummary(effectiveStatus, reportSyncRetries);
   const reportStateMessage = reportErrorMessage || errorMessage;
   const lastUpdatedLabel = formatDateTimeLabel(artifact?.updated_at || payload?.generated_at || null);
+
+  if (variant === 'minimal') {
+    return (
+      <div className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50/50 p-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm text-indigo-600">
+          <FileText size={20} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold text-slate-900 truncate">진단 보고서 PDF</p>
+            <StatusBadge status={resolveBadgeStatus(effectiveStatus)} className="h-5 px-1.5 text-[10px]">
+              {resolveBadgeLabel(effectiveStatus)}
+            </StatusBadge>
+          </div>
+          <p className="text-xs font-semibold text-slate-500 truncate">{statusSummary}</p>
+        </div>
+        <div className="flex gap-2">
+          {canDownloadReport ? (
+            <PrimaryButton onClick={downloadReport} disabled={isDownloading} className="h-9 px-4 text-xs">
+              {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              다운로드
+            </PrimaryButton>
+          ) : (
+            <PrimaryButton onClick={() => generateReport(false)} disabled={isGenerating || isLoading} className="h-9 px-4 text-xs">
+              {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+              생성하기
+            </PrimaryButton>
+          )}
+          <SecondaryButton onClick={() => generateReport(true)} disabled={isGenerating || isLoading || isDownloading} className="h-9 w-9 p-0 justify-center">
+            <RefreshCw size={14} className={isGenerating ? 'animate-spin' : ''} />
+          </SecondaryButton>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <SectionCard

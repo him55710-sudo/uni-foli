@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { useDropzone } from 'react-dropzone';
 import { ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -9,14 +8,15 @@ import { useAuthStore } from '../store/authStore';
 import { useOnboardingStore } from '../store/onboardingStore';
 import { api, shouldUseSynchronousApiJobs } from '../lib/api';
 import { type ApiErrorInfo, getApiErrorInfo, getApiErrorMessage } from '../lib/apiError';
+import { buildRankedGoals } from '../lib/rankedGoals';
 import { ProcessTimingDashboard, type TimingPhaseStatus } from '../components/ProcessTimingDashboard';
 import type { AsyncJobRead, DiagnosisResultPayload, DiagnosisRunResponse } from '../types/api';
 import {
-  DIAGNOSIS_STORAGE_KEY,
   getDiagnosisFailureMessage,
   isDiagnosisComplete,
   isDiagnosisFailed,
   mergeDiagnosisPayload,
+  persistDiagnosisStorageSnapshot,
 } from '../lib/diagnosis';
 import {
   isDiagnosisProjectNotFound,
@@ -37,14 +37,9 @@ import {
 import { AsyncJobStatusCard } from '../components/AsyncJobStatusCard';
 import { useAsyncJob } from '../hooks/useAsyncJob';
 import { TERMINAL_STATUSES, SUCCESS_STATUSES, type DocumentStatus } from '../types/domain';
-import { DiagnosisProfile } from '../components/diagnosis/DiagnosisProfile';
-import { DiagnosisUpload } from '../components/diagnosis/DiagnosisUpload';
+import { DiagnosisUnifiedSetup } from '../components/diagnosis/DiagnosisUnifiedSetup';
 import { DiagnosisResultDisplay } from '../components/diagnosis/DiagnosisResultDisplay';
 import { DiagnosisReportPanel } from '../components/DiagnosisReportPanel';
-
-const DiagnosisGoals = React.lazy(() =>
-  import('../components/diagnosis/DiagnosisGoals').then((module) => ({ default: module.DiagnosisGoals })),
-);
 
 type DiagnosisStep = 'PROFILE' | 'GOALS' | 'UPLOAD' | 'ANALYSING' | 'RESULT' | 'FAILED';
 type TimingPhaseKey = 'upload' | 'parse' | 'diagnosis';
@@ -320,29 +315,15 @@ export function Diagnosis() {
     setDiagnosisRunId(null);
     setIsUploading(false);
 
-    const primaryGoal = goalList[0];
-    if (primaryGoal?.university && primaryGoal?.major) {
-      localStorage.setItem(
-        DIAGNOSIS_STORAGE_KEY,
-        JSON.stringify({
-          major: primaryGoal.major,
-          targetUniversity: primaryGoal.university,
-          targetMajor: primaryGoal.major,
-          target_university: primaryGoal.university,
-          target_major: primaryGoal.major,
-          projectId: run.project_id,
-          diagnosisRunId: run.id,
-          reportStatus: run.report_status ?? run.report_async_job_status ?? null,
-          reportArtifactId: run.report_artifact_id ?? null,
-          reportErrorMessage: run.report_error_message ?? null,
-          savedAt: new Date().toISOString(),
-          diagnosis: payload,
-        }),
-      );
-    }
+    const primaryGoal = goalList[0] ?? buildRankedGoals(user, 1)[0];
+    persistDiagnosisStorageSnapshot(run, {
+      major: primaryGoal?.major ?? null,
+      targetUniversity: primaryGoal?.university ?? null,
+      targetMajor: primaryGoal?.major ?? null,
+    });
 
     return true;
-  }, [finishTimingPhase, goalList, setDiagnosisRunId, setProjectId, setStep]);
+  }, [finishTimingPhase, goalList, setDiagnosisRunId, setProjectId, setStep, user]);
 
   const startDiagnosisForProject = useCallback(async (activeProjectId: string): Promise<boolean> => {
     try {
@@ -714,8 +695,7 @@ export function Diagnosis() {
     setDiagnosisRun(polledReportRun);
   }, [diagnosisRun?.id, polledReportRun]);
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
+  const handleUpload = useCallback(async (file: File) => {
     if (!file) return;
 
     if (file.size > MAX_UPLOAD_BYTES) {
@@ -745,7 +725,7 @@ export function Diagnosis() {
         await api.getBackendReadiness();
       } catch (readinessError) {
         const failure = getApiErrorInfo(readinessError, '백엔드 서버 준비 상태 확인에 실패했습니다.');
-        throw failure; // getApiErrorInfo returns an object, but we need to pass it to the catch block below
+        throw failure;
       }
 
       const formData = new FormData();
@@ -779,8 +759,6 @@ export function Diagnosis() {
 
       toast.success('진단을 시작했습니다.', { id: loadingId });
     } catch (error: any) {
-      // If error is already an ApiErrorInfo (from our readiness try-catch), use it. 
-      // Otherwise, resolve it normally.
       const failure = error.userMessage && error.debugCode !== undefined
         ? (error as ApiErrorInfo)
         : getApiErrorInfo(error, '진단 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.');
@@ -812,13 +790,6 @@ export function Diagnosis() {
     useSynchronousApiJobs,
   ]);
 
-  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    onDrop,
-    accept: { 'application/pdf': ['.pdf'] },
-    multiple: false,
-    disabled: isUploading,
-    noClick: true,
-  });
 
   const retryDiagnosis = useCallback(async () => {
     if (!diagnosisRun?.async_job_id || isRetryingDiagnosis) return;
@@ -871,18 +842,14 @@ export function Diagnosis() {
   ]);
 
   const stepItems = [
-    { id: 'profile', label: '프로필', state: step === 'PROFILE' ? 'active' : ['GOALS', 'UPLOAD', 'ANALYSING', 'RESULT', 'FAILED'].includes(step) ? 'done' : 'pending' },
-    { id: 'goals', label: '목표', state: step === 'GOALS' ? 'active' : ['UPLOAD', 'ANALYSING', 'RESULT', 'FAILED'].includes(step) ? 'done' : 'pending' },
-    { id: 'upload', label: '업로드', state: step === 'UPLOAD' ? 'active' : ['ANALYSING', 'RESULT', 'FAILED'].includes(step) ? 'done' : 'pending' },
+    { id: 'setup', label: '진단 설정', state: ['PROFILE', 'GOALS', 'UPLOAD'].includes(step) ? 'active' : ['ANALYSING', 'RESULT', 'FAILED'].includes(step) ? 'done' : 'pending' },
     { id: 'analysis', label: '분석', state: step === 'ANALYSING' ? 'active' : step === 'RESULT' ? 'done' : step === 'FAILED' ? 'error' : 'pending' },
     { id: 'result', label: '결과', state: step === 'RESULT' ? 'active' : 'pending' },
   ] as const;
 
   const onStepClick = useCallback((stepId: string) => {
     const mapping: Record<string, DiagnosisStep> = {
-      profile: 'PROFILE',
-      goals: 'GOALS',
-      upload: 'UPLOAD',
+      setup: 'UPLOAD',
       analysis: 'ANALYSING',
       result: 'RESULT',
     };
@@ -892,9 +859,9 @@ export function Diagnosis() {
 
   const headerTitle = useMemo(() => {
     switch (step) {
-      case 'PROFILE': return '진단 프로필 설정';
-      case 'GOALS': return '목표 확인';
-      case 'UPLOAD': return '생활기록부 업로드';
+      case 'PROFILE':
+      case 'GOALS':
+      case 'UPLOAD': return '진단 시작하기';
       case 'ANALYSING': return '진단 진행 중';
       case 'RESULT': return '진단 결과';
       case 'FAILED': return '진단 실패';
@@ -916,25 +883,6 @@ export function Diagnosis() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 py-8 animate-in fade-in duration-700">
-      <PageHeader
-        eyebrow="Diagnosis"
-        title={headerTitle}
-        description={headerDescription}
-        className="border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(243,247,255,0.92)_100%)]"
-        evidence={(
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={step === 'FAILED' ? 'danger' : step === 'RESULT' ? 'success' : 'active'}>
-              현재 단계: {step === 'ANALYSING' ? '분석' : step === 'FAILED' ? '오류' : step === 'RESULT' ? '완료' : '입력'}
-            </StatusBadge>
-            <StatusBadge status="neutral">목표 {goalList.length}개</StatusBadge>
-            {projectId ? <StatusBadge status="neutral">프로젝트 연결됨</StatusBadge> : null}
-          </div>
-        )}
-      />
-
-      <div className="px-4">
-        <StepIndicator items={stepItems as any} onStepClick={onStepClick} />
-      </div>
 
       {(step === 'ANALYSING' || (step === 'UPLOAD' && isUploading)) && (
         <ProcessTimingDashboard
@@ -953,32 +901,12 @@ export function Diagnosis() {
       )}
 
       <AnimatePresence mode="wait">
-        {step === 'PROFILE' && <DiagnosisProfile key="profile" />}
-
-        {step === 'GOALS' && (
-          <React.Suspense
-            fallback={(
-              <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm font-bold text-slate-500 shadow-sm">
-                목표 대학과 학과 선택 화면을 준비하는 중입니다.
-              </div>
-            )}
-          >
-            <DiagnosisGoals key="goals" />
-          </React.Suspense>
-        )}
-
-        {step === 'UPLOAD' && (
-          <DiagnosisUpload
-            key="upload"
-            getRootProps={getRootProps}
-            getInputProps={getInputProps}
-            isDragActive={isDragActive}
+        {['PROFILE', 'GOALS', 'UPLOAD'].includes(step) && (
+          <DiagnosisUnifiedSetup
+            key="unified-setup"
+            onUploadStart={handleUpload}
             isUploading={isUploading}
-            handleOpenFileDialog={() => open()}
-            handleDropzoneKeyDown={() => open()}
-            setStep={setStep}
             flowError={flowError}
-            targetMajor={goalList[0]?.major ?? null}
           />
         )}
 

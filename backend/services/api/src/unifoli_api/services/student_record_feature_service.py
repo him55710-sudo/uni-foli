@@ -18,6 +18,102 @@ _SECTION_KEYS = (
 _TOKEN_RE = re.compile(r"[A-Za-z가-힣]{2,}")
 logger = logging.getLogger("unifoli.api.student_record_features")
 
+_MAJOR_TRACK_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "architecture": (
+        "건축",
+        "건축학",
+        "건축공학",
+        "건축환경",
+        "스마트빌딩",
+        "구조설계",
+        "구조 안전",
+        "도시설계",
+        "공간설계",
+        "건축자재",
+        "하중",
+        "내진",
+        "제진",
+        "면진",
+        "BIM",
+        "CLT",
+    ),
+    "mechanical_computer": (
+        "기계",
+        "기계공학",
+        "전자",
+        "전자공학",
+        "컴퓨터",
+        "컴퓨터공학",
+        "하드웨어",
+        "소프트웨어",
+        "프로그래밍",
+        "알고리즘",
+        "전동화",
+        "배터리",
+        "반도체",
+        "공정",
+        "센서",
+        "제어",
+        "로봇",
+        "모빌리티",
+        "자동차",
+    ),
+    "bio_medical": (
+        "생명",
+        "생명과학",
+        "의학",
+        "의료",
+        "간호",
+        "바이오",
+        "유전",
+        "세포",
+        "질병",
+        "약학",
+    ),
+    "business_social": (
+        "경영",
+        "경제",
+        "회계",
+        "마케팅",
+        "사회",
+        "정책",
+        "행정",
+        "법학",
+        "국제",
+        "무역",
+    ),
+    "humanities_education": (
+        "국어",
+        "문학",
+        "역사",
+        "철학",
+        "교육",
+        "심리",
+        "언어",
+        "영어",
+        "인문",
+    ),
+    "energy_environment": (
+        "환경",
+        "에너지",
+        "기후",
+        "탄소",
+        "재생",
+        "전력",
+        "수소",
+        "태양광",
+        "풍력",
+    ),
+}
+_MAJOR_TRACK_LABELS: dict[str, str] = {
+    "architecture": "건축·도시",
+    "mechanical_computer": "기계·컴퓨터",
+    "bio_medical": "생명·의학",
+    "business_social": "경영·사회",
+    "humanities_education": "인문·교육",
+    "energy_environment": "환경·에너지",
+}
+
 
 class StudentRecordFeatures(BaseModel):
     source_mode: str
@@ -34,6 +130,14 @@ class StudentRecordFeatures(BaseModel):
     evidence_density: float = 0.0
     repeated_subject_ratio: float = 0.0
     major_term_overlap_ratio: float = 0.0
+    major_signal_counts: dict[str, int] = Field(default_factory=dict)
+    target_major_track: str | None = None
+    target_major_track_label: str | None = None
+    dominant_major_track: str | None = None
+    dominant_major_track_label: str | None = None
+    target_major_evidence_count: int = 0
+    target_major_alignment_level: str = "unknown"
+    target_major_alignment_note: str | None = None
     avg_parse_confidence: float = 0.0
     reliability_score: float = 0.0
     needs_review: bool = False
@@ -152,8 +256,19 @@ def extract_student_record_features(
     evidence_density = _clamp(evidence_reference_count / max(total_records, 1))
     narrative_density = _clamp(narrative_char_count / max(total_word_count * 6, 1))
 
+    corpus = " ".join(all_text_parts)
     major_terms = _major_terms(target_major=target_major, career_direction=career_direction)
-    overlap_ratio = _major_overlap_ratio(major_terms=major_terms, corpus=" ".join(all_text_parts))
+    overlap_ratio = _major_overlap_ratio(major_terms=major_terms, corpus=corpus)
+    signal_counts = _major_signal_counts(corpus)
+    target_track = _infer_major_track(f"{target_major or ''} {career_direction or ''}")
+    dominant_track = _dominant_major_track(signal_counts)
+    alignment_level, alignment_note = _major_alignment(
+        target_major=target_major,
+        target_track=target_track,
+        dominant_track=dominant_track,
+        signal_counts=signal_counts,
+    )
+    target_evidence_count = int(signal_counts.get(target_track or "", 0)) if target_track else 0
 
     avg_parse_confidence = sum(parse_confidences) / max(len(parse_confidences), 1)
     review_ratio = needs_review_documents / max(len(documents), 1)
@@ -163,9 +278,11 @@ def extract_student_record_features(
     if needs_review_documents > 0:
         risk_flags.append("일부 문서가 needs_review 상태입니다.")
     if evidence_density < 0.35:
-        risk_flags.append("근거 밀도가 낮아 주요 주장 검증 신뢰가 부족합니다.")
+        risk_flags.append("학생부 근거가 충분히 자주, 구체적으로 드러나지 않아 주요 주장 검증 신뢰가 부족합니다.")
     if overlap_ratio < 0.25 and major_terms:
         risk_flags.append("목표 전공 관련 키워드가 기록 전반에 충분히 드러나지 않습니다.")
+    if alignment_level in {"mismatch", "weak"} and alignment_note:
+        risk_flags.append(alignment_note)
 
     source_mode = "structured" if saw_structured else "text"
     if saw_structured and needs_review_documents > 0:
@@ -186,6 +303,14 @@ def extract_student_record_features(
         evidence_density=evidence_density,
         repeated_subject_ratio=repeated_subject_ratio,
         major_term_overlap_ratio=overlap_ratio,
+        major_signal_counts=signal_counts,
+        target_major_track=target_track,
+        target_major_track_label=_MAJOR_TRACK_LABELS.get(target_track or ""),
+        dominant_major_track=dominant_track,
+        dominant_major_track_label=_MAJOR_TRACK_LABELS.get(dominant_track or ""),
+        target_major_evidence_count=target_evidence_count,
+        target_major_alignment_level=alignment_level,
+        target_major_alignment_note=alignment_note,
         avg_parse_confidence=round(avg_parse_confidence, 3),
         reliability_score=round(reliability_score, 3),
         needs_review=needs_review_documents > 0,
@@ -359,6 +484,71 @@ def _infer_sections_from_text(
         if key in compact:
             section_presence[key] = True
             section_record_counts[key] = max(section_record_counts[key], 1)
+
+
+def _major_signal_counts(corpus: str) -> dict[str, int]:
+    text = str(corpus or "").lower()
+    counts: dict[str, int] = {}
+    if not text:
+        return {track: 0 for track in _MAJOR_TRACK_KEYWORDS}
+    for track, keywords in _MAJOR_TRACK_KEYWORDS.items():
+        score = 0
+        for keyword in keywords:
+            normalized = str(keyword).lower()
+            if not normalized:
+                continue
+            occurrences = len(re.findall(re.escape(normalized), text))
+            # 반복 OCR 조각 하나가 계열 판단을 과도하게 지배하지 않도록 키워드별 가중치를 제한합니다.
+            score += min(occurrences, 3)
+        counts[track] = score
+    return counts
+
+
+def _infer_major_track(text: str | None) -> str | None:
+    counts = _major_signal_counts(str(text or ""))
+    return _dominant_major_track(counts)
+
+
+def _dominant_major_track(counts: dict[str, int]) -> str | None:
+    if not counts:
+        return None
+    track, count = max(counts.items(), key=lambda item: item[1])
+    return track if count > 0 else None
+
+
+def _major_alignment(
+    *,
+    target_major: str | None,
+    target_track: str | None,
+    dominant_track: str | None,
+    signal_counts: dict[str, int],
+) -> tuple[str, str | None]:
+    if not target_track:
+        return "unknown", None
+
+    target_count = int(signal_counts.get(target_track, 0))
+    dominant_count = int(signal_counts.get(dominant_track or "", 0)) if dominant_track else 0
+    target_label = _MAJOR_TRACK_LABELS.get(target_track, "목표 전공")
+    dominant_label = _MAJOR_TRACK_LABELS.get(dominant_track or "", "다른 계열")
+    target_name = (target_major or target_label).strip()
+
+    if dominant_track and dominant_track != target_track and dominant_count >= max(3, target_count + 2):
+        return (
+            "mismatch",
+            f"입력 목표는 {target_name}이지만 학생부 원문에서는 {dominant_label} 계열 단서가 더 강합니다. "
+            f"{target_label} 연결 근거를 새로 설계해야 합니다.",
+        )
+    if target_count >= 3 and (not dominant_track or dominant_track == target_track or target_count >= dominant_count - 1):
+        return "strong", None
+    if target_count >= 2:
+        return (
+            "partial",
+            f"{target_label} 관련 단서는 일부 확인되지만, 대표 활동과 정량 산출물로 더 선명하게 연결해야 합니다.",
+        )
+    return (
+        "weak",
+        f"학생부 원문에서 {target_label} 계열 근거가 부족합니다. 목표 전공과 연결되는 새 탐구 질문이 필요합니다.",
+    )
 
 
 def _major_terms(*, target_major: str | None, career_direction: str | None) -> list[str]:

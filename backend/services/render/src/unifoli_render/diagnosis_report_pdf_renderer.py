@@ -21,6 +21,18 @@ _PUBLIC_INTERNAL_TOKEN_RE = re.compile(
     r"\[?\b(?:student_record|parsed_document|document_chunk|p\d+-e\d+|evidence[_-]?\d+|anchor[_-]?\d+|citation[_-]?\d+|A\d{1,4})\b\]?",
     re.IGNORECASE,
 )
+_PUBLIC_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("하위노드", "세부 근거"),
+    ("상위노드", "핵심 주제"),
+    ("앵커", "원문 근거"),
+    ("anchor", "원문 근거"),
+    ("근거 밀도", "학생부에 얼마나 자주, 구체적으로 드러나는지"),
+    ("파싱 신뢰도", "원문 인식 정확도"),
+    ("파싱 커버리지", "원문 인식 범위"),
+    ("탐구 심화도", "탐구가 얼마나 깊게 이어졌는지"),
+    ("탐구 심화", "탐구 깊이"),
+    ("리스크", "보완 필요점"),
+)
 
 
 def render_consultant_diagnosis_pdf(
@@ -250,7 +262,7 @@ def render_consultant_diagnosis_pdf(
             }
             if evidence_items and should_render_evidence:
                 story.append(Spacer(1, style_tokens["spacing"]["paragraph_gap"]))
-                story.append(Paragraph("근거 앵커", style_tokens["h3"]))
+                story.append(Paragraph("원문 근거", style_tokens["h3"]))
                 max_evidence_cards = 3 if section_id == "evidence_cards" else 2
                 for evidence in evidence_items[:max_evidence_cards]:
                     source_label = str(evidence.get("source_label") or "근거")
@@ -1130,6 +1142,8 @@ def _premium_analysis(report_payload: dict[str, Any]) -> dict[str, Any]:
 def _public_display_text(value: Any) -> str:
     text = str(value or "")
     text = _PUBLIC_INTERNAL_TOKEN_RE.sub("", text)
+    for source, target in _PUBLIC_TERM_REPLACEMENTS:
+        text = re.sub(re.escape(source), target, text, flags=re.IGNORECASE)
     text = re.sub(r"\s*\|\s*\|\s*", " | ", text)
     text = re.sub(r"^\s*\|\s*|\s*\|\s*$", "", text).strip(" -|")
     return text
@@ -1224,9 +1238,9 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
         "DiagnosisMeta",
         parent=styles["BodyText"],
         fontName=font_name,
-        fontSize=max(9.4, float(typography.get("meta", {}).get("font_size", 9.4) if isinstance(typography.get("meta"), dict) else 9.4)),
+        fontSize=max(9.5, float(typography.get("meta", {}).get("font_size", 9.5) if isinstance(typography.get("meta"), dict) else 9.5)),
         leading=max(13.2, float(typography.get("meta", {}).get("leading", 13.2) if isinstance(typography.get("meta"), dict) else 13.2)),
-        textColor=_hex(color_tokens.get("text_muted"), "#526173"),
+        textColor=_hex(color_tokens.get("text_muted"), "#6B7280"),
         alignment=TA_LEFT,
         **common_wrap,
     )
@@ -1251,14 +1265,14 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
         "DiagnosisCoverLabel",
         parent=styles["BodyText"],
         fontName=font_name,
-        fontSize=max(9.2, float(typography.get("cover_label", {}).get("font_size", 9.2) if isinstance(typography.get("cover_label"), dict) else 9.2)),
-        leading=max(12.6, float(typography.get("cover_label", {}).get("leading", 12.6) if isinstance(typography.get("cover_label"), dict) else 12.6)),
-        textColor=_hex(color_tokens.get("text_muted"), "#526173"),
+        fontSize=max(9.5, float(typography.get("cover_label", {}).get("font_size", 9.5) if isinstance(typography.get("cover_label"), dict) else 9.5)),
+        leading=max(13.0, float(typography.get("cover_label", {}).get("leading", 13.0) if isinstance(typography.get("cover_label"), dict) else 13.0)),
+        textColor=_hex(color_tokens.get("text_muted"), "#6B7280"),
         alignment=TA_LEFT,
         spaceAfter=3,
         **common_wrap,
     )
-    meta_size = max(9.2, float(typography.get("meta", {}).get("font_size", 9.2) if isinstance(typography.get("meta"), dict) else 9.2))
+    meta_size = max(9.5, float(typography.get("meta", {}).get("font_size", 9.5) if isinstance(typography.get("meta"), dict) else 9.5))
     return {
         "cover_label": cover_label_style,
         "cover_title": title_style,
@@ -1887,8 +1901,8 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
         "DashboardBody",
         parent=styles["BodyText"],
         fontName=font_name,
-        fontSize=10.1,
-        leading=14.7,
+        fontSize=max(10.2, _font_size("body", 10.2)),
+        leading=max(15.2, _leading("body", 15.2)),
         textColor=_hex(color_tokens.get("text_primary"), "#111827"),
         spaceAfter=float(spacing.get("paragraph_gap", 5)),
         **common_wrap,
@@ -1897,8 +1911,8 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
         "DashboardMeta",
         parent=styles["BodyText"],
         fontName=font_name,
-        fontSize=8.8,
-        leading=12.2,
+        fontSize=max(9.5, _font_size("meta", 9.5)),
+        leading=max(13.2, _leading("meta", 13.2)),
         textColor=_hex(color_tokens.get("text_muted"), "#6B7280"),
         alignment=TA_LEFT,
         **common_wrap,
@@ -1922,8 +1936,8 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
     badge_style = ParagraphStyle(
         "DashboardBadge",
         parent=meta_strong_style,
-        fontSize=8.4,
-        leading=10.8,
+        fontSize=9.5,
+        leading=12.4,
         textColor=_hex(color_tokens.get("brand_secondary"), "#5B21B6"),
         alignment=TA_CENTER,
         **common_wrap,
@@ -1932,8 +1946,8 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
         "DashboardCoverLabel",
         parent=styles["BodyText"],
         fontName=font_bold,
-        fontSize=9.2,
-        leading=12,
+        fontSize=max(9.5, _font_size("cover_label", 9.5)),
+        leading=max(13.0, _leading("cover_label", 13.0)),
         textColor=_hex(color_tokens.get("brand_primary"), "#7C3AED"),
         alignment=TA_LEFT,
         spaceAfter=4,
@@ -1953,7 +1967,7 @@ def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font
         "callout": ParagraphStyle("DashboardCallout", parent=body_style, fontName=font_bold, alignment=TA_CENTER, **common_wrap),
         "number": number_style,
         "badge": badge_style,
-        "typography": {"meta_size": 8.8},
+        "typography": {"meta_size": max(9.5, _font_size("meta", 9.5))},
         "spacing": {
             "cover_block_gap": float(spacing.get("cover_block_gap", 10)),
             "section_gap": float(spacing.get("section_gap", 8)),
@@ -2484,6 +2498,7 @@ def _dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate,
 def _major_fit_dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any]) -> list[Any]:
     premium = _premium_analysis(report_payload)
     branding = premium.get("student_branding") if isinstance(premium.get("student_branding"), dict) else {}
+    validation = premium.get("major_direction_validation") if isinstance(premium.get("major_direction_validation"), dict) else {}
     blocks = _dashboard_score_items(report_payload)
     major_score = next((item["score"] for item in blocks if "전공" in item["axis"] or "major" in item["axis"].lower()), blocks[0]["score"] if blocks else 72)
     evidence_map = [item for item in premium.get("evidence_map", []) if isinstance(item, dict)]
@@ -2510,7 +2525,7 @@ def _major_fit_dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDo
         }
         for index, item in enumerate(matrix[:3])
     ]
-    return [
+    flowables: list[Any] = [
         _dashboard_card(
             "전공 브랜딩",
             _truncate_plain(str(branding.get("one_line_branding") or branding.get("core_narrative") or "전공 적합성을 학생부 근거 중심으로 재정리합니다."), 220),
@@ -2521,11 +2536,37 @@ def _major_fit_dashboard_flowables(report_payload: dict[str, Any], doc: SimpleDo
             chips=["Major Fit", _score_level(major_score)],
             tone="purple",
         ),
-        Spacer(1, 9),
-        _dashboard_card_grid(evidence_cards[:3], doc, style_tokens, color_tokens, cols=3),
-        Spacer(1, 9),
-        _dashboard_card_grid(competency_cards[:3], doc, style_tokens, color_tokens, cols=3),
     ]
+    if validation:
+        validation_body = (
+            f"입력 목표: {validation.get('input_target') or '목표 전공'}\n"
+            f"학생부 우세 계열: {validation.get('dominant_record_track') or '미확인'}\n"
+            f"판단: {validation.get('judgement') or '원문 근거를 추가 확인해야 합니다.'}\n"
+            f"보완 액션: {validation.get('strategy') or '대표 활동 3개를 목표 전공 문제와 연결하세요.'}"
+        )
+        flowables.extend(
+            [
+                Spacer(1, 9),
+                _dashboard_card(
+                    "학생부 방향성 검증",
+                    _truncate_plain(validation_body, 260),
+                    doc.width,
+                    style_tokens,
+                    color_tokens,
+                    chips=[str(validation.get("alignment") or "검증")],
+                    tone="risk" if str(validation.get("alignment") or "") in {"mismatch", "weak"} else "plain",
+                ),
+            ]
+        )
+    flowables.extend(
+        [
+            Spacer(1, 9),
+            _dashboard_card_grid(evidence_cards[:3], doc, style_tokens, color_tokens, cols=3),
+            Spacer(1, 9),
+            _dashboard_card_grid(competency_cards[:3], doc, style_tokens, color_tokens, cols=3),
+        ]
+    )
+    return flowables
 
 
 def _strength_risk_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], color_tokens: dict[str, Any], *, strengths: bool) -> list[Any]:

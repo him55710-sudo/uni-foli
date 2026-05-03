@@ -101,11 +101,11 @@ function compactList(values: string[]): string {
 }
 
 function buildGroundedPrompt(
-  kind: 'strengths' | 'weaknesses' | 'major_fit' | 'activities' | 'interview', 
+  kind: 'topic' | 'outline' | 'opening' | 'revision',
   snapshot: DiagnosisArtifactSnapshot
 ): string {
   const lines = [
-    '아래는 저장된 진단 아티팩트 요약이다. 반드시 이 근거를 우선 사용해 답변해.',
+    '아래는 저장된 진단 아티팩트 요약이다. 이 내용은 학생에게 그대로 나열하지 말고, 탐구보고서 작성 가이드에 자연스럽게 반영해.',
     `headline: ${snapshot.headline || '-'}`,
     `recommended_focus: ${snapshot.recommendedFocus || '-'}`,
     `risk_level: ${snapshot.riskLevel || '-'}`,
@@ -114,33 +114,29 @@ function buildGroundedPrompt(
     `major_alignment_hints: ${compactList(snapshot.majorAlignmentHints) || '-'}`,
     `recommended_activity_topics: ${compactList(snapshot.recommendedActivityTopics) || '-'}`,
     `record_completion_state: ${snapshot.completionState}`,
-    '근거가 부족하면 추측하지 말고 부족한 지점을 명시해.',
+    '강점은 주제 선택과 논지의 차별화에 쓰고, 약점은 보고서 구조의 보완 체크리스트로 써.',
+    '부족한 내용은 학생이 다음에 확인할 질문으로 바꿔.',
   ];
 
-  if (kind === 'strengths') {
+  if (kind === 'topic') {
     lines.push(
-      '요청: 강점 보기',
-      '출력: 짧은 bullet 3개 이내, 각 bullet마다 근거 1줄, 마지막에 즉시 실행 가능한 1문장 제안.',
+      '요청: 탐구보고서 주제 설계',
+      '출력: 학생 진단의 강점과 보완점을 고려해 바로 쓸 수 있는 탐구 주제 후보 3개를 제안하고, 각 주제마다 왜 맞는지와 조심할 점을 짧게 적어.',
     );
-  } else if (kind === 'weaknesses') {
+  } else if (kind === 'outline') {
     lines.push(
-      '요청: 약점 보기',
-      '출력: 보완 우선순위 3개 이내 bullet, 각 항목마다 왜 중요한지 1줄, 과장 금지.',
+      '요청: 탐구보고서 개요 작성',
+      '출력: 한 가지 추천 주제를 고르고 서론-본론-결론 개요를 제안해. 각 단락이 학생의 강점을 어떻게 살리고 약점을 어떻게 보완하는지 함께 안내해.',
     );
-  } else if (kind === 'major_fit') {
+  } else if (kind === 'opening') {
     lines.push(
-      '요청: 전공적합성 보기',
-      '출력: 전공적합성 근거/리스크를 균형 있게 요약, 4줄 이내, 불확실성은 명확히 표시.',
-    );
-  } else if (kind === 'interview') {
-     lines.push(
-      '요청: 면접 질문 및 답변 가이드',
-      '출력: 실전 면접 예상 질문 2개와 그에 대한 생기부 기반 답변 전략 제안.',
+      '요청: 첫 문단 작성',
+      '출력: 탐구 동기와 문제의식이 드러나는 서론 초안을 작성해. 학생 기록을 과장하지 말고 자연스럽게 전공 관심과 연결해.',
     );
   } else {
     lines.push(
-      '요청: 추천 활동 보기',
-      '출력: 추천 활동 3개 이내 bullet, 각 항목에 기대효과와 주의점 1줄씩.',
+      '요청: 초안 보완 방향',
+      '출력: 현재 탐구보고서를 쓴다고 가정하고, 강점은 더 선명하게 살리고 약점은 줄이는 보완 체크리스트와 다음 작성 순서를 제안해.',
     );
   }
 
@@ -199,48 +195,41 @@ export function buildDiagnosisChatStarter(resultPayload: unknown): DiagnosisChat
   const isFinalized = snapshot.completionState === 'finalized';
 
   const briefingLines = [
-    isFinalized ? '생기부가 마감된 시기네요! 이제 실전 면접과 서류 검증에 집중해야 할 때입니다.' : '진단 결과를 기반으로 생기부 보완을 시작해볼까요?',
+    isFinalized
+      ? '진단 결과를 바탕으로 탐구보고서 작성 방향을 잡아볼게요. 강점과 보완점은 제가 내부 기준으로 반영하겠습니다.'
+      : '진단 결과를 바탕으로 탐구보고서 작성 방향을 잡아볼게요. 강점은 살리고 보완점은 구조 안에서 메우겠습니다.',
     snapshot.headline ? `- 핵심 요약: ${snapshot.headline}` : '- 핵심 요약: 진단 아티팩트가 준비되었습니다.',
     snapshot.recommendedFocus ? `- 추천 초점: ${snapshot.recommendedFocus}` : null,
     riskLabel ? `- 현재 상태: ${riskLabel}` : null,
-    isFinalized ? '면접 예상 질문을 확인하거나, 현재 생기부의 강점 포인트를 정리해보세요.' : '아래 항목을 눌러 보완이 필요한 지점부터 확인해보세요.',
+    '아래 항목을 고르면 진단 내용을 따로 나열하지 않고, 보고서 주제와 구성에 녹여서 안내합니다.',
   ].filter(Boolean) as string[];
 
   const options = [
     {
-      id: 'diagnosis-strengths',
-      label: '강점 보기',
-      value: buildGroundedPrompt('strengths', snapshot),
+      id: 'diagnosis-report-topic',
+      label: '주제 잡기',
+      value: buildGroundedPrompt('topic', snapshot),
     },
     {
-      id: 'diagnosis-weaknesses',
-      label: '약점 보기',
-      value: buildGroundedPrompt('weaknesses', snapshot),
+      id: 'diagnosis-report-outline',
+      label: '개요 만들기',
+      value: buildGroundedPrompt('outline', snapshot),
     },
     {
-      id: 'diagnosis-major-fit',
-      label: '전공적합성 보기',
-      value: buildGroundedPrompt('major_fit', snapshot),
+      id: 'diagnosis-report-opening',
+      label: '첫 문단 쓰기',
+      value: buildGroundedPrompt('opening', snapshot),
+    },
+    {
+      id: 'diagnosis-report-revision',
+      label: '보완 반영하기',
+      value: buildGroundedPrompt('revision', snapshot),
     },
   ];
 
-  if (isFinalized) {
-    options.push({
-      id: 'diagnosis-interview',
-      label: '면접 질문 샘플',
-      value: buildGroundedPrompt('interview', snapshot),
-    });
-  } else {
-    options.push({
-      id: 'diagnosis-activities',
-      label: '보완 활동 추천',
-      value: buildGroundedPrompt('activities', snapshot),
-    });
-  }
-
   const quickActionGroup: GuidedChoiceGroup = {
     id: 'diagnosis-quick-actions',
-    title: isFinalized ? '면접 및 실전 대비' : '진단 결과 빠른 확인',
+    title: '진단 기반 탐구보고서 작성',
     style: 'chips',
     options,
   };

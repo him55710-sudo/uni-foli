@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Flag, PlayCircle, School, Settings2, Sparkles, Target, Zap } from 'lucide-react';
+import { Archive, ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Clock, Flag, PlayCircle, School, Settings2, Sparkles, Target, Trash2, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   type BlueprintQuest,
@@ -21,6 +21,7 @@ import { buildRankedGoals } from '../lib/rankedGoals';
 import { updateLocalAuthTargets } from '../lib/localAuthProfile';
 import { type QuestStartPayload, saveQuestStart } from '../lib/questStart';
 import { useAuthStore } from '../store/authStore';
+import { type ArchiveItem, deleteArchiveItem, listArchiveItems } from '../lib/archiveStore';
 import {
   EmptyState,
   PageHeader,
@@ -175,6 +176,7 @@ export default function Dashboard() {
   const [blueprint, setBlueprint] = useState<CurrentBlueprintResponse | null>(null);
   const [blueprintError, setBlueprintError] = useState<string | null>(null);
   const [openSubjectGroups, setOpenSubjectGroups] = useState<Record<string, boolean>>({});
+  const [archiveItems, setArchiveItems] = useState<ArchiveItem[]>([]);
   const localAuthFallbackActive = Boolean(authStoreUser?.id?.startsWith('local-auth-'));
 
   const activeStoredDiagnosis = useMemo(
@@ -185,6 +187,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setStoredDiagnosis(readStoredDiagnosis());
+    setArchiveItems(listArchiveItems().slice(0, 3));
   }, []);
 
   useEffect(() => {
@@ -207,6 +210,23 @@ export default function Dashboard() {
       return nextState;
     });
   }, [blueprint]);
+
+
+  const handleDeleteDiagnosis = () => {
+    if (window.confirm('현재 진단 내역을 삭제하시겠습니까?')) {
+      localStorage.removeItem(DIAGNOSIS_STORAGE_KEY);
+      setStoredDiagnosis(null);
+      toast.success('진단 내역이 삭제되었습니다.');
+    }
+  };
+
+  const handleDeleteArchiveItem = (id: string) => {
+    if (window.confirm('이 탐구 항목을 삭제하시겠습니까?')) {
+      deleteArchiveItem(id);
+      setArchiveItems(listArchiveItems().slice(0, 3));
+      toast.success('탐구 항목이 삭제되었습니다.');
+    }
+  };
 
   useEffect(() => {
     if (!user && !isGuestSession) return;
@@ -264,6 +284,7 @@ export default function Dashboard() {
         setProfile(null);
       });
   }, [user, isGuestSession, localAuthFallbackActive, authStoreUser]);
+
 
   useEffect(() => {
     if (!user && !isGuestSession) return;
@@ -405,51 +426,29 @@ export default function Dashboard() {
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
-        className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
+        className="rounded-[28px] border border-slate-200 bg-[#3182f6] p-6 shadow-sm text-white"
       >
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#3182f6]">Uni Foli workflow</p>
-            <h1 className="mt-3 text-3xl font-black tracking-tight text-[#191f28] sm:text-4xl">
-              진단에서 끝내지 않고, 보완 탐구와 보고서까지 이어갑니다
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
+              {user?.displayName || '반가워요!'} 생기부 분석을 시작할까요?
             </h1>
-            <p className="mt-4 text-sm font-semibold leading-7 text-[#4e5968] sm:text-base">
-              목표 학과가 있으면 전공 기준으로 진단하고, 아직 목표가 없으면 생기부를 먼저 읽어 어울리는 전공군과
-              탐구 방향을 찾습니다. 모든 결과는 점수보다 근거 문장과 다음 행동을 우선합니다.
-            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2">
             <button
               onClick={() => navigate('/app/diagnosis')}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl bg-[#3182f6] px-5 text-sm font-black text-white shadow-lg shadow-blue-100 transition hover:bg-[#1b64da]"
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-black text-[#3182f6] shadow-lg transition-all hover:scale-105 active:scale-95"
             >
               생기부 업로드
               <ArrowRight size={16} />
             </button>
             <button
               onClick={() => navigate(activeStoredDiagnosis?.projectId ? `/app/workshop/${activeStoredDiagnosis.projectId}` : '/app/workshop')}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-[#333d4b] transition hover:bg-slate-50"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-5 text-sm font-black text-white backdrop-blur-md transition-all hover:bg-white/20"
             >
-              워크숍 이어가기
+              워크숍
             </button>
           </div>
-        </div>
-
-        <div className="mt-7 grid gap-3 md:grid-cols-4">
-          {[
-            ['1', '생기부 업로드', '목표가 없어도 기록 먼저 분석'],
-            ['2', '근거 기반 진단', '판단 근거와 부족한 근거 확인'],
-            ['3', '보완 탐구 추천', '세특/전공 연결 주제 제안'],
-            ['4', '보고서·면접 실행', '저장하고 다시 이어 쓰는 워크숍'],
-          ].map(([index, title, copy]) => (
-            <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white text-sm font-black text-[#3182f6] ring-1 ring-slate-200">
-                {index}
-              </span>
-              <h2 className="mt-4 text-sm font-black text-[#191f28]">{title}</h2>
-              <p className="mt-2 text-xs font-semibold leading-5 text-[#6b7280]">{copy}</p>
-            </div>
-          ))}
         </div>
       </motion.section>
 
@@ -515,8 +514,19 @@ export default function Dashboard() {
                 {primaryGoal ? `${primaryGoal.university} · ${primaryGoal.major}` : '목표 대학/학과 미설정'}
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Diagnosis</p>
+            <div className="group relative rounded-2xl border border-slate-200 bg-white px-4 py-4 transition-all hover:border-slate-300">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Diagnosis</p>
+                {hasDiagnosis && (
+                  <button 
+                    onClick={handleDeleteDiagnosis}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-red-500 transition-all"
+                    title="진단 내역 삭제"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
               <p className="mt-1 text-sm font-bold text-slate-800">
                 {hasDiagnosis ? toCompactDiagnosisSummary(activeStoredDiagnosis?.diagnosis.headline) : '아직 진단 전입니다.'}
               </p>
@@ -547,6 +557,87 @@ export default function Dashboard() {
       </div>
 
       {/* Target & Progress Grid */}
+
+      {/* Recent Archive Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <SectionCard 
+          title="최근 탐구 보관함" 
+          subtitle="작업 중인 탐구 항목을 빠르게 이어가세요"
+          actions={
+            <button 
+              onClick={() => navigate('/app/archive')}
+              className="text-xs font-black text-[#3182f6] hover:underline"
+            >
+              전체 보기
+            </button>
+          }
+          className="p-6 sm:p-8"
+        >
+          {archiveItems.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {archiveItems.map((item) => (
+                <div 
+                  key={item.id}
+                  className="group relative flex flex-col justify-between rounded-[24px] border border-slate-100 bg-white p-5 transition-all hover:-translate-y-1 hover:shadow-lg"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-[#3182f6] group-hover:bg-[#3182f6] group-hover:text-white transition-colors">
+                        <Archive size={20} />
+                      </div>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteArchiveItem(item.id);
+                        }}
+                        className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                        title="항목 삭제"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div>
+                      <h4 className="line-clamp-1 font-black text-[#191f28]">{item.title}</h4>
+                      <p className="mt-1 line-clamp-2 text-xs font-medium text-slate-500 leading-relaxed">
+                        {item.summary || '탐구 요약이 없습니다.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between pt-4 border-t border-slate-50">
+                    <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400">
+                      <Clock size={12} />
+                      {new Date(item.updatedAt).toLocaleDateString()}
+                    </div>
+                    <button 
+                      onClick={() => navigate(`/app/workshop/${item.id}`)}
+                      className="text-[12px] font-black text-[#3182f6] transition-transform group-hover:translate-x-0.5"
+                    >
+                      이어하기
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+              <Archive size={40} strokeWidth={1.5} className="mb-4 opacity-20" />
+              <p className="text-sm font-bold">보관된 탐구가 없습니다.</p>
+              <button 
+                onClick={() => navigate('/app/record')}
+                className="mt-4 text-xs font-black text-[#3182f6] hover:underline"
+              >
+                첫 탐구 시작하기
+              </button>
+            </div>
+          )}
+        </SectionCard>
+      </motion.div>
+
       <div className="grid gap-6 sm:gap-8 lg:grid-cols-3">
         {/* Target Card */}
         <SurfaceCard className="relative overflow-hidden border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:col-span-2">

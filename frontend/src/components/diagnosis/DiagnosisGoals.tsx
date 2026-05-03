@@ -10,6 +10,19 @@ import { findFirstInvalidGoal, hasValidGoalSelection, validateGoalSelection } fr
 import { useOnboardingStore } from '../../store/onboardingStore';
 import toast from 'react-hot-toast';
 
+const SPECIAL_UNIVERSITIES = [
+  '카이스트', 'KAIST', '한국과학기술원', 
+  '유니스트', 'UNIST', '울산과학기술원', 
+  '지스트', 'GIST', '광주과학기술원', 
+  '디지스트', 'DGIST', '대구경북과학기술원', 
+  '켄텍', 'KENTECH', '한국에너지공과대학교', 
+  '한국예술종합학교', '한예종', 
+  '경찰대학', '육군사관학교', '해군사관학교', '공군사관학교', '국군간호사관학교', '한국전통문화대학교'
+];
+
+export const isSpecialUniversity = (univName: string) => SPECIAL_UNIVERSITIES.some(su => univName.includes(su));
+export const getRegularGoalCount = (goals: { university: string }[]) => goals.filter(g => !isSpecialUniversity(g.university)).length;
+
 export const DiagnosisGoals: React.FC = () => {
   const { 
     goalList, 
@@ -33,7 +46,16 @@ export const DiagnosisGoals: React.FC = () => {
   }, [goalList]);
 
   const handleAddGoalDirect = () => {
-    if (!currentUniv || !currentMajor || goalList.length >= 6) return;
+    if (!currentUniv || !currentMajor) return;
+    
+    const isSpecial = isSpecialUniversity(currentUniv);
+    const regularCount = getRegularGoalCount(goalList);
+    
+    if (!isSpecial && regularCount >= 6) {
+      toast.error('수시 6회(일반 대학)를 모두 채웠습니다. 특수 대학은 추가로 선택할 수 있습니다.');
+      return;
+    }
+
     if (!currentGoalValidation.valid) {
       toast.error(currentGoalValidation.message || '선택한 대학에 있는 학과만 추가할 수 있어요.');
       return;
@@ -200,7 +222,7 @@ export const DiagnosisGoals: React.FC = () => {
                   <PrimaryButton
                     data-testid="diagnosis-add-goal"
                     onClick={handleAddGoalDirect}
-                    disabled={!currentGoalValidation.valid || goalList.length >= 6}
+                    disabled={!currentGoalValidation.valid || (!isSpecialUniversity(currentUniv) && getRegularGoalCount(goalList) >= 6)}
                     fullWidth
                     size="lg"
                     className="shadow-lg shadow-blue-500/10"
@@ -213,8 +235,11 @@ export const DiagnosisGoals: React.FC = () => {
             </SurfaceCard>
 
             <div className="space-y-3">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                나의 선택 리스트 ({goalList.length}/6)
+              <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                <span>나의 선택 리스트</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] ${getRegularGoalCount(goalList) === 6 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+                  일반대 {getRegularGoalCount(goalList)}/6
+                </span>
               </p>
               <AnimatePresence initial={false}>
                 {goalList.map((goal, index) => (
@@ -281,11 +306,15 @@ export const DiagnosisGoals: React.FC = () => {
                             </button>
                           </>
                         )}
-                        {index === 0 ? (
-                          <div className="rounded-full bg-indigo-100 px-2.5 py-1 text-[10px] font-black text-indigo-600">
-                            대표
-                          </div>
-                        ) : null}
+                        <div className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
+                          index === 0 ? 'bg-indigo-100 text-indigo-600' 
+                          : index === 1 ? 'bg-blue-100 text-blue-600'
+                          : index === 2 ? 'bg-emerald-100 text-emerald-600'
+                          : isSpecialUniversity(goal.university) ? 'bg-purple-100 text-purple-600'
+                          : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {isSpecialUniversity(goal.university) ? '특수대' : `${index + 1}지망`}
+                        </div>
                         <button
                           type="button"
                           onClick={() => removeGoal(goal.id)}
@@ -311,12 +340,26 @@ export const DiagnosisGoals: React.FC = () => {
                   <div className={`h-10 w-10 rounded-2xl p-1.5 shadow-sm bg-white`}>
                     <UniversityLogo universityName={goal.university} className="h-full w-full object-contain" />
                   </div>
-                  {index === 0 ? (
+                  {isSpecialUniversity(goal.university) ? (
+                    <span className="rounded-full bg-purple-100 px-3 py-1 text-[10px] font-bold text-purple-600">
+                      특수대
+                    </span>
+                  ) : index === 0 ? (
                     <span className="rounded-full bg-indigo-600 px-3 py-1 text-[10px] font-black text-white shadow-lg shadow-indigo-500/20">
-                      대표 목표
+                      1지망
+                    </span>
+                  ) : index === 1 ? (
+                    <span className="rounded-full bg-blue-100 px-3 py-1 text-[10px] font-bold text-blue-600">
+                      2지망
+                    </span>
+                  ) : index === 2 ? (
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-[10px] font-bold text-emerald-600">
+                      3지망
                     </span>
                   ) : (
-                    <span className="text-[10px] font-bold text-slate-400">목표 {index + 1}</span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold text-slate-500">
+                      {index + 1}지망
+                    </span>
                   )}
                 </div>
                 <div className="min-w-0">

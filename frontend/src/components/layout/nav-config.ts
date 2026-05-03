@@ -37,12 +37,6 @@ export const appNavSections: AppNavSection[] = [
         icon: FileSearch,
       },
       {
-        path: '/app/diagnosis/history',
-        label: '진단서',
-        hint: 'PDF 진단서 생성과 다운로드',
-        icon: FileText,
-      },
-      {
         path: '/app/trends',
         label: '탐구 설계',
         hint: '전공 주제와 탐구 방향 탐색',

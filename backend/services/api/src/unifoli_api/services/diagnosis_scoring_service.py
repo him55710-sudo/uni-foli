@@ -255,6 +255,12 @@ def build_diagnosis_scoring_sheet(
         f"{target_context} 맥락에서 {weakest_label}을 먼저 보완하세요. "
         "점수는 공식 기준과 학생부 기록 근거를 분리해 보수적으로 산출했습니다."
     )
+    if features.target_major_alignment_note and features.target_major_alignment_level in {"mismatch", "weak"}:
+        overview = f"{overview} {features.target_major_alignment_note}"
+        recommended_focus = (
+            f"{features.target_major_alignment_note} "
+            "기존 관심을 목표 전공 문제로 전환하는 탐구 설계가 우선입니다."
+        )
 
     return DiagnosisScoringSheet(
         overview=overview,
@@ -309,8 +315,8 @@ def _build_document_quality(features: StudentRecordFeatures) -> DocumentQualityS
         reliability_band = "주의"
 
     summary = (
-        f"{features.document_count}개 문서, 총 {features.total_records}개 기록 기준 파싱 신뢰도는 {reliability_score}점입니다. "
-        f"근거 밀도 {round(features.evidence_density, 2)}, 서사 밀도 {round(features.narrative_density, 2)}로 "
+        f"{features.document_count}개 문서, 총 {features.total_records}개 기록 기준 원문 인식 정확도는 {reliability_score}점입니다. "
+        f"근거 구체성 {round(features.evidence_density, 2)}, 활동 연결성 {round(features.narrative_density, 2)}로 "
         "확인 가능한 학생부 근거와 보완 필요 기록을 분리해 해석합니다."
     )
     return DocumentQualitySummary(
@@ -342,6 +348,10 @@ def _build_admission_axes(
     depth_base = _bounded_int(13 + features.major_term_overlap_ratio * 80 + min(features.unique_subject_count, 8) * 2.1)
     suitability_base = depth_base
     community_base = _community_base_score(features=features, active_sections=active_sections)
+    alignment_penalty = _major_alignment_score_penalty(features)
+    if alignment_penalty:
+        depth_base = _bounded_int(depth_base - alignment_penalty)
+        suitability_base = _bounded_int(suitability_base - alignment_penalty - 4)
 
     def _merge(
         key: PositiveAxisKey,
@@ -404,14 +414,14 @@ def _build_admission_axes(
             key="universal_rigor",
             score=u_rigor_score,
             rationale=u_rigor_rat or "교과 성취와 세부능력 기록의 신뢰도, 기록량, 학업 맥락을 바탕으로 산출한 학업 엄밀성입니다.",
-            hints=u_rigor_hints or [f"파싱 신뢰도: {round(features.reliability_score, 2)}", f"전체 기록 수: {features.total_records}"],
+            hints=u_rigor_hints or [f"원문 인식 정확도: {round(features.reliability_score, 2)}", f"전체 기록 수: {features.total_records}"],
             criteria_profile=criteria_profile,
         ),
         _positive_axis(
             key="universal_specificity",
             score=u_spec_score,
             rationale=u_spec_rat or "구체적인 관찰·수치·결과·근거 참조 빈도를 바탕으로 학생부 주장의 방어 가능성을 평가했습니다.",
-            hints=u_spec_hints or [f"근거 밀도: {round(features.evidence_density, 2)}", f"근거 참조 수: {features.evidence_reference_count}"],
+            hints=u_spec_hints or [f"근거 구체성: {round(features.evidence_density, 2)}", f"근거 참조 수: {features.evidence_reference_count}"],
             criteria_profile=criteria_profile,
         ),
         _positive_axis(
@@ -431,15 +441,19 @@ def _build_admission_axes(
         _positive_axis(
             key="cluster_depth",
             score=c_depth_score,
-            rationale=c_depth_rat or "목표 전공·계열과 관련된 개념, 방법, 산출물의 깊이를 평가했습니다.",
-            hints=c_depth_hints or [f"전공 키워드 중첩도: {round(features.major_term_overlap_ratio, 2)}"],
+            rationale=c_depth_rat
+            or features.target_major_alignment_note
+            or "목표 전공·계열과 관련된 개념, 방법, 산출물의 깊이를 평가했습니다.",
+            hints=c_depth_hints or _major_alignment_hints(features),
             criteria_profile=criteria_profile,
         ),
         _positive_axis(
             key="cluster_suitability",
             score=c_suit_score,
-            rationale=c_suit_rat or "기록 전반이 목표 진로와 계열에 자연스럽게 이어지는지 종합적으로 평가했습니다.",
-            hints=c_suit_hints or ["전공 관련 과목·활동 신호", "진로 탐색 구체성"],
+            rationale=c_suit_rat
+            or features.target_major_alignment_note
+            or "기록 전반이 목표 진로와 계열에 자연스럽게 이어지는지 종합적으로 평가했습니다.",
+            hints=c_suit_hints or _major_alignment_hints(features),
             criteria_profile=criteria_profile,
         ),
         _positive_axis(
@@ -451,7 +465,7 @@ def _build_admission_axes(
         ),
         _authenticity_risk_axis(
             score=authenticity_risk,
-            hints=[f"파싱 신뢰도: {round(features.reliability_score, 2)}", f"검토 필요 문서: {features.needs_review_documents}"],
+            hints=[f"원문 인식 정확도: {round(features.reliability_score, 2)}", f"검토 필요 문서: {features.needs_review_documents}"],
             criteria_profile=criteria_profile,
         ),
     ]
@@ -505,6 +519,33 @@ def _calibrate_positive_axis_score(
     return calibrated
 
 
+def _major_alignment_score_penalty(features: StudentRecordFeatures) -> int:
+    if features.target_major_alignment_level == "mismatch":
+        return 18
+    if features.target_major_alignment_level == "weak":
+        return 12
+    if features.target_major_alignment_level == "partial":
+        return 5
+    return 0
+
+
+def _major_alignment_hints(features: StudentRecordFeatures) -> list[str]:
+    hints: list[str] = []
+    if features.target_major_track_label:
+        hints.append(
+            f"목표 전공 단서: {features.target_major_track_label} "
+            f"{features.target_major_evidence_count}회 확인"
+        )
+    if features.dominant_major_track_label:
+        dominant_count = features.major_signal_counts.get(features.dominant_major_track or "", 0)
+        hints.append(f"학생부 우세 계열: {features.dominant_major_track_label} {dominant_count}회 확인")
+    if features.target_major_alignment_note:
+        hints.append(features.target_major_alignment_note)
+    if not hints:
+        hints.append(f"목표 전공 키워드 중첩도: {round(features.major_term_overlap_ratio, 2)}")
+    return hints[:4]
+
+
 def _positive_axis_score_cap(
     *,
     key: PositiveAxisKey,
@@ -526,6 +567,11 @@ def _positive_axis_score_cap(
         cap = min(cap, 74)
     if key in {"cluster_depth", "cluster_suitability"} and features.major_term_overlap_ratio < 0.18:
         cap = min(cap, 74)
+    if key in {"cluster_depth", "cluster_suitability"}:
+        if features.target_major_alignment_level == "mismatch":
+            cap = min(cap, 58)
+        elif features.target_major_alignment_level == "weak":
+            cap = min(cap, 64)
     if key == "community_contribution" and not _community_base_signal(features):
         cap = min(cap, 74)
     return cap
@@ -550,6 +596,8 @@ def _positive_axis_allows_80(
     if key == "relational_continuity":
         return features.repeated_subject_ratio >= 0.35
     if key in {"cluster_depth", "cluster_suitability"}:
+        if features.target_major_alignment_level in {"mismatch", "weak"}:
+            return False
         return features.major_term_overlap_ratio >= 0.32 and features.evidence_reference_count >= 6
     if key == "community_contribution":
         return _community_base_signal(features) and active_sections >= 3
@@ -575,6 +623,8 @@ def _positive_axis_allows_90(
     if key == "relational_continuity":
         return features.repeated_subject_ratio >= 0.5
     if key in {"cluster_depth", "cluster_suitability"}:
+        if features.target_major_alignment_level in {"mismatch", "weak", "partial"}:
+            return False
         return features.major_term_overlap_ratio >= 0.55
     if key == "community_contribution":
         return _section_count_matching(features, "행동", "종합", "?됰룞", "醫낇빀") >= 2
@@ -668,6 +718,8 @@ def _build_strengths(
     strengths: list[str] = []
     if semantic and semantic.strengths:
         strengths.extend(semantic.strengths)
+    if features.dominant_major_track_label and features.dominant_major_track != features.target_major_track:
+        strengths.append(f"학생부 원문에서는 {features.dominant_major_track_label} 계열 관심이 반복적으로 확인됩니다.")
     for axis in admission_axes:
         if axis.key != "authenticity_risk" and axis.band == "strong":
             strengths.append(f"{axis.label}: {axis.rationale}")
@@ -685,6 +737,8 @@ def _build_gaps(
     gaps: list[str] = []
     if semantic and semantic.gaps:
         gaps.extend(semantic.gaps)
+    if features.target_major_alignment_note and features.target_major_alignment_level in {"mismatch", "weak", "partial"}:
+        gaps.append(features.target_major_alignment_note)
     for axis in admission_axes:
         if axis.key != "authenticity_risk" and axis.band in {"weak", "watch"}:
             gaps.append(f"{axis.label}: {axis.rationale}")
@@ -735,6 +789,12 @@ def _build_next_action_seeds(
             actions.append("협업·책임·소통이 드러나는 창체/행특 근거를 골라 공동체 기여 문장으로 정리하세요.")
     if features.needs_review:
         actions.append("검토 필요 문서가 있으므로 원문 대조 후 핵심 문장을 보수적으로 시작하세요.")
+    if features.target_major_alignment_note and features.target_major_alignment_level in {"mismatch", "weak"}:
+        source_label = features.dominant_major_track_label or "현재 강한 관심"
+        target_label = target_major or features.target_major_track_label or "목표 전공"
+        actions.append(
+            f"{source_label} 관심을 {target_label} 문제로 전환하는 탐구 주제 3개를 먼저 설계하세요."
+        )
     if target_major:
         actions.append(f"{target_major} 맥락에 맞는 활동 1개를 선정해 기존 근거로 방어 가능한 심화 보고서 주제를 만드세요.")
     return _dedupe_keep_order(actions)[:8]
@@ -745,9 +805,31 @@ def _build_recommended_topics(
     features: StudentRecordFeatures,
     target_major: str | None,
 ) -> list[str]:
-    topics = [subject for subject, _ in features.subject_distribution.items()][:5]
-    if target_major:
-        topics.insert(0, f"{target_major} 연계 심화탐구")
+    topics: list[str] = []
+    if (
+        features.target_major_track == "architecture"
+        and features.dominant_major_track == "mechanical_computer"
+    ):
+        topics.extend(
+            [
+                "스마트빌딩 센서 데이터 기반 실내 환경 제어 탐구",
+                "건물 에너지 저장 시스템의 열관리 방식 비교",
+                "건축물 안전 모니터링용 MEMS 센서 활용 가능성 탐구",
+                "전동화 기술 관심을 건축 설비 에너지 제어로 전환하는 보고서",
+            ]
+        )
+    elif features.target_major_alignment_level in {"mismatch", "weak"}:
+        source_label = features.dominant_major_track_label or "기존 관심"
+        target_label = target_major or features.target_major_track_label or "목표 전공"
+        topics.extend(
+            [
+                f"{source_label} 관심을 {target_label} 문제로 전환하는 탐구 설계",
+                f"{target_label} 지원 서사를 보완하는 원문 근거 재해석 보고서",
+            ]
+        )
+    elif target_major:
+        topics.append(f"{target_major} 지원 근거를 새 질문으로 확장한 심화탐구")
+    topics.extend([subject for subject, _ in features.subject_distribution.items()][:5])
     if not topics:
         topics = ["교과 기반 심화탐구", "진로 연계 프로젝트", "비교·분석형 활동"]
     return _dedupe_keep_order(topics)[:6]

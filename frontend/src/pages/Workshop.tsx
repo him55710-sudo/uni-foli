@@ -1877,7 +1877,10 @@ export function Workshop() {
     [advancedMode, guidedSubject, initialMajor, questStart?.title, researchCandidates, structuredDraft],
   );
 
-  const handleSend = async (overriddenText?: string, options?: { displayText?: string }) => {
+  const handleSend = async (
+    overriddenText?: string,
+    options?: { displayText?: string; skipResearchDetection?: boolean },
+  ) => {
     const text = (overriddenText ?? input ?? '').trim();
     const displayText = (options?.displayText || text).trim();
     if (!text || isTyping || isSelectingGuidedTopicId || isGuidedActionLoading) return;
@@ -1889,7 +1892,7 @@ export function Workshop() {
 
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: displayText || text }]);
 
-    if (await handleResearchRequestIfNeeded(text)) {
+    if (!options?.skipResearchDetection && await handleResearchRequestIfNeeded(text)) {
       return;
     }
 
@@ -2158,7 +2161,7 @@ export function Workshop() {
         setChatbotMode('diagnosis');
         setGuidedPhase('freeform_coauthoring');
         setIsGuidedTopicSelected(true);
-        await handleSend(rawValue, { displayText: option.label || rawValue });
+        await handleSend(rawValue, { displayText: option.label || rawValue, skipResearchDetection: true });
         return;
       }
 
@@ -2614,7 +2617,7 @@ export function Workshop() {
   const inputPlaceholder =
     isProjectBacked && !guidedSetupComplete
       ? '과목 카드부터 고르면 바로 시작합니다.'
-      : '내 핵심 강점 3가지를 근거와 함께 정리해줘';
+      : '진단 결과를 반영해서 탐구 주제와 개요를 잡아줘';
   const quickPromptOptions = useMemo(() => {
     if (chatbotMode === 'diagnosis') return [];
     if (isProjectBacked && !guidedSetupComplete) return [];
@@ -2625,20 +2628,20 @@ export function Workshop() {
 
     return [
       {
-        label: '강점 요약',
-        prompt: `${prefix}학생부 핵심 강점 3가지를 근거와 함께 정리해줘.`,
+        label: '주제 설계',
+        prompt: `${prefix}탐구 주제 후보 3개와 각각의 작성 방향을 제안해줘.`,
       },
       {
-        label: '약점 보완',
-        prompt: `${prefix}가장 먼저 보완해야 할 약점 3가지를 근거와 함께 설명해줘.`,
+        label: '개요 작성',
+        prompt: `${prefix}가장 적합한 주제 하나를 골라 서론, 본론, 결론 개요를 잡아줘.`,
       },
       {
-        label: '탐구 주제',
-        prompt: `${prefix}지금 바로 시도할 탐구 주제 3개를 추천해줘.`,
+        label: '첫 문단',
+        prompt: `${prefix}탐구 동기와 문제의식이 드러나는 첫 문단을 써줘.`,
       },
       {
-        label: '다음 단계',
-        prompt: `${prefix}다음 활동 계획을 주차별로 정리해줘.`,
+        label: '보완 반영',
+        prompt: `${prefix}현재 초안을 더 설득력 있게 고치는 순서를 제안해줘.`,
       },
     ];
   }, [chatbotMode, diagnosisHeadline, guidedSetupComplete, isProjectBacked]);

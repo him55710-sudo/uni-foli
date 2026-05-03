@@ -49,6 +49,69 @@ export function mergeDiagnosisPayload(run: DiagnosisRunResponse): DiagnosisResul
   };
 }
 
+export interface DiagnosisStorageContext {
+  major?: string | null;
+  targetUniversity?: string | null;
+  targetMajor?: string | null;
+}
+
+export type DiagnosisStorageSnapshot = Omit<StoredDiagnosis, 'diagnosis'> & {
+  diagnosis: DiagnosisResultPayload;
+  diagnosisRunId?: string | null;
+  reportStatus?: string | null;
+  reportArtifactId?: string | null;
+  reportErrorMessage?: string | null;
+};
+
+function cleanStorageText(value: string | null | undefined): string | null {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+export function buildDiagnosisStorageSnapshot(
+  run: DiagnosisRunResponse,
+  context: DiagnosisStorageContext = {},
+): DiagnosisStorageSnapshot | null {
+  const payload = mergeDiagnosisPayload(run);
+  if (!payload) return null;
+
+  const targetUniversity = cleanStorageText(context.targetUniversity);
+  const targetMajor = cleanStorageText(context.targetMajor ?? context.major);
+  const summaryTarget = cleanStorageText(payload.diagnosis_summary?.target_context);
+  const major = cleanStorageText(context.major) ?? targetMajor ?? summaryTarget ?? '';
+
+  return {
+    major,
+    targetUniversity,
+    targetMajor,
+    target_university: targetUniversity,
+    target_major: targetMajor,
+    projectId: run.project_id,
+    diagnosisRunId: run.id,
+    reportStatus: run.report_status ?? run.report_async_job_status ?? null,
+    reportArtifactId: run.report_artifact_id ?? null,
+    reportErrorMessage: run.report_error_message ?? null,
+    savedAt: new Date().toISOString(),
+    diagnosis: payload,
+  };
+}
+
+export function persistDiagnosisStorageSnapshot(
+  run: DiagnosisRunResponse,
+  context: DiagnosisStorageContext = {},
+): DiagnosisStorageSnapshot | null {
+  const snapshot = buildDiagnosisStorageSnapshot(run, context);
+  if (!snapshot || typeof window === 'undefined') return snapshot;
+
+  try {
+    window.localStorage.setItem(DIAGNOSIS_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.error('Failed to persist diagnosis snapshot:', error);
+  }
+
+  return snapshot;
+}
+
 export function isDiagnosisComplete(run: DiagnosisRunResponse | null): boolean {
   if (!run) return false;
   return Boolean(run.result_payload) || run.status === 'COMPLETED' || run.status === 'SUCCESS';

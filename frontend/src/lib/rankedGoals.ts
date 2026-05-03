@@ -20,7 +20,7 @@ function parseInterestGoal(raw: string | null | undefined): RankedGoal {
 
 export function buildRankedGoals(
   profile: Pick<UserProfile, 'target_university' | 'target_major' | 'interest_universities'> | null | undefined,
-  limit = 6,
+  limit = 20,
 ): RankedGoal[] {
   if (!profile) return [];
 

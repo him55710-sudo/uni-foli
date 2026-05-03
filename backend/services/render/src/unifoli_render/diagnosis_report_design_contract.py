@@ -77,14 +77,14 @@ def get_diagnosis_report_design_contract(
             "minimum_pages": min_pages,
         },
         "typography": {
-            "cover_label": {"font_size": 9.2, "leading": 12.5, "weight": "medium"},
+            "cover_label": {"font_size": 9.5, "leading": 13.0, "weight": "medium"},
             "cover_title": {"font_size": 30 if is_premium else 23, "leading": 36 if is_premium else 29, "weight": "bold"},
             "cover_subtitle": {"font_size": 11.4, "leading": 16.8, "weight": "regular"},
             "section_heading": {"font_size": 18 if is_premium else 16, "leading": 23, "weight": "bold"},
             "section_subtitle": {"font_size": 9.5, "leading": 13, "weight": "regular"},
             "body": {"font_size": 10.2 if is_premium else 10.2, "leading": 15.2 if is_premium else 15.2, "weight": "regular"},
-            "meta": {"font_size": 8.8, "leading": 12.4, "weight": "regular"},
-            "caption": {"font_size": 8.2, "leading": 11.5, "weight": "medium"},
+            "meta": {"font_size": 9.5, "leading": 13.2, "weight": "regular"},
+            "caption": {"font_size": 9.5, "leading": 13.0, "weight": "medium"},
         },
         "spacing": {
             "cover_block_gap": 10,

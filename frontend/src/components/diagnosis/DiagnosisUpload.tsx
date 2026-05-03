@@ -115,9 +115,8 @@ export const DiagnosisUpload: React.FC<DiagnosisUploadProps> = ({
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
       className="mx-auto max-w-3xl"
     >
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-black text-slate-900 mb-3">학생부 분석 시작하기</h1>
-        <p className="text-slate-500 font-medium">PDF 파일을 업로드하면 즉시 진단이 시작됩니다.</p>
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-black text-slate-900 mb-2">학생부 분석 시작하기</h1>
       </div>
 
       <div
@@ -172,35 +171,7 @@ export const DiagnosisUpload: React.FC<DiagnosisUploadProps> = ({
         </div>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-[2rem] bg-white p-6 shadow-sm flex items-start gap-4 border border-slate-100">
-          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-            <Sparkles size={20} className="text-indigo-600" />
-          </div>
-          <div>
-            <h4 className="font-bold text-slate-900 mb-1">AI 정밀 분석</h4>
-            <p className="text-sm text-slate-500 leading-relaxed font-medium">학생부의 텍스트를 정밀하게 추출하여 전공 적합성을 판단합니다.</p>
-          </div>
-        </div>
-        <div className="rounded-[2rem] bg-white p-6 shadow-sm flex items-start gap-4 border border-slate-100">
-          <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-            <Target size={20} className="text-slate-600" />
-          </div>
-          <div>
-            <h4 className="font-bold text-slate-900 mb-1">목표 대학 맞춤</h4>
-            <p className="text-sm text-slate-500 leading-relaxed font-medium">설정하신 목표 대학과 전공의 인재상에 맞춰 분석 결과를 제공합니다.</p>
-          </div>
-        </div>
-      </div>
 
-      <div className="mt-8 flex justify-center">
-        <button 
-          onClick={() => setStep('GOALS')}
-          className="text-sm font-bold text-slate-400 hover:text-indigo-600 transition-colors"
-        >
-          목표 대학/전공 수정하기
-        </button>
-      </div>
 
       {flowError && (
         <div className="mt-8">
