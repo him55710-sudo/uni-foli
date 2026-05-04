@@ -46,12 +46,12 @@ export const WORKSHOP_MODE_OPTIONS: Array<{ id: WorkshopMode; label: string; des
 ];
 
 export const BLOCK_DEFINITIONS: Array<{ id: WorkshopDraftBlockId; heading: string }> = [
-  { id: 'title', heading: 'Title' },
-  { id: 'introduction_background', heading: 'Introduction / Background' },
-  { id: 'body_section_1', heading: 'Body Section 1' },
-  { id: 'body_section_2', heading: 'Body Section 2' },
-  { id: 'body_section_3', heading: 'Body Section 3' },
-  { id: 'conclusion_reflection_next_step', heading: 'Conclusion / Reflection / Next Step' },
+  { id: 'title', heading: '제목' },
+  { id: 'introduction_background', heading: '서론 / 문제의식' },
+  { id: 'body_section_1', heading: '본론 1 / 개념과 배경' },
+  { id: 'body_section_2', heading: '본론 2 / 방법과 과정' },
+  { id: 'body_section_3', heading: '본론 3 / 결과와 해석' },
+  { id: 'conclusion_reflection_next_step', heading: '결론 / 느낀 점 / 출처' },
 ];
 
 const HEADING_KEYWORDS: Record<WorkshopDraftBlockId, string[]> = {
@@ -61,6 +61,23 @@ const HEADING_KEYWORDS: Record<WorkshopDraftBlockId, string[]> = {
   body_section_2: ['body section 2', '본론 2', '본론2'],
   body_section_3: ['body section 3', '본론 3', '본론3'],
   conclusion_reflection_next_step: ['conclusion', 'reflection', 'next step', '결론', '성찰', '다음 단계'],
+};
+
+const EXTRA_HEADING_KEYWORDS: Record<WorkshopDraftBlockId, string[]> = {
+  title: ['\uC81C\uBAA9'],
+  introduction_background: ['\uC11C\uB860', '\uB3C4\uC785', '\uBB38\uC81C\uC758\uC2DD', '\uB3D9\uAE30'],
+  body_section_1: ['\uBCF8\uB860 1', '\uBCF8\uB8601', '\uAC1C\uB150', '\uBC30\uACBD'],
+  body_section_2: ['\uBCF8\uB860 2', '\uBCF8\uB8602', '\uBC29\uBC95', '\uACFC\uC815', '\uD310\uB2E8'],
+  body_section_3: ['\uBCF8\uB860 3', '\uBCF8\uB8603', '\uACB0\uACFC', '\uD574\uC11D', '\uBD84\uC11D'],
+  conclusion_reflection_next_step: [
+    '\uACB0\uB860',
+    '\uB290\uB080 \uC810',
+    '\uB290\uB080\uC810',
+    '\uCD9C\uCC98',
+    '\uCC38\uACE0\uBB38\uD5CC',
+    '\uD6C4\uC18D',
+    'references',
+  ],
 };
 
 export function createEmptyStructuredDraft(mode: WorkshopMode = 'planning'): WorkshopStructuredDraftState {
@@ -236,7 +253,7 @@ export function isPatchAcceptanceMessage(text: string): boolean {
 export function isSectionDraftIntent(text: string): boolean {
   const normalized = (text || '').trim().toLowerCase();
   if (!normalized) return false;
-  return /(작성|써줘|draft|section|문단|본문|결론|도입|outline|개요)/i.test(normalized);
+  return /(작성|써줘|초안|draft|section|문단|본문|본론|서론|결론|느낀 점|느낀점|출처|outline|개요)/i.test(normalized);
 }
 
 function findHeadingById(id: WorkshopDraftBlockId): string {
@@ -291,7 +308,8 @@ function splitMarkdownSections(markdown: string): Array<{ heading: string; conte
 function matchSectionToBlock(heading: string): WorkshopDraftBlockId | null {
   const normalized = heading.trim().toLowerCase();
   for (const [blockId, keywords] of Object.entries(HEADING_KEYWORDS) as Array<[WorkshopDraftBlockId, string[]]>) {
-    if (keywords.some((keyword) => normalized.includes(keyword.toLowerCase()))) {
+    const expandedKeywords = [...keywords, ...(EXTRA_HEADING_KEYWORDS[blockId] || [])];
+    if (expandedKeywords.some((keyword) => normalized.includes(keyword.toLowerCase()))) {
       return blockId;
     }
   }

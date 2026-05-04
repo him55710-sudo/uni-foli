@@ -5,17 +5,24 @@ import {
   Bot,
   ChevronDown,
   ChevronUp,
+  CheckCircle2,
   Download,
   FileText,
+  GraduationCap,
+  Layers,
   Loader2,
+  MessageSquare,
   PanelRightClose,
   PenSquare,
   Presentation,
   Save,
   Send,
+  Sparkles,
+  Target,
   ToggleLeft,
   ToggleRight,
   User,
+  Wand2,
   X,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -36,7 +43,7 @@ import {
   type ChatStreamMetaPayload,
 } from '../lib/chatStream';
 import { cn } from '../lib/cn';
-import { DIAGNOSIS_STORAGE_KEY, type DiagnosisRunResponse, type StoredDiagnosis } from '../lib/diagnosis';
+import { DIAGNOSIS_STORAGE_KEY, type DiagnosisResultPayload, type DiagnosisRunResponse, type StoredDiagnosis } from '../lib/diagnosis';
 import { getArchiveItem, saveArchiveItem, type ArchiveItem } from '../lib/archiveStore';
 import { readQuestStart } from '../lib/questStart';
 import type { AuthTokenSource } from '../lib/requestAuth';
@@ -108,6 +115,7 @@ import {
   normalizeStructuredDraft,
   structuredDraftToMarkdown,
   type WorkshopDraftAttribution,
+  type WorkshopDraftBlockId,
   type WorkshopDraftPatchProposal,
 
   type WorkshopMode,
@@ -259,6 +267,191 @@ interface WorkshopArtifactReadyPayload {
 }
 
 type WorkshopResearchDepth = 'standard' | 'scholarly';
+type RecordAreaId =
+  | 'subject_specialty'
+  | 'subject_activity'
+  | 'club_activity'
+  | 'creative_activity'
+  | 'career_activity'
+  | 'reading_report'
+  | 'ai_auto';
+
+type WritingGradeId = 'auto' | 'high1' | 'high2' | 'high3' | 'all';
+
+interface RecordAreaOption {
+  id: RecordAreaId;
+  label: string;
+  description: string;
+  promptLabel: string;
+  detailPlaceholder: string;
+  keywords: string[];
+}
+
+interface WritingGradeOption {
+  id: WritingGradeId;
+  label: string;
+  description: string;
+}
+
+interface WritingEvidenceItem {
+  text: string;
+  source: string;
+  score: number;
+}
+
+interface WritingTopicSeed {
+  title: string;
+  reason: string;
+  evidenceHooks: string[];
+}
+
+interface WritingCandidate {
+  id: string;
+  title: string;
+  areaId: RecordAreaId;
+  areaLabel: string;
+  reason: string;
+  evidence: string;
+  source: string;
+  gradeFit: string;
+  caution: string;
+}
+
+interface AccumulationStep {
+  id: string;
+  label: string;
+  description: string;
+  blockId: WorkshopDraftBlockId;
+  instruction: string;
+  subheading?: string;
+}
+
+type StoredDiagnosisLike = Partial<StoredDiagnosis> & {
+  diagnosis?: (Partial<DiagnosisResultPayload> & Record<string, unknown>) | null;
+  diagnosisRunId?: string | null;
+};
+
+const RECORD_AREA_OPTIONS: RecordAreaOption[] = [
+  {
+    id: 'subject_specialty',
+    label: '과목 세특',
+    description: '특정 과목 세특 문장을 탐구 보고서의 출발점으로 씁니다.',
+    promptLabel: '과목 세특',
+    detailPlaceholder: '예: 생명과학 세특, 수학 세특',
+    keywords: ['세특', '교과', '과목', '수학', '국어', '영어', '과학', '사회', '기술', '정보', '생명', '화학', '물리'],
+  },
+  {
+    id: 'subject_activity',
+    label: '교과활동',
+    description: '수업 중 발표, 실험, 프로젝트, 수행평가 기록을 확장합니다.',
+    promptLabel: '교과활동',
+    detailPlaceholder: '예: 통계 프로젝트, 과학 실험 발표',
+    keywords: ['교과', '수업', '발표', '수행', '실험', '프로젝트', '탐구'],
+  },
+  {
+    id: 'club_activity',
+    label: '동아리활동',
+    description: '동아리 안에서 맡은 역할과 산출물을 보고서 주제로 연결합니다.',
+    promptLabel: '동아리활동',
+    detailPlaceholder: '예: 생명과학 동아리, 경영 동아리',
+    keywords: ['동아리', '자율동아리', '부원', '부장', '활동'],
+  },
+  {
+    id: 'creative_activity',
+    label: '창체활동',
+    description: '자율, 봉사, 진로, 행사 등 창체 기록의 성장 흐름을 씁니다.',
+    promptLabel: '창체활동',
+    detailPlaceholder: '예: 자율활동, 봉사활동, 학교 행사',
+    keywords: ['창체', '자율', '봉사', '행사', '공동체', '협업'],
+  },
+  {
+    id: 'career_activity',
+    label: '진로활동',
+    description: '진로 탐색, 전공 관심, 후속 계획을 중심으로 구성합니다.',
+    promptLabel: '진로활동',
+    detailPlaceholder: '예: 의생명 진로탐색, 건축 진로활동',
+    keywords: ['진로', '전공', '학과', '직업', '멘토링', '탐색'],
+  },
+  {
+    id: 'reading_report',
+    label: '독서/보고서',
+    description: '독서 기록이나 기존 보고서를 세특/전공 맥락과 엮습니다.',
+    promptLabel: '독서/보고서',
+    detailPlaceholder: '예: 읽은 책 제목, 기존 탐구 보고서',
+    keywords: ['독서', '책', '보고서', '논문', '자료', '출처'],
+  },
+  {
+    id: 'ai_auto',
+    label: 'AI가 알아서 선택',
+    description: '생기부 근거가 가장 많은 영역을 AI가 먼저 고릅니다.',
+    promptLabel: 'AI 자동 선택',
+    detailPlaceholder: '원하는 방향이 있으면 한 줄만 적어도 됩니다.',
+    keywords: [],
+  },
+];
+
+const WRITING_GRADE_OPTIONS: WritingGradeOption[] = [
+  { id: 'auto', label: '진단 기준', description: '생기부에 드러난 학년 흐름을 자동 반영' },
+  { id: 'high1', label: '고1', description: '관심 형성과 기본 개념 이해 중심' },
+  { id: 'high2', label: '고2', description: '과정, 방법, 실패와 보완 중심' },
+  { id: 'high3', label: '고3', description: '전공 수렴, 결과 해석, 면접 방어 중심' },
+  { id: 'all', label: '전체', description: '학년 간 성장 흐름을 연결' },
+];
+
+const ACCUMULATION_STEPS: AccumulationStep[] = [
+  {
+    id: 'intro',
+    label: '서론',
+    description: '동기, 문제의식, 생기부 출발점',
+    blockId: 'introduction_background',
+    instruction: '서론만 작성하세요. 학생부 근거에서 출발한 동기와 탐구 질문이 자연스럽게 이어져야 합니다.',
+  },
+  {
+    id: 'body1',
+    label: '본론 1',
+    description: '핵심 개념과 배경 정리',
+    blockId: 'body_section_1',
+    instruction: '본론 1만 작성하세요. 핵심 개념, 배경, 고교 수준에서 설명 가능한 원리를 정리하세요.',
+  },
+  {
+    id: 'body2',
+    label: '본론 2',
+    description: '방법, 과정, 학생의 판단',
+    blockId: 'body_section_2',
+    instruction: '본론 2만 작성하세요. 학생이 선택한 방법, 의사결정 근거, 한계 보완 과정을 중심으로 쓰세요.',
+  },
+  {
+    id: 'body3',
+    label: '본론 3',
+    description: '결과 해석과 전공 연결',
+    blockId: 'body_section_3',
+    instruction: '본론 3만 작성하세요. 결과 해석, 의미, 전공 또는 진로와의 연결을 구체화하세요.',
+  },
+  {
+    id: 'conclusion',
+    label: '결론',
+    description: '핵심 주장과 후속 탐구',
+    blockId: 'conclusion_reflection_next_step',
+    instruction: '결론 부분만 작성하세요. 보고서의 핵심 주장, 한계, 후속 탐구 방향을 정리하세요.',
+    subheading: '결론',
+  },
+  {
+    id: 'reflection',
+    label: '느낀 점',
+    description: '배운 점, 성장, 다음 질문',
+    blockId: 'conclusion_reflection_next_step',
+    instruction: '느낀 점 부분만 작성하세요. 학생의 생각, 배운 점, 다음 활동으로 이어진 지적 자극을 분리해 쓰세요.',
+    subheading: '느낀 점',
+  },
+  {
+    id: 'references',
+    label: '출처',
+    description: '생기부 p.X와 참고자료 목록',
+    blockId: 'conclusion_reflection_next_step',
+    instruction: '출처 부분만 작성하세요. 생기부 근거는 [출처: 생기부 p.X] 형식으로 남기고, 외부 자료가 필요하면 후보만 제안하세요.',
+    subheading: '출처',
+  },
+];
 
 const QUALITY_META_MAP: Record<QualityLevel, { label: string; status: 'success' | 'active' | 'warning' }> = {
   low: { label: '빠른 ?�답', status: 'success' },
@@ -282,6 +475,410 @@ function formatDraftAttributionLabel(attribution: WorkshopDraftAttribution): str
   if (attribution === 'student-authored') return '?�생 ?�성';
   if (attribution === 'ai-inserted-after-approval') return '?�인 ??AI 반영';
   return 'AI ?�안';
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asCleanText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  return trimmed || null;
+}
+
+function clipWritingText(value: string, limit = 180): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, limit).trim()}...`;
+}
+
+function uniquePush(items: string[], value: unknown, limit = 8) {
+  const text = asCleanText(value);
+  if (!text || items.length >= limit) return;
+  const key = text.toLowerCase();
+  if (items.some((item) => item.toLowerCase() === key)) return;
+  items.push(text);
+}
+
+function collectWritingTextList(value: unknown, limit = 6): string[] {
+  const out: string[] = [];
+  const pushFromRecord = (record: Record<string, unknown>) => {
+    for (const key of ['title', 'label', 'summary', 'description', 'why_it_fits', 'why_now', 'rationale', 'note', 'evidence_hint']) {
+      uniquePush(out, record[key], limit);
+      if (out.length >= limit) return;
+    }
+  };
+
+  if (typeof value === 'string') {
+    uniquePush(out, value, limit);
+    return out;
+  }
+  if (!Array.isArray(value)) return out;
+
+  for (const item of value) {
+    if (typeof item === 'string') {
+      uniquePush(out, item, limit);
+    } else {
+      const record = asPlainRecord(item);
+      if (record) pushFromRecord(record);
+    }
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function toDiagnosisPayloadRecord(value: unknown): (Partial<DiagnosisResultPayload> & Record<string, unknown>) | null {
+  const record = asPlainRecord(value);
+  if (!record) return null;
+  return record as Partial<DiagnosisResultPayload> & Record<string, unknown>;
+}
+
+function readStoredDiagnosisSnapshot(): StoredDiagnosisLike | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(DIAGNOSIS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredDiagnosisLike;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveRecordAreaOption(areaId: RecordAreaId): RecordAreaOption {
+  return RECORD_AREA_OPTIONS.find((item) => item.id === areaId) || RECORD_AREA_OPTIONS[0];
+}
+
+function scoreTextForArea(text: string, area: RecordAreaOption, detail: string): number {
+  const haystack = text.toLowerCase();
+  let score = 0;
+  for (const keyword of area.keywords) {
+    if (keyword && haystack.includes(keyword.toLowerCase())) score += 2;
+  }
+  for (const token of detail.split(/[\s,./]+/).map((item) => item.trim()).filter(Boolean)) {
+    if (token.length >= 2 && haystack.includes(token.toLowerCase())) score += 4;
+  }
+  return score;
+}
+
+function collectWritingEvidence(
+  payload: (Partial<DiagnosisResultPayload> & Record<string, unknown>) | null,
+  areaId: RecordAreaId,
+  detail: string,
+  limit = 8,
+): WritingEvidenceItem[] {
+  const area = resolveRecordAreaOption(areaId === 'ai_auto' ? 'subject_specialty' : areaId);
+  const evidence: WritingEvidenceItem[] = [];
+  const seen = new Set<string>();
+
+  const push = (textValue: unknown, sourceValue: unknown = '진단 요약') => {
+    const text = asCleanText(textValue);
+    if (!text) return;
+    const source = asCleanText(sourceValue) || '진단 요약';
+    const clipped = clipWritingText(text, 220);
+    const key = `${source}:${clipped}`.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    evidence.push({
+      text: clipped,
+      source,
+      score: scoreTextForArea(`${source} ${clipped}`, area, detail),
+    });
+  };
+
+  if (!payload) return evidence;
+
+  if (Array.isArray(payload.citations)) {
+    payload.citations.forEach((citation) => {
+      const record = asPlainRecord(citation);
+      if (!record) return;
+      const page = typeof record.page_number === 'number' ? ` p.${record.page_number}` : '';
+      push(record.excerpt, `${asCleanText(record.source_label) || '생기부'}${page}`);
+    });
+  }
+
+  if (Array.isArray(payload.admission_axes)) {
+    payload.admission_axes.forEach((axis) => {
+      const record = asPlainRecord(axis);
+      if (!record) return;
+      const label = asCleanText(record.label) || '평가축';
+      if (Array.isArray(record.evidence_hints)) {
+        record.evidence_hints.forEach((hint) => push(hint, label));
+      }
+      push(record.rationale, label);
+    });
+  }
+
+  const graph = asPlainRecord(payload.relational_graph);
+  const clusters = Array.isArray(graph?.theme_clusters) ? graph?.theme_clusters : [];
+  clusters.forEach((cluster) => {
+    const record = asPlainRecord(cluster);
+    if (!record) return;
+    const theme = asCleanText(record.theme) || '주제 클러스터';
+    if (Array.isArray(record.evidence)) {
+      record.evidence.forEach((item) => push(item, theme));
+    }
+  });
+
+  collectWritingTextList(payload.strengths, 5).forEach((item) => push(item, '강점 분석'));
+  collectWritingTextList(payload.gaps, 5).forEach((item) => push(item, '보완점 분석'));
+  push(payload.recommended_focus, '추천 초점');
+  push(payload.headline, '진단 헤드라인');
+
+  return evidence
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+function collectWritingTopicSeeds(
+  payload: (Partial<DiagnosisResultPayload> & Record<string, unknown>) | null,
+  limit = 6,
+): WritingTopicSeed[] {
+  const seeds: WritingTopicSeed[] = [];
+  const seen = new Set<string>();
+  const push = (titleValue: unknown, reasonValue?: unknown, evidenceHooksValue?: unknown) => {
+    const title = asCleanText(titleValue);
+    if (!title) return;
+    const key = title.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    const evidenceHooks = Array.isArray(evidenceHooksValue)
+      ? evidenceHooksValue.map(asCleanText).filter((item): item is string => Boolean(item)).slice(0, 3)
+      : [];
+    seeds.push({
+      title: clipWritingText(title, 120),
+      reason: asCleanText(reasonValue) || '생기부 진단에서 확장 가능성이 높은 후보로 감지되었습니다.',
+      evidenceHooks,
+    });
+  };
+
+  if (!payload) return seeds;
+
+  if (Array.isArray(payload.recommended_directions)) {
+    payload.recommended_directions.forEach((direction) => {
+      const directionRecord = asPlainRecord(direction);
+      if (!directionRecord) return;
+      if (Array.isArray(directionRecord.topic_candidates)) {
+        directionRecord.topic_candidates.forEach((topic) => {
+          const topicRecord = asPlainRecord(topic);
+          if (!topicRecord) return;
+          push(topicRecord.title, topicRecord.why_it_fits || directionRecord.why_now || directionRecord.summary, topicRecord.evidence_hooks);
+        });
+      }
+      push(directionRecord.label, directionRecord.why_now || directionRecord.summary);
+    });
+  }
+
+  collectWritingTextList(payload.recommended_topics, limit).forEach((topic) => push(topic, payload.recommended_focus));
+  push(payload.recommended_focus, payload.headline || payload.overview);
+  push(payload.headline, payload.overview);
+
+  return seeds.slice(0, limit);
+}
+
+function inferGradeFromDiagnosisPayload(payload: (Partial<DiagnosisResultPayload> & Record<string, unknown>) | null): string {
+  if (!payload) return '전체 학년';
+  const snippets: string[] = [];
+  uniquePush(snippets, payload.headline, 20);
+  uniquePush(snippets, payload.overview, 20);
+  uniquePush(snippets, payload.recommended_focus, 20);
+  collectWritingEvidence(payload, 'ai_auto', '', 12).forEach((item) => uniquePush(snippets, `${item.source} ${item.text}`, 20));
+  const text = snippets.join(' ');
+  const has1 = /(1학년|고1|1 학년)/.test(text);
+  const has2 = /(2학년|고2|2 학년)/.test(text);
+  const has3 = /(3학년|고3|3 학년)/.test(text);
+  const count = [has1, has2, has3].filter(Boolean).length;
+  if (count !== 1) return '전체 학년';
+  if (has3) return '고3';
+  if (has2) return '고2';
+  return '고1';
+}
+
+function resolveWritingGradeLabel(gradeId: WritingGradeId, inferredGrade: string): string {
+  if (gradeId === 'auto') return inferredGrade || '전체 학년';
+  if (gradeId === 'high1') return '고1';
+  if (gradeId === 'high2') return '고2';
+  if (gradeId === 'high3') return '고3';
+  return '전체 학년';
+}
+
+function buildGradeFitText(gradeLabel: string, index: number): string {
+  if (gradeLabel === '고1') {
+    return index === 0
+      ? '고1 기록은 관심이 처음 생긴 이유와 기본 개념 이해를 선명하게 보여주는 쪽이 좋습니다.'
+      : '고1 단계에서는 무리한 심화보다 질문이 생긴 과정과 배운 점을 정직하게 드러내는 구성이 안전합니다.';
+  }
+  if (gradeLabel === '고2') {
+    return index === 1
+      ? '고2 기록은 방법 선택, 시행착오, 결과 해석을 구체화하면 세특의 과정성이 살아납니다.'
+      : '고2 단계에서는 교과 개념을 활동 과정으로 옮긴 장면을 근거로 잡는 것이 좋습니다.';
+  }
+  if (gradeLabel === '고3') {
+    return index === 2
+      ? '고3 기록은 전공 수렴, 한계 인식, 후속 탐구 계획까지 정리해야 면접 방어력이 생깁니다.'
+      : '고3 단계에서는 결과의 의미와 전공 적합성을 분명히 연결하는 후보가 유리합니다.';
+  }
+  return '여러 학년 기록을 동기-과정-결과-후속 질문의 흐름으로 연결하기 좋습니다.';
+}
+
+function inferBestRecordArea(
+  payload: (Partial<DiagnosisResultPayload> & Record<string, unknown>) | null,
+  detail: string,
+): RecordAreaId {
+  if (!payload) return 'subject_specialty';
+  const scored = RECORD_AREA_OPTIONS
+    .filter((item) => item.id !== 'ai_auto')
+    .map((area) => {
+      const evidence = collectWritingEvidence(payload, area.id, detail, 12);
+      return {
+        areaId: area.id,
+        score: evidence.reduce((sum, item) => sum + item.score, 0) + evidence.length,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.areaId || 'subject_specialty';
+}
+
+function buildWritingCandidates(options: {
+  payload: (Partial<DiagnosisResultPayload> & Record<string, unknown>) | null;
+  areaId: RecordAreaId;
+  detail: string;
+  gradeLabel: string;
+  targetMajor: string;
+  fallbackTopic?: string | null;
+}): WritingCandidate[] {
+  const resolvedAreaId = options.areaId === 'ai_auto' ? inferBestRecordArea(options.payload, options.detail) : options.areaId;
+  const area = resolveRecordAreaOption(resolvedAreaId);
+  const detailLabel = options.detail.trim() || area.promptLabel;
+  const targetMajor = options.targetMajor.trim() || '목표 전공';
+  const topicSeeds = collectWritingTopicSeeds(options.payload, 6);
+  const evidenceItems = collectWritingEvidence(options.payload, resolvedAreaId, options.detail, 8);
+  const strengths = collectWritingTextList(options.payload?.strengths, 4);
+  const gaps = collectWritingTextList(options.payload?.gaps, 4);
+  const focus = asCleanText(options.payload?.recommended_focus) || asCleanText(options.payload?.headline) || options.fallbackTopic || '';
+  const fallbackEvidence = evidenceItems[0]?.text || strengths[0] || '아직 생기부 원문 근거가 충분히 연결되지 않았습니다.';
+  const fallbackSource = evidenceItems[0]?.source || '진단 요약';
+
+  const templates = [
+    {
+      id: 'evidence',
+      title:
+        topicSeeds[0]?.title ||
+        `${detailLabel}에서 출발한 ${targetMajor} 탐구 질문`,
+      reason:
+        topicSeeds[0]?.reason ||
+        `${detailLabel} 기록과 ${targetMajor} 관심을 가장 직접적으로 연결할 수 있어 첫 보고서 후보로 적합합니다.`,
+      evidence: topicSeeds[0]?.evidenceHooks[0] || evidenceItems[0]?.text || fallbackEvidence,
+      source: evidenceItems[0]?.source || fallbackSource,
+      caution: '활동을 과장하지 말고 본인이 실제로 판단한 과정과 사용한 개념을 먼저 확인해야 합니다.',
+    },
+    {
+      id: 'process',
+      title:
+        topicSeeds[1]?.title ||
+        `${detailLabel} 활동 과정의 선택과 한계 분석`,
+      reason:
+        topicSeeds[1]?.reason ||
+        `${strengths[0] || focus || '강점 기록'}을 단순 결과가 아니라 과정 중심으로 풀어낼 수 있는 후보입니다.`,
+      evidence: topicSeeds[1]?.evidenceHooks[0] || evidenceItems[1]?.text || fallbackEvidence,
+      source: evidenceItems[1]?.source || fallbackSource,
+      caution: '방법, 변인, 자료 선택의 이유가 비어 있으면 AI가 먼저 질문을 던지도록 두는 편이 좋습니다.',
+    },
+    {
+      id: 'defense',
+      title:
+        topicSeeds[2]?.title ||
+        `${targetMajor} 관점에서 본 ${detailLabel}의 보완 탐구`,
+      reason:
+        topicSeeds[2]?.reason ||
+        `${gaps[0] || '보완이 필요한 지점'}을 결론과 후속 탐구로 전환하면 성장 서사가 만들어집니다.`,
+      evidence: topicSeeds[2]?.evidenceHooks[0] || evidenceItems[2]?.text || fallbackEvidence,
+      source: evidenceItems[2]?.source || fallbackSource,
+      caution: '약점을 숨기기보다 왜 한계가 생겼고 다음 탐구에서 어떻게 보완할지 분명히 써야 합니다.',
+    },
+  ];
+
+  return templates.map((template, index) => ({
+    id: `${resolvedAreaId}-${template.id}`,
+    title: clipWritingText(template.title, 100),
+    areaId: resolvedAreaId,
+    areaLabel: area.label,
+    reason: clipWritingText(template.reason, 220),
+    evidence: clipWritingText(template.evidence, 220),
+    source: template.source,
+    gradeFit: buildGradeFitText(options.gradeLabel, index),
+    caution: template.caution,
+  }));
+}
+
+function buildWritingPlanPrompt(options: {
+  area: RecordAreaOption;
+  detail: string;
+  gradeLabel: string;
+  targetMajor: string;
+  candidate: WritingCandidate;
+  preference: string;
+  aiAutoSelect: boolean;
+}): string {
+  const detail = options.detail.trim() || options.area.promptLabel;
+  const preference = options.preference.trim();
+  return [
+    '[문서작성 설정]',
+    `- 작성 영역: ${options.area.label}`,
+    `- 세부 과목/활동: ${detail}`,
+    `- 학생 학년: ${options.gradeLabel}`,
+    `- 목표 전공/방향: ${options.targetMajor || '미정'}`,
+    `- 선택 후보: ${options.candidate.title}`,
+    `- 후보 추천 이유: ${options.candidate.reason}`,
+    `- 생기부 기반 근거: ${options.candidate.source}: ${options.candidate.evidence}`,
+    `- 학년 반영 포인트: ${options.candidate.gradeFit}`,
+    `- 학생 선호/의견: ${preference || (options.aiAutoSelect ? 'AI가 알아서 방향을 선택해도 됨' : '아직 입력 없음')}`,
+    '',
+    '[작성 규칙]',
+    '1. 전체 보고서를 한 번에 완성하지 말고, 먼저 제목 후보와 서론만 다룹니다.',
+    '2. 학생 의견이 부족하면 질문을 1개만 먼저 물어보고, AI 자동 선택이 허용된 경우에는 보수적인 가정을 명시한 뒤 진행합니다.',
+    '3. 생기부에 없는 활동, 수상, 실험 결과, 수치, 논문명은 만들지 마세요.',
+    '4. 작성 가능하면 [DRAFT_PATCH] JSON [/DRAFT_PATCH]를 정확히 1개만 포함하고 block_id는 introduction_background로 하세요.',
+    '5. 서론에는 동기, 문제의식, 탐구 질문, 생기부 근거의 연결만 담고 본론/결론은 다음 단계로 남겨두세요.',
+  ].join('\n');
+}
+
+function buildAccumulationPrompt(options: {
+  step: AccumulationStep;
+  candidate: WritingCandidate | null;
+  area: RecordAreaOption;
+  detail: string;
+  gradeLabel: string;
+  targetMajor: string;
+  preference: string;
+  currentBlockContent: string;
+}): string {
+  const detail = options.detail.trim() || options.area.promptLabel;
+  const currentPreview = options.currentBlockContent.trim()
+    ? clipWritingText(options.currentBlockContent, 360)
+    : '아직 작성된 내용 없음';
+  return [
+    '[적립식 문서작성]',
+    `- 이번에 쓸 부분: ${options.step.label}`,
+    `- 목표 block_id: ${options.step.blockId}`,
+    options.step.subheading ? `- 이 블록 안의 소제목: ${options.step.subheading}` : null,
+    `- 작성 영역: ${options.area.label} / ${detail}`,
+    `- 학생 학년: ${options.gradeLabel}`,
+    `- 목표 전공/방향: ${options.targetMajor || '미정'}`,
+    options.candidate ? `- 선택 후보: ${options.candidate.title}` : null,
+    options.candidate ? `- 생기부 근거: ${options.candidate.source}: ${options.candidate.evidence}` : null,
+    `- 학생 선호/의견: ${options.preference.trim() || '없으면 AI가 보수적으로 질문하거나 가정'}`,
+    `- 현재 블록 내용: ${currentPreview}`,
+    '',
+    '[이번 단계 지시]',
+    options.step.instruction,
+    '전체 보고서를 한 번에 쓰지 말고 이번 섹션만 작성하거나 보강하세요.',
+    '학생의 생각이 필요한 지점은 질문 1개를 먼저 던지되, 바로 작성 가능한 문장만 DRAFT_PATCH로 제안하세요.',
+    `가능하면 [DRAFT_PATCH] JSON [/DRAFT_PATCH]를 정확히 1개만 포함하고 block_id는 ${options.step.blockId}로 하세요.`,
+    '이미 있는 학생 작성 문장은 덮어쓰지 말고 뒤에 자연스럽게 이어 붙이는 방식으로 제안하세요.',
+  ].filter(Boolean).join('\n');
 }
 
 function normalizeGuidedSuggestions(response: GuidedTopicSuggestionResponse): GuidedTopicSuggestion[] {
@@ -736,6 +1333,277 @@ function restoreMessagesFromArchive(item: ArchiveItem): Message[] {
   ];
 }
 
+interface WritingPlannerPanelProps {
+  areaId: RecordAreaId;
+  onAreaChange: (areaId: RecordAreaId) => void;
+  detail: string;
+  onDetailChange: (value: string) => void;
+  gradeId: WritingGradeId;
+  onGradeChange: (gradeId: WritingGradeId) => void;
+  inferredGrade: string;
+  gradeLabel: string;
+  candidates: WritingCandidate[];
+  selectedCandidateId: string | null;
+  onCandidateSelect: (candidateId: string) => void;
+  preference: string;
+  onPreferenceChange: (value: string) => void;
+  aiAutoSelect: boolean;
+  onAutoSelectChange: (value: boolean) => void;
+  onStart: () => void;
+  disabled: boolean;
+}
+
+function WritingPlannerPanel({
+  areaId,
+  onAreaChange,
+  detail,
+  onDetailChange,
+  gradeId,
+  onGradeChange,
+  inferredGrade,
+  gradeLabel,
+  candidates,
+  selectedCandidateId,
+  onCandidateSelect,
+  preference,
+  onPreferenceChange,
+  aiAutoSelect,
+  onAutoSelectChange,
+  onStart,
+  disabled,
+}: WritingPlannerPanelProps) {
+  const activeArea = resolveRecordAreaOption(areaId);
+  const selectedCandidate = aiAutoSelect ? candidates[0] : candidates.find((item) => item.id === selectedCandidateId) || candidates[0];
+
+  return (
+    <SurfaceCard className="border-slate-200 bg-white/95 p-4 shadow-sm">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-wide text-indigo-600">
+              <Sparkles size={14} />
+              문서작성 설정
+            </p>
+            <h3 className="mt-1 text-lg font-black text-slate-900">생기부 근거로 먼저 방향을 고릅니다</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => onAutoSelectChange(!aiAutoSelect)}
+            className={cn(
+              'inline-flex min-h-10 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-black transition-all',
+              aiAutoSelect
+                ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-700',
+            )}
+          >
+            <Wand2 size={15} />
+            AI 자동 선택 {aiAutoSelect ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              {RECORD_AREA_OPTIONS.map((option) => {
+                const selected = option.id === areaId;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onAreaChange(option.id)}
+                    className={cn(
+                      'min-h-[76px] rounded-2xl border p-3 text-left transition-all',
+                      selected
+                        ? 'border-indigo-400 bg-indigo-50 text-indigo-800 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-slate-50',
+                    )}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-black">{option.label}</span>
+                      {selected ? <CheckCircle2 size={16} className="text-indigo-600" /> : null}
+                    </span>
+                    <span className="mt-1 block text-xs font-semibold leading-5 text-slate-500">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <input
+              value={detail}
+              onChange={(event) => onDetailChange(event.target.value)}
+              placeholder={activeArea.detailPlaceholder}
+              className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50"
+            />
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <p className="mb-2 flex items-center gap-2 text-xs font-black text-slate-600">
+                <GraduationCap size={15} className="text-indigo-500" />
+                학년 반영
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">추천 {inferredGrade}</span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {WRITING_GRADE_OPTIONS.map((option) => {
+                  const selected = option.id === gradeId;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      title={option.description}
+                      onClick={() => onGradeChange(option.id)}
+                      className={cn(
+                        'rounded-full border px-3 py-1.5 text-xs font-black transition-all',
+                        selected
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-700',
+                      )}
+                    >
+                      {option.id === 'auto' ? `${option.label}(${gradeLabel})` : option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <label className="block">
+              <span className="mb-2 flex items-center gap-2 text-xs font-black text-slate-600">
+                <MessageSquare size={15} className="text-indigo-500" />
+                학생 선호와 생각
+              </span>
+              <textarea
+                value={preference}
+                onChange={(event) => onPreferenceChange(event.target.value)}
+                placeholder="예: 너무 어려운 주제는 싫어요. 실험보다 자료 분석이 좋아요. 느낀 점은 진솔하게 쓰고 싶어요."
+                rows={4}
+                className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-xs font-black text-slate-600">
+              <Target size={15} className="text-indigo-500" />
+              생기부 기반 후보
+            </p>
+            <span className="text-[11px] font-bold text-slate-400">선택 후보: {selectedCandidate?.title || '없음'}</span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {candidates.map((candidate) => {
+              const selected = aiAutoSelect ? candidate.id === candidates[0]?.id : candidate.id === selectedCandidate?.id;
+              return (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => {
+                    onAutoSelectChange(false);
+                    onCandidateSelect(candidate.id);
+                  }}
+                  className={cn(
+                    'min-h-[188px] rounded-2xl border p-4 text-left transition-all',
+                    selected
+                      ? 'border-indigo-400 bg-indigo-50 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50',
+                  )}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="text-sm font-black leading-5 text-slate-900">{candidate.title}</span>
+                    {selected ? <CheckCircle2 size={17} className="shrink-0 text-indigo-600" /> : null}
+                  </span>
+                  <span className="mt-2 block text-xs font-bold text-indigo-700">{candidate.areaLabel}</span>
+                  <span className="mt-2 block text-xs font-semibold leading-5 text-slate-600">{candidate.reason}</span>
+                  <span className="mt-3 block rounded-xl bg-white/80 px-3 py-2 text-[11px] font-semibold leading-5 text-slate-500">
+                    {candidate.source}: {candidate.evidence}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-semibold leading-5 text-slate-600">
+            {selectedCandidate?.gradeFit || '학년 정보를 반영해 후보를 정리합니다.'}
+          </p>
+          <PrimaryButton
+            type="button"
+            size="sm"
+            onClick={onStart}
+            disabled={disabled || !selectedCandidate}
+            className="min-h-10 shrink-0 rounded-2xl px-4 text-xs font-black"
+          >
+            <PenSquare size={15} className="mr-1.5" />
+            이 후보로 서론 시작
+          </PrimaryButton>
+        </div>
+      </div>
+    </SurfaceCard>
+  );
+}
+
+interface DraftAccumulationPanelProps {
+  steps: AccumulationStep[];
+  structuredDraft: WorkshopStructuredDraftState;
+  onStepRequest: (step: AccumulationStep) => void;
+  disabled: boolean;
+}
+
+function DraftAccumulationPanel({ steps, structuredDraft, onStepRequest, disabled }: DraftAccumulationPanelProps) {
+  const blockContent = useMemo(() => {
+    const map = new Map<WorkshopDraftBlockId, string>();
+    structuredDraft.blocks.forEach((block) => map.set(block.block_id, block.content_markdown || ''));
+    return map;
+  }, [structuredDraft]);
+
+  return (
+    <SurfaceCard className="border-slate-200 bg-white/95 p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-wide text-indigo-600">
+            <Layers size={14} />
+            적립식 작성
+          </p>
+          <h3 className="mt-1 text-base font-black text-slate-900">서론부터 출처까지 한 칸씩 쌓기</h3>
+        </div>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-500">API 부담 완화용 섹션 생성</span>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {steps.map((step) => {
+          const content = blockContent.get(step.blockId) || '';
+          const isDone = step.subheading
+            ? content.includes(step.subheading) || content.length >= 240
+            : content.trim().length >= 80;
+          return (
+            <button
+              key={step.id}
+              type="button"
+              onClick={() => onStepRequest(step)}
+              disabled={disabled}
+              className={cn(
+                'min-h-[92px] rounded-2xl border p-3 text-left transition-all disabled:opacity-50',
+                isDone
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-slate-50',
+              )}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-sm font-black">{step.label}</span>
+                {isDone ? <CheckCircle2 size={16} /> : <PenSquare size={15} className="text-slate-400" />}
+              </span>
+              <span className="mt-1 block text-xs font-semibold leading-5 text-slate-500">{step.description}</span>
+              <span className="mt-2 inline-flex rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-black text-slate-500">
+                {isDone ? '보강' : '작성'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </SurfaceCard>
+  );
+}
+
 interface ChatBubbleProps {
   message: Message;
   onApplyDraftPatch: (patch: WorkshopDraftPatchProposal) => void | Promise<void>;
@@ -971,6 +1839,12 @@ export function Workshop() {
   const [chatMeta, setChatMeta] = useState<ChatStreamMetaPayload | null>(null);
   const [mobileView, setMobileView] = useState<'chat' | 'draft'>('chat');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [writingAreaId, setWritingAreaId] = useState<RecordAreaId>('subject_specialty');
+  const [writingDetail, setWritingDetail] = useState('');
+  const [writingGradeId, setWritingGradeId] = useState<WritingGradeId>('auto');
+  const [writingPreference, setWritingPreference] = useState('');
+  const [aiAutoSelectWriting, setAiAutoSelectWriting] = useState(true);
+  const [selectedWritingCandidateId, setSelectedWritingCandidateId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<TiptapEditorHandle | null>(null);
   const reportDocumentState = useMemo(() => structuredDraftToReportDocumentState(structuredDraft), [structuredDraft]);
@@ -997,6 +1871,52 @@ export function Workshop() {
   const reportDownloadContent = useMemo(
     () => (renderArtifact?.report_markdown || documentContent || '').trim(),
     [documentContent, renderArtifact?.report_markdown],
+  );
+  const storedDiagnosisSnapshot = useMemo(() => readStoredDiagnosisSnapshot(), []);
+  const activeDiagnosisPayload = useMemo(
+    () =>
+      toDiagnosisPayloadRecord(diagnosisReport) ||
+      toDiagnosisPayloadRecord(storedDiagnosisSnapshot?.diagnosis) ||
+      null,
+    [diagnosisReport, storedDiagnosisSnapshot],
+  );
+  const inferredWritingGrade = useMemo(
+    () => inferGradeFromDiagnosisPayload(activeDiagnosisPayload),
+    [activeDiagnosisPayload],
+  );
+  const resolvedWritingGradeLabel = useMemo(
+    () => resolveWritingGradeLabel(writingGradeId, inferredWritingGrade),
+    [inferredWritingGrade, writingGradeId],
+  );
+  const targetMajorForWriting = useMemo(
+    () =>
+      asCleanText(workshopLocationState?.major) ||
+      asCleanText(storedDiagnosisSnapshot?.targetMajor) ||
+      asCleanText(storedDiagnosisSnapshot?.target_major) ||
+      asCleanText(storedDiagnosisSnapshot?.major) ||
+      (initialMajor === '誘몄젙' ? '목표 전공' : initialMajor) ||
+      '목표 전공',
+    [initialMajor, storedDiagnosisSnapshot, workshopLocationState?.major],
+  );
+  const writingAreaOption = useMemo(() => resolveRecordAreaOption(writingAreaId), [writingAreaId]);
+  const writingCandidates = useMemo(
+    () =>
+      buildWritingCandidates({
+        payload: activeDiagnosisPayload,
+        areaId: writingAreaId,
+        detail: writingDetail,
+        gradeLabel: resolvedWritingGradeLabel,
+        targetMajor: targetMajorForWriting,
+        fallbackTopic: questStart?.title || null,
+      }),
+    [activeDiagnosisPayload, questStart?.title, resolvedWritingGradeLabel, targetMajorForWriting, writingAreaId, writingDetail],
+  );
+  const selectedWritingCandidate = useMemo(
+    () =>
+      aiAutoSelectWriting
+        ? writingCandidates[0] || null
+        : writingCandidates.find((candidate) => candidate.id === selectedWritingCandidateId) || writingCandidates[0] || null,
+    [aiAutoSelectWriting, selectedWritingCandidateId, writingCandidates],
   );
   const researchCandidates = useResearchCandidates({
     projectId: guidedProjectId,
@@ -1879,7 +2799,7 @@ export function Workshop() {
 
   const handleSend = async (
     overriddenText?: string,
-    options?: { displayText?: string; skipResearchDetection?: boolean },
+    options?: { displayText?: string; skipResearchDetection?: boolean; forceFreeform?: boolean },
   ) => {
     const text = (overriddenText ?? input ?? '').trim();
     const displayText = (options?.displayText || text).trim();
@@ -1896,7 +2816,7 @@ export function Workshop() {
       return;
     }
 
-    if (isProjectBacked && !isGuidedSetupComplete(guidedPhase)) {
+    if (isProjectBacked && !options?.forceFreeform && !isGuidedSetupComplete(guidedPhase)) {
       setIsTyping(true);
       try {
         if (guidedPhase === 'subject_input') {
@@ -1987,7 +2907,7 @@ export function Workshop() {
       return;
     }
 
-    if (isProjectBacked && guidedPhase === 'drafting_next_step') {
+    if (isProjectBacked && (options?.forceFreeform || guidedPhase === 'drafting_next_step')) {
       setGuidedPhase('freeform_coauthoring');
       setIsGuidedTopicSelected(true);
     }
@@ -2144,6 +3064,79 @@ export function Workshop() {
       setIsTyping(false);
     }
   };
+
+  const handleStartWritingPlan = useCallback(async () => {
+    const candidate = selectedWritingCandidate || writingCandidates[0];
+    if (!candidate) {
+      toast.error('먼저 문서작성 후보를 선택해 주세요.');
+      return;
+    }
+    setGuidedPhase('freeform_coauthoring');
+    setIsGuidedTopicSelected(true);
+    setWorkshopMode('section_drafting');
+    const prompt = buildWritingPlanPrompt({
+      area: candidate.areaId === writingAreaId ? writingAreaOption : resolveRecordAreaOption(candidate.areaId),
+      detail: writingDetail,
+      gradeLabel: resolvedWritingGradeLabel,
+      targetMajor: targetMajorForWriting,
+      candidate,
+      preference: writingPreference,
+      aiAutoSelect: aiAutoSelectWriting,
+    });
+    await handleSend(prompt, {
+      displayText: `${candidate.title} 후보로 서론부터 시작`,
+      skipResearchDetection: true,
+      forceFreeform: true,
+    });
+  }, [
+    aiAutoSelectWriting,
+    handleSend,
+    resolvedWritingGradeLabel,
+    selectedWritingCandidate,
+    targetMajorForWriting,
+    writingAreaId,
+    writingAreaOption,
+    writingCandidates,
+    writingDetail,
+    writingPreference,
+  ]);
+
+  const handleAccumulationStepRequest = useCallback(
+    async (step: AccumulationStep) => {
+      const currentBlockContent =
+        structuredDraft.blocks.find((block) => block.block_id === step.blockId)?.content_markdown || '';
+      const candidate = selectedWritingCandidate || writingCandidates[0] || null;
+      setGuidedPhase('freeform_coauthoring');
+      setIsGuidedTopicSelected(true);
+      setWorkshopMode('section_drafting');
+      const prompt = buildAccumulationPrompt({
+        step,
+        candidate,
+        area: candidate?.areaId ? resolveRecordAreaOption(candidate.areaId) : writingAreaOption,
+        detail: writingDetail,
+        gradeLabel: resolvedWritingGradeLabel,
+        targetMajor: targetMajorForWriting,
+        preference: writingPreference,
+        currentBlockContent,
+      });
+      await handleSend(prompt, {
+        displayText: `${step.label}만 작성/보강`,
+        skipResearchDetection: true,
+        forceFreeform: true,
+      });
+    },
+    [
+      handleSend,
+      resolvedWritingGradeLabel,
+      selectedWritingCandidate,
+      structuredDraft.blocks,
+      targetMajorForWriting,
+      writingAreaOption,
+      writingCandidates,
+      writingDetail,
+      writingPreference,
+    ],
+  );
 
   const handleGuidedChoiceSelect = useCallback(
     async (groupId: string, option: GuidedChoiceOption, sourceMessage: Message) => {
@@ -2761,6 +3754,42 @@ export function Workshop() {
                               description={limitedModeNotice.description}
                               className="rounded-[28px] border-amber-100 bg-amber-50/80 backdrop-blur-sm shadow-sm"
                             />
+                          )}
+
+                          {!isSessionLoading && (
+                            <div className="space-y-4">
+                              <WritingPlannerPanel
+                                areaId={writingAreaId}
+                                onAreaChange={(nextAreaId) => {
+                                  setWritingAreaId(nextAreaId);
+                                  setSelectedWritingCandidateId(null);
+                                }}
+                                detail={writingDetail}
+                                onDetailChange={(value) => {
+                                  setWritingDetail(value);
+                                  setSelectedWritingCandidateId(null);
+                                }}
+                                gradeId={writingGradeId}
+                                onGradeChange={setWritingGradeId}
+                                inferredGrade={inferredWritingGrade}
+                                gradeLabel={resolvedWritingGradeLabel}
+                                candidates={writingCandidates}
+                                selectedCandidateId={selectedWritingCandidateId}
+                                onCandidateSelect={setSelectedWritingCandidateId}
+                                preference={writingPreference}
+                                onPreferenceChange={setWritingPreference}
+                                aiAutoSelect={aiAutoSelectWriting}
+                                onAutoSelectChange={setAiAutoSelectWriting}
+                                onStart={() => void handleStartWritingPlan()}
+                                disabled={isTyping || isGuidedActionLoading || !!isSelectingGuidedTopicId || !workshopState?.session.id}
+                              />
+                              <DraftAccumulationPanel
+                                steps={ACCUMULATION_STEPS}
+                                structuredDraft={structuredDraft}
+                                onStepRequest={(step) => void handleAccumulationStepRequest(step)}
+                                disabled={isTyping || isGuidedActionLoading || !!isSelectingGuidedTopicId || !workshopState?.session.id}
+                              />
+                            </div>
                           )}
 
                           {!isSessionLoading ? (

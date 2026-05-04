@@ -14,12 +14,12 @@ from unifoli_api.schemas.workshop import (
 )
 
 DEFAULT_BLOCK_DEFINITIONS: tuple[tuple[str, str], ...] = (
-    ("title", "제목"),
-    ("introduction_background", "서론 / 배경"),
-    ("body_section_1", "본론 1"),
-    ("body_section_2", "본론 2"),
-    ("body_section_3", "본론 3"),
-    ("conclusion_reflection_next_step", "결론 / 성찰 / 다음 단계"),
+    ("title", "\uc81c\ubaa9"),
+    ("introduction_background", "\uc11c\ub860 / \ubb38\uc81c\uc758\uc2dd"),
+    ("body_section_1", "\ubcf8\ub860 1 / \uac1c\ub150\uacfc \ubc30\uacbd"),
+    ("body_section_2", "\ubcf8\ub860 2 / \ubc29\ubc95\uacfc \uacfc\uc815"),
+    ("body_section_3", "\ubcf8\ub860 3 / \uacb0\uacfc\uc640 \ud574\uc11d"),
+    ("conclusion_reflection_next_step", "\uacb0\ub860 / \ub290\ub080 \uc810 / \ucd9c\ucc98"),
 )
 
 _PATCH_PATTERN = re.compile(r"\[DRAFT_PATCH\]([\s\S]*?)\[/DRAFT_PATCH\]", re.IGNORECASE)
@@ -85,6 +85,13 @@ def build_coauthoring_system_context(
         structured_draft = build_default_structured_draft(mode=mode, source="derived")
 
     lines = [
+        "[Section accumulation rules]",
+        "- The user may ask for one section at a time: intro, body1, body2, body3, conclusion, reflection, or references.",
+        "- Do not draft the full report in one response. Propose only one DRAFT_PATCH for the requested block_id.",
+        "- For reflection/references, append under a clear subheading inside conclusion_reflection_next_step instead of overwriting existing text.",
+        "- Ask at most one student-preference question when personal opinion is needed; if the user allowed AI auto-selection, make a conservative assumption and state it.",
+        "- Student record evidence must be cited as [source: student record p.X] when page evidence is available.",
+        "",
         "[초안 공동작성 모드]",
         f"- 현재 모드: {mode}",
         "- 기본 초안 구조: title, introduction/background, body1, body2, body3, conclusion/reflection/next step",
