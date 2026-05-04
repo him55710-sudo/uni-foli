@@ -17,6 +17,7 @@ import { clearAppAccessToken, hasAppAccessToken } from '../lib/appAccessToken';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  adminLoading: boolean;
   isGuestSession: boolean;
   guestModeAvailable: boolean;
   isAuthenticated: boolean;
@@ -26,6 +27,8 @@ interface AuthContextType {
   signInWithNaver: () => Promise<void>;
   signInAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
+  isAdmin: boolean;
+  refreshAdminAccess: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -69,9 +72,23 @@ function extractApiErrorMessage(error: unknown): string | null {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [guestSessionActive, setGuestSessionActive] = useState(false);
   const guestModeAvailable = isGuestModeAllowed;
   const backendSessionAuthenticated = useAuthStore(state => state.isAuthenticated);
+
+  const refreshAdminAccess = React.useCallback(async () => {
+    setAdminLoading(true);
+    try {
+      const adminProfile = await api.admin.getMe();
+      setIsAdmin(adminProfile.is_admin === true);
+    } catch {
+      setIsAdmin(false);
+    } finally {
+      setAdminLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const hasExistingGuestSession = localStorage.getItem(GUEST_SESSION_KEY) === '1';
@@ -81,14 +98,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!auth || !isFirebaseConfigured) {
       if (hasAppAccessToken()) {
-        void useAuthStore.getState().fetchProfile().finally(() => setLoading(false));
+        void (async () => {
+          await useAuthStore.getState().fetchProfile();
+          await refreshAdminAccess();
+          setLoading(false);
+        })();
         return;
       }
       if (allowLocalBackendBypass) {
-        void useAuthStore.getState().fetchProfile().finally(() => setLoading(false));
+        void (async () => {
+          await useAuthStore.getState().fetchProfile();
+          await refreshAdminAccess();
+          setLoading(false);
+        })();
         return;
       }
       useAuthStore.getState().setUser(null);
+      setIsAdmin(false);
+      setAdminLoading(false);
       setLoading(false);
       return;
     }
@@ -107,6 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         await useAuthStore.getState().fetchProfile();
         useOnboardingStore.getState().syncWithUser(useAuthStore.getState().user);
+        await refreshAdminAccess();
       } else {
         // Check for local guest session even if Firebase user is null
         const localGuestActive = localStorage.getItem(GUEST_SESSION_KEY) === '1';
@@ -114,15 +142,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (hasAppAccessToken() || allowLocalBackendBypass || localGuestActive) {
           await useAuthStore.getState().fetchProfile();
           useOnboardingStore.getState().syncWithUser(useAuthStore.getState().user);
+          await refreshAdminAccess();
         } else {
           useAuthStore.getState().setUser(null);
+          setIsAdmin(false);
+          setAdminLoading(false);
         }
       }
       setLoading(false);
     });
 
     return unsubscribe;
-  }, []);
+  }, [refreshAdminAccess]);
 
   const signInWithSocialRedirect = async (provider: SocialProvider) => {
     try {
@@ -195,6 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem(GUEST_SESSION_KEY, '1');
         await useAuthStore.getState().fetchProfile();
         useOnboardingStore.getState().syncWithUser(useAuthStore.getState().user);
+        await refreshAdminAccess();
       }
     } catch (error) {
       console.error('Firebase anonymous sign-in failed, falling back to local guest session:', error);
@@ -203,11 +235,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(GUEST_SESSION_KEY, '1');
       await useAuthStore.getState().fetchProfile();
       useOnboardingStore.getState().syncWithUser(useAuthStore.getState().user);
+      await refreshAdminAccess();
     }
   };
 
   const logout = async () => {
     setGuestSessionActive(false);
+    setIsAdmin(false);
+    setAdminLoading(false);
     localStorage.removeItem(GUEST_SESSION_KEY);
     clearAppAccessToken();
     useAuthStore.getState().setUser(null);
@@ -232,6 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         loading,
+        adminLoading,
         isGuestSession,
         guestModeAvailable,
         isAuthenticated,
@@ -241,6 +277,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithNaver,
         signInAsGuest,
         logout,
+        isAdmin,
+        refreshAdminAccess,
       }}
     >
       {children}

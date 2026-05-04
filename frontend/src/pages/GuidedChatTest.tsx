@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import {
   applyTopicSelectionToUiState,
   createInitialGuidedChatUiState,
-  ensureThreeSuggestions,
+  limitTopicSuggestions,
   type GuidedChatUiState,
   type GuidedTopicSelectionResponse,
   type GuidedTopicSuggestionResponse,
@@ -89,7 +89,7 @@ export function GuidedChatTest() {
         project_id: resolvedProjectId,
         subject: normalized,
       });
-      const normalizedResponse = ensureThreeSuggestions(response);
+      const normalizedResponse = limitTopicSuggestions(response);
       setSuggestionsPayload(normalizedResponse);
       if (normalizedResponse.evidence_gap_note) {
         setEvidenceGapNote(normalizedResponse.evidence_gap_note);
@@ -126,12 +126,12 @@ export function GuidedChatTest() {
       <PageHeader
         eyebrow="Guided Chat Test"
         title="주제 가이드 테스트"
-        description="자유 채팅이 아니라, 근거 기반 3개 주제 제안 후 구조를 먼저 잡는 테스트 흐름입니다."
+        description="자유 채팅이 아니라, 근거 기반 300개 이상 주제 제안 후 구조를 먼저 잡는 테스트 흐름입니다."
         evidence={
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status="active">고정 인사말</StatusBadge>
             <StatusBadge status="neutral">{resolvedProjectId ? '프로젝트 연동' : '제한 모드'}</StatusBadge>
-            <StatusBadge status="success">3개 주제 고정</StatusBadge>
+            <StatusBadge status="success">300개 이상 주제</StatusBadge>
           </div>
         }
       />
@@ -139,7 +139,7 @@ export function GuidedChatTest() {
       <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
         <SectionCard
           title="주제 제안"
-          description="넓은 과목을 입력하면 학생 맥락 기반으로 정확히 3개 주제를 제안합니다."
+          description="넓은 과목을 입력하면 학생 맥락 기반으로 300개 이상 주제를 제안합니다."
           eyebrow="LEFT PANEL"
           bodyClassName="space-y-4"
         >
@@ -169,12 +169,12 @@ export function GuidedChatTest() {
             />
             <PrimaryButton onClick={() => void handleGenerateSuggestions()} disabled={isGeneratingSuggestions || isStarting}>
               {isGeneratingSuggestions ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              3개 주제 제안
+              300개 주제 제안
             </PrimaryButton>
           </div>
 
           {suggestions.length ? (
-            <div className="space-y-3">
+            <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
               {suggestions.map((item, index) => (
                 <SurfaceCard key={item.id} padding="sm" className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
@@ -204,7 +204,7 @@ export function GuidedChatTest() {
           ) : (
             <SurfaceCard tone="muted" padding="sm">
               <p className="text-sm font-medium leading-6 text-slate-600">
-                과목을 입력해 주시면 근거 기반 3개 주제를 보여드립니다.
+                과목을 입력해 주시면 근거 기반 300개 이상 주제를 보여드립니다.
               </p>
             </SurfaceCard>
           )}

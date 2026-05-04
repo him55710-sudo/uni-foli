@@ -3,10 +3,9 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { ArrowLeft, Menu, X, LogOut, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UniFoliLogo } from '../UniFoliLogo';
-import { UniversityLogo } from '../UniversityLogo';
 import { Button } from '../ui';
 import { Topbar } from '../primitives';
-import { appNavSections, isNavItemActive } from './nav-config';
+import { appNavSections, type AppNavSection, isNavItemActive } from './nav-config';
 import { cn } from '../../lib/cn';
 
 interface GoalItem {
@@ -24,6 +23,7 @@ interface AppTopbarProps {
   isGuestSession?: boolean;
   onLogout?: () => void;
   onOpenReview?: () => void;
+  navSections?: AppNavSection[];
 }
 
 export function AppTopbar({
@@ -36,11 +36,12 @@ export function AppTopbar({
   isGuestSession,
   onLogout,
   onOpenReview,
+  navSections = appNavSections,
 }: AppTopbarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const location = useLocation();
   const visibleGoals = (rankedGoals?.length ? rankedGoals : primaryGoal ? [primaryGoal] : []).slice(0, 3);
-  const allNavItems = appNavSections.flatMap(section => section.items);
+  const allNavItems = navSections.flatMap(section => section.items);
 
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
   const closeMobileMenu = () => setIsMobileMenuOpen(false);

@@ -117,6 +117,10 @@ class Settings(BaseSettings):
     auth_social_login_enabled: bool = False
     auth_social_state_secret: str | None = None
     auth_social_state_ttl_seconds: int = 600
+    admin_emails: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["him55710@gmail.com"],
+        validation_alias=AliasChoices("ADMIN_EMAILS", "UNIFOLI_ADMIN_EMAILS"),
+    )
     firebase_project_id: str | None = Field(
         default=None,
         validation_alias=AliasChoices("FIREBASE_PROJECT_ID", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT"),
@@ -270,6 +274,26 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in re.split(r"[,\s;]+", value) if item.strip()]
         return value
+
+    @field_validator("admin_emails", mode="before")
+    @classmethod
+    def split_admin_emails(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in re.split(r"[,\s;]+", value) if item.strip()]
+        return value
+
+    @field_validator("admin_emails", mode="after")
+    @classmethod
+    def normalize_admin_emails(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            email = item.strip().lower()
+            if not email or email in seen:
+                continue
+            seen.add(email)
+            normalized.append(email)
+        return normalized
 
     @field_validator("upload_allowed_extensions", mode="after")
     @classmethod

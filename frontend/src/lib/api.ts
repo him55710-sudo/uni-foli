@@ -247,6 +247,34 @@ export const api = {
   getBackendReadiness(params?: { check_llm?: boolean }) {
     return api.get<BackendHealthStatus>('/api/v1/readiness', { params });
   },
+  admin: {
+    getMe() {
+      return api.get<{ is_admin: boolean; id: string; email?: string | null; name?: string | null }>('/api/v1/admin/me');
+    },
+    getStats() {
+      return api.get<any>('/api/v1/admin/stats');
+    },
+    listProjects() {
+      return api.get<any[]>('/api/v1/admin/projects');
+    },
+    getProjectAssets(projectId: string) {
+      return api.get<{ project: any; uploads: any[]; documents: any[]; diagnosis_runs: any[]; reports: any[] }>(
+        `/api/v1/admin/projects/${projectId}/assets`,
+      );
+    },
+    getProjectLogs(projectId: string, limit = 160) {
+      return api.get<{ project_id: string; logs: any[] }>(`/api/v1/admin/projects/${projectId}/logs`, { params: { limit } });
+    },
+    getRecentLogs(limit = 80) {
+      return api.get<{ logs: any[] }>('/api/v1/admin/logs/recent', { params: { limit } });
+    },
+    getRawUploadUrl(uploadId: string) {
+      return `${resolveApiBaseUrl()}/api/v1/admin/uploads/${uploadId}/view`;
+    },
+    getDiagnosisReportUrl(reportId: string) {
+      return `${resolveApiBaseUrl()}/api/v1/admin/reports/${reportId}/view`;
+    },
+  },
 };
 
 export default api;

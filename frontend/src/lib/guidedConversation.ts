@@ -23,7 +23,7 @@ const KR_CHEMISTRY = '\ud654\ud559';
 const KR_BIOLOGY = '\uc0dd\uba85\uacfc\ud559';
 const KR_SPECIFIC_TOPIC_TITLE = '\ud2b9\ubcc4\ud788 \uc0dd\uac01\ud574\ub454 \uc8fc\uc81c\uac00 \uc788\ub098\uc694?';
 const KR_HAS_TOPIC = '\uc8fc\uc81c\uac00 \uc788\uc5b4\uc694';
-const KR_RECOMMEND_THREE = '\ucd94\ucc9c 3\uac1c \ubc1b\uc544\ubcf4\uae30';
+const KR_RECOMMEND_MANY = '\ucd94\ucc9c 300\uac1c \ubc1b\uc544\ubcf4\uae30';
 const KR_SUBJECT_QUICK_TITLE = '\uc790\uc8fc \uc120\ud0dd\ud558\ub294 \uacfc\ubaa9';
 
 const BROAD_SUBJECT_KEYWORDS = [
@@ -144,9 +144,9 @@ export function buildSpecificTopicCheckGroup(): GuidedChoiceGroup {
       },
       {
         id: 'specific-no-recommend',
-        label: KR_RECOMMEND_THREE,
+        label: KR_RECOMMEND_MANY,
         description: '\ud559\uc0dd \uae30\ub85d\uc744 \ubc14\ud0d5\uc73c\ub85c \ucd94\ucc9c\ubc1b\uc744\uac8c\uc694.',
-        value: KR_RECOMMEND_THREE,
+        value: KR_RECOMMEND_MANY,
       },
     ],
   };

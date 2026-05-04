@@ -7,6 +7,7 @@ import {
   MessageSquareQuote,
   PenTool,
   Settings,
+  ShieldCheck,
 } from 'lucide-react';
 
 export interface AppNavItem {
@@ -77,6 +78,24 @@ export const appNavSections: AppNavSection[] = [
   },
 ];
 
+const adminNavSection: AppNavSection = {
+  key: 'admin',
+  label: '관리자',
+  hint: '운영 지표와 로그 확인',
+  items: [
+    {
+      path: '/app/admin',
+      label: '관리자',
+      hint: '사용자, 진단, 로그 모니터링',
+      icon: ShieldCheck,
+    },
+  ],
+};
+
+export function getAppNavSections(isAdmin = false): AppNavSection[] {
+  return isAdmin ? [...appNavSections, adminNavSection] : appNavSections;
+}
+
 export function isNavItemActive(pathname: string, itemPath: string) {
   if (itemPath === '/app') {
     return pathname === '/app';
@@ -84,6 +103,6 @@ export function isNavItemActive(pathname: string, itemPath: string) {
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
-export function resolveCurrentNavSection(pathname: string): AppNavSection {
-  return appNavSections.find(section => section.items.some(item => isNavItemActive(pathname, item.path))) ?? appNavSections[0];
+export function resolveCurrentNavSection(pathname: string, sections: AppNavSection[] = appNavSections): AppNavSection {
+  return sections.find(section => section.items.some(item => isNavItemActive(pathname, item.path))) ?? sections[0] ?? appNavSections[0];
 }

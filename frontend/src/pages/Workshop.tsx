@@ -91,7 +91,8 @@ import { useEditorBridge } from '../features/workshop/hooks/useEditorBridge';
 import { useResearchCandidates } from '../features/workshop/hooks/useResearchCandidates';
 import type { ResearchSearchSource } from '../features/workshop/api/researchClient';
 import {
-  ensureThreeSuggestions,
+  TOPIC_SUGGESTION_PREVIEW_COUNT,
+  limitTopicSuggestions,
   type GuidedChoiceGroup,
   type GuidedChoiceOption,
   type GuidedConversationPhase,
@@ -951,15 +952,17 @@ function buildAccumulationPrompt(options: {
 }
 
 function normalizeGuidedSuggestions(response: GuidedTopicSuggestionResponse): GuidedTopicSuggestion[] {
-  return ensureThreeSuggestions(response).suggestions.slice(0, 3);
+  return limitTopicSuggestions(response).suggestions;
 }
 
 function formatGuidedSuggestionMessage(response: GuidedTopicSuggestionResponse) {
   const suggestions = normalizeGuidedSuggestions(response);
+  const preview = suggestions.slice(0, TOPIC_SUGGESTION_PREVIEW_COUNT);
   const lines = [
-    `좋아요. '${response.subject}'을 바탕으로 학생 기록 흐름에 맞는 주제 3가지를 준비했어요.`,
+    `좋아요. '${response.subject}'을 바탕으로 학생 기록 흐름에 맞는 주제 ${suggestions.length}개를 준비했어요.`,
+    `아래는 먼저 볼 만한 ${preview.length}개 하이라이트이고, 카드 목록에서는 전체 후보를 바로 선택할 수 있어요.`,
     '',
-    ...suggestions.flatMap((item, index) => {
+    ...preview.flatMap((item, index) => {
       const chunk = [
         `${index + 1}. **${item.title}**`,
         `- 추천 이유: ${item.why_fit_student}`,
@@ -977,7 +980,7 @@ function formatGuidedSuggestionMessage(response: GuidedTopicSuggestionResponse) 
   if (response.evidence_gap_note) {
     lines.push('', `참고: ${response.evidence_gap_note}`);
   }
-  lines.push('', '이 중에서 가장 마음에 드는 주제를 골라주세요.');
+  lines.push('', '아래 카드에서 가장 마음에 드는 주제를 골라주세요.');
   return lines.join('\n');
 }
 
@@ -1030,7 +1033,7 @@ function formatAssistantMessageWithEvidenceNote(
 function buildTopicChoiceGroup(suggestions: GuidedTopicSuggestion[]): GuidedChoiceGroup {
   return {
     id: 'topic-selection',
-    title: '이 중에서 가장 마음에 드는 주제를 골라주세요.',
+    title: `추천 탐구 주제 ${suggestions.length}개 중 하나를 골라주세요.`,
     style: 'cards',
     options: suggestions.map((topic) => ({
       id: topic.id,
@@ -1890,6 +1893,7 @@ const ChatBubble = memo(function ChatBubble({
                     'grid gap-2',
                     group.style === 'chips' ? 'flex flex-wrap gap-2' : 'grid-cols-1',
                     group.style === 'buttons' ? 'sm:grid-cols-2' : null,
+                    group.id === 'topic-selection' && group.options.length > 24 ? 'max-h-[520px] overflow-y-auto pr-1' : null,
                   )}
                 >
                   {group.options.map((option) => {
@@ -2885,7 +2889,7 @@ export function Workshop() {
         {
           id: pendingId,
           role: 'foli',
-          content: '학생 기록을 바탕으로 주제 3가지를 정리하고 있어요. 잠시만 기다려 주세요.',
+          content: '학생 기록을 바탕으로 주제 300개 이상을 정리하고 있어요. 잠시만 기다려 주세요.',
         },
       ]);
       try {
@@ -3193,8 +3197,8 @@ export function Workshop() {
           setGuidedPhase('specific_topic_check');
           pushGuidedAssistantMessage({
             content: broadSubject
-              ? `좋아요. ${normalizedSubject}로 진행해볼게요.\n특별히 생각해 둔 주제가 있을까요? 아직 없다면 학생 기록 기반으로 3가지를 추천해드릴게요.`
-              : `좋아요. ${normalizedSubject} 방향으로 진행해볼게요.\n이미 생각해 둔 탐구 질문이 있다면 알려주세요. 없으면 학생 기록을 바탕으로 3가지를 추천해드릴게요.`,
+              ? `좋아요. ${normalizedSubject}로 진행해볼게요.\n특별히 생각해 둔 주제가 있을까요? 아직 없다면 학생 기록 기반으로 300개 이상 추천해드릴게요.`
+              : `좋아요. ${normalizedSubject} 방향으로 진행해볼게요.\n이미 생각해 둔 탐구 질문이 있다면 알려주세요. 없으면 학생 기록을 바탕으로 300개 이상 추천해드릴게요.`,
             phase: 'specific_topic_check',
             topicSubject: normalizedSubject,
             choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -3209,7 +3213,7 @@ export function Workshop() {
           }
           if (isSpecificTopicAffirmative(text)) {
             pushGuidedAssistantMessage({
-              content: '좋아요. 생각해 둔 주제를 한 문장으로 적어주시면 그 방향까지 반영해서 주제 3가지를 제안할게요.',
+              content: '좋아요. 생각해 둔 주제를 한 문장으로 적어주시면 그 방향까지 반영해서 주제 300개 이상을 제안할게요.',
               phase: 'specific_topic_check',
               topicSubject: guidedSubject || undefined,
               choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -3549,7 +3553,7 @@ export function Workshop() {
         setGuidedSubject(rawValue);
         setGuidedPhase('specific_topic_check');
         pushGuidedAssistantMessage({
-          content: `좋아요. ${rawValue}로 진행해볼게요.\n특별히 생각해 둔 주제가 있을까요? 아직 없다면 학생 기록 기반으로 3가지를 추천해드릴게요.`,
+          content: `좋아요. ${rawValue}로 진행해볼게요.\n특별히 생각해 둔 주제가 있을까요? 아직 없다면 학생 기록 기반으로 300개 이상 추천해드릴게요.`,
           phase: 'specific_topic_check',
           topicSubject: rawValue,
           choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -3568,7 +3572,7 @@ export function Workshop() {
           return;
         }
         pushGuidedAssistantMessage({
-          content: '좋아요. 생각해 둔 주제를 한 문장으로 적어주시면 그 방향까지 반영해서 3가지 주제를 제안할게요.',
+          content: '좋아요. 생각해 둔 주제를 한 문장으로 적어주시면 그 방향까지 반영해서 300개 이상 주제를 제안할게요.',
           phase: 'specific_topic_check',
           topicSubject: guidedSubject || undefined,
           choiceGroups: [buildSpecificTopicCheckGroup()],
@@ -4020,7 +4024,7 @@ export function Workshop() {
     return [
       {
         label: '주제 설계',
-        prompt: `${prefix}탐구 주제 후보 3개와 각각의 작성 방향을 제안해줘.`,
+        prompt: `${prefix}탐구 주제 후보를 최소 300개 이상 넓게 제안하고, 먼저 볼 만한 하이라이트와 각각의 작성 방향을 제안해줘.`,
       },
       {
         label: '개요 작성',
@@ -4106,46 +4110,76 @@ export function Workshop() {
               </div>
                             <SectionCard
                 className={cn(
-                  'flex min-h-0 flex-col h-full border-none shadow-none bg-transparent',
+                  'flex min-h-0 flex-col h-full border-none shadow-none bg-transparent overflow-hidden',
                   mobileView !== 'chat' && 'hidden lg:flex'
                 )}
                 bodyClassName="relative flex min-h-0 flex-1 flex-col overflow-hidden p-0 bg-transparent"
               >
-                <div className="flex flex-col h-full bg-slate-50/10 backdrop-blur-md">
+                <div className="flex flex-col h-full bg-slate-50/10 backdrop-blur-md overflow-hidden">
+                  {/* Chat Header Section */}
+                  <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-200/50 bg-white/60 backdrop-blur-xl z-10">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shadow-sm border border-indigo-100/50">
+                        <MessageSquare size={18} className="text-indigo-600" />
+                      </div>
+                      <div className="flex flex-col overflow-hidden">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500/80 mb-0.5">탐구 워크숍</p>
+                        <h3 className="text-sm font-black text-slate-800 truncate max-w-[280px] sm:max-w-[400px]">
+                          {(() => {
+                            const title = structuredDraft.blocks.find(b => b.block_id === 'title')?.content_markdown?.trim();
+                            if (title && title !== '제목' && title !== '') return title;
+                            return '새로운 탐구 보고서 작성';
+                          })()}
+                        </h3>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <StatusBadge status="active" className="text-[10px] h-5 px-2 font-black tracking-tight">
+                        실시간 공동작성 중
+                      </StatusBadge>
+                    </div>
+                  </div>
+
                   {/* Messages Area */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth">
-                    <div className="max-w-4xl mx-auto w-full flex flex-col min-h-full">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar scroll-smooth bg-transparent px-4 sm:px-6">
+                    <div className="max-w-4xl mx-auto w-full flex flex-col min-h-full py-10">
                       {messages.length === 0 && !isSessionLoading ? (
-                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in slide-in-from-bottom-8 duration-1000">
-                          <div className="relative mb-10">
-                            <div className="absolute -inset-4 bg-gradient-to-r from-violet-500 to-indigo-600 rounded-[36px] blur-2xl opacity-20 animate-pulse"></div>
-                            <div className="relative w-24 h-24 rounded-[32px] bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shadow-2xl ring-8 ring-indigo-50/50">
-                              <Bot size={48} className="text-white" />
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in slide-in-from-bottom-8 duration-1000 my-auto">
+                          <div className="relative mb-12">
+                            <div className="absolute -inset-8 bg-gradient-to-r from-violet-500 to-indigo-600 rounded-[48px] blur-3xl opacity-20 animate-pulse"></div>
+                            <div className="relative w-32 h-32 rounded-[42px] bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shadow-2xl ring-[12px] ring-indigo-50/50">
+                              <Bot size={64} className="text-white" />
                             </div>
                           </div>
                           
-                          <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">
+                          <h2 className="text-4xl font-black text-slate-900 mb-6 tracking-tight">
                             반가워요! 무엇을 도와드릴까요?
                           </h2>
-                          <p className="text-slate-500 max-w-lg leading-relaxed mb-12 text-lg font-medium">
-                            학생부 분석부터 리포트 작성까지,<br />
-                            당신의 대입 성공을 위한 AI 코파일럿 <span className="text-violet-600 font-bold">Foli</span>입니다.
-                          </p>
+                          <div className="space-y-2 mb-14">
+                            <p className="text-slate-500 max-w-lg leading-relaxed text-lg font-medium">
+                              생기부 근거를 바탕으로 나만의 독창적인<br />
+                              탐구 보고서를 함께 완성해 나갑니다.
+                            </p>
+                            <p className="text-slate-400 max-w-lg leading-relaxed text-base font-medium">
+                              학생부 분석부터 리포트 작성까지,<br />
+                              당신의 대입 성공을 위한 AI 코파일럿 <span className="text-violet-600 font-bold">Foli</span>입니다.
+                            </p>
+                          </div>
                           
                           {quickPromptOptions.length > 0 && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl px-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-3xl px-4">
                               {quickPromptOptions.map((option) => (
                                 <button
                                   key={option.label}
                                   onClick={() => void handleSend(option.prompt)}
-                                  className="group flex items-start gap-4 p-6 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-[28px] hover:border-violet-400 hover:bg-white hover:shadow-2xl hover:shadow-violet-200/40 transition-all duration-300 transform hover:-translate-y-1"
+                                  className="group flex items-start gap-5 p-7 text-left bg-white/60 backdrop-blur-md border border-slate-200/60 rounded-[32px] hover:border-violet-400 hover:bg-white hover:shadow-2xl hover:shadow-violet-200/30 transition-all duration-300 transform hover:-translate-y-1.5"
                                 >
-                                  <div className="mt-1 w-10 h-10 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-violet-50 transition-colors">
-                                    <PenSquare size={20} className="text-slate-400 group-hover:text-violet-600" />
+                                  <div className="mt-1 w-12 h-12 rounded-[20px] bg-slate-50 flex items-center justify-center group-hover:bg-violet-50 transition-colors shadow-inner border border-slate-100/50">
+                                    <PenSquare size={22} className="text-slate-400 group-hover:text-violet-600" />
                                   </div>
-                                  <div className="flex-1">
-                                    <div className="font-bold text-slate-800 text-lg mb-1 group-hover:text-violet-700 transition-colors">{option.label}</div>
-                                    <div className="text-slate-400 text-sm font-medium">맞춤형 분석을 시작합니다</div>
+                                  <div className="flex-1 overflow-hidden">
+                                    <div className="font-black text-slate-800 text-lg mb-1.5 group-hover:text-violet-700 transition-colors truncate">{option.label}</div>
+                                    <div className="text-slate-400 text-sm font-semibold tracking-tight uppercase opacity-80">분석 시작하기</div>
                                   </div>
                                 </button>
                               ))}

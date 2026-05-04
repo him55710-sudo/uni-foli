@@ -12,6 +12,8 @@ interface AppShellProps {
 }
 
 export function AppShell({ topbar, sidebar, children, footer, overlay, className, contentClassName }: AppShellProps) {
+  const isFixedLayout = contentClassName?.includes('overflow-hidden');
+
   return (
     <div
       className={cn(
@@ -26,7 +28,8 @@ export function AppShell({ topbar, sidebar, children, footer, overlay, className
         <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
           <div
             className={cn(
-              'flex-1 overflow-x-hidden overflow-y-auto bg-transparent px-3 py-4 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-6 sm:pb-24 md:px-8 md:py-8',
+              'flex-1 bg-transparent',
+              !isFixedLayout && 'overflow-x-hidden overflow-y-auto px-3 py-4 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-6 sm:pb-24 md:px-8 md:py-8',
               contentClassName,
             )}
           >

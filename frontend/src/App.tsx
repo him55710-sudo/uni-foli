@@ -34,6 +34,7 @@ const CookiesPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({
 const MarketingPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.MarketingPolicy })));
 const YouthPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.YouthPolicy })));
 const DataDeletionPolicy = lazy(() => import('./pages/legal/LegalPages').then(m => ({ default: m.DataDeletionPolicy })));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then(m => ({ default: m.default })));
 
 function PageLoader() {
   return (
@@ -62,6 +63,20 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated && !isGuestSession) {
     return <Navigate to="/auth" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { isAdmin, adminLoading, loading } = useAuth();
+
+  if (loading || adminLoading) {
+    return <PageLoader />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/app" replace />;
   }
 
   return <>{children}</>;
@@ -160,6 +175,14 @@ export default function App() {
                 <Route path="interview" element={<Interview />} />
                 <Route path="interview/:projectId" element={<Interview />} />
                 <Route path="settings" element={<Settings />} />
+                <Route
+                  path="admin"
+                  element={
+                    <AdminRoute>
+                      <AdminDashboard />
+                    </AdminRoute>
+                  }
+                />
               </Route>
 
               <Route

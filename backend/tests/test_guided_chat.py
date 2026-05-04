@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 
 GUIDED_CHAT_SERVICE_PATH = Path("backend/services/api/src/unifoli_api/services/guided_chat_service.py")
 GUIDED_CHAT_SCHEMA_PATH = Path("backend/services/api/src/unifoli_api/schemas/guided_chat.py")
+API_SRC_PATH = Path("backend/services/api/src")
 
 
 def test_guided_chat_start_prompt_keeps_proactive_questioning() -> None:
@@ -35,3 +37,27 @@ def test_guided_chat_topic_generation_uses_guided_chat_concern() -> None:
     source = GUIDED_CHAT_SERVICE_PATH.read_text(encoding="utf-8")
     assert 'get_llm_client(profile="fast", concern="guided_chat")' in source
     assert 'get_llm_temperature(profile="fast", concern="guided_chat")' in source
+
+
+def test_guided_chat_topic_generation_expands_to_300_candidates() -> None:
+    source = GUIDED_CHAT_SERVICE_PATH.read_text(encoding="utf-8")
+    assert "TOPIC_SUGGESTION_TARGET_COUNT = 300" in source
+    assert "target_count=TOPIC_SUGGESTION_TARGET_COUNT" in source
+    assert "추천 탐구 주제 {len(normalized)}개" in source
+
+
+def test_topic_library_and_search_have_at_least_300_quality_candidates() -> None:
+    sys.path.insert(0, str(API_SRC_PATH.resolve()))
+    from unifoli_api.services.topic_library import TOPIC_LIBRARY
+    from unifoli_api.services.topic_search_service import TopicSearchService
+
+    labels = [topic["label"] for topic in TOPIC_LIBRARY]
+    assert len(TOPIC_LIBRARY) >= 300
+    assert len(set(labels)) == len(labels)
+    assert any("윤리" in label or "의사결정" in label for label in labels)
+    assert any("오차" in label or "한계" in label for label in labels)
+
+    service = TopicSearchService(pool_path="__missing_topics_pool__.json")
+    results = service.search("수학 데이터사이언스 탐구", limit=300)
+    assert len(results) >= 300
+    assert len({item["label"] for item in results}) == len(results)

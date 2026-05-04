@@ -55,6 +55,7 @@ async def guided_chat_topic_suggestions_route(
         project_id=payload.project_id,
         subject=payload.subject,
         starred_keywords=payload.starred_keywords,
+        target_major=payload.target_major,
     )
 
 

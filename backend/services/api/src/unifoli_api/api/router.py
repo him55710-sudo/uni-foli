@@ -21,6 +21,7 @@ from unifoli_api.api.routes import (
     workshops,
     assets,
     runtime,
+    admin,
 )
 
 api_router = APIRouter()
@@ -45,3 +46,4 @@ api_router.include_router(workshops.router, prefix="/workshops", tags=["workshop
 api_router.include_router(inquiries.router, prefix="/inquiries", tags=["inquiries"])
 api_router.include_router(render_jobs.router, tags=["render-jobs"])
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])

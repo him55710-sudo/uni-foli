@@ -364,3 +364,34 @@ def get_current_user(
     request.state.tenant_user_id = user.id
     request.state.auth_claims = claims.raw
     return user
+
+def _claims_indicate_admin(claims: dict[str, Any] | None) -> bool:
+    if not isinstance(claims, dict):
+        return False
+    if claims.get("admin") is True or claims.get("is_admin") is True:
+        return True
+    roles = claims.get("roles") or claims.get("role")
+    if isinstance(roles, str):
+        return roles.strip().lower() == "admin"
+    if isinstance(roles, list):
+        return any(str(role).strip().lower() == "admin" for role in roles)
+    return False
+
+
+def get_current_admin(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> User:
+    from unifoli_api.core.config import get_settings
+
+    settings = get_settings()
+    configured_admin_emails = {email.strip().lower() for email in settings.admin_emails if email.strip()}
+    current_email = (current_user.email or "").strip().lower()
+    auth_claims = getattr(request.state, "auth_claims", None)
+
+    if current_email not in configured_admin_emails and not _claims_indicate_admin(auth_claims):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="이 페이지에 접근할 권한이 없습니다. 관리자만 이용 가능합니다.",
+        )
+    return current_user

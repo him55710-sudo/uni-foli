@@ -5,7 +5,7 @@ import { ReviewModal } from './ReviewModal';
 import { AppFooter } from './layout/AppFooter';
 import { AppSidebar } from './layout/AppSidebar';
 import { AppTopbar } from './layout/AppTopbar';
-import { resolveCurrentNavSection } from './layout/nav-config';
+import { getAppNavSections, resolveCurrentNavSection } from './layout/nav-config';
 import { useAuth } from '../contexts/AuthContext';
 import { buildRankedGoals } from '../lib/rankedGoals';
 import { useAuthStore } from '../store/authStore';
@@ -21,7 +21,7 @@ function getDesktopMediaQuery() {
 
 export function Layout() {
   const location = useLocation();
-  const { user, isGuestSession, logout } = useAuth();
+  const { user, isGuestSession, isAdmin, logout } = useAuth();
   const dbUser = useAuthStore(state => state.user);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(isDesktopViewport);
@@ -50,7 +50,11 @@ export function Layout() {
   const hasTargets = Boolean(dbUser?.target_university && dbUser?.target_major);
   const rankedGoals = useMemo(() => buildRankedGoals(dbUser, 6), [dbUser]);
   const primaryGoal = rankedGoals[0] ?? null;
-  const currentSection = useMemo(() => resolveCurrentNavSection(location.pathname), [location.pathname]);
+  const visibleNavSections = useMemo(() => getAppNavSections(isAdmin), [isAdmin]);
+  const currentSection = useMemo(
+    () => resolveCurrentNavSection(location.pathname, visibleNavSections),
+    [location.pathname, visibleNavSections],
+  );
 
   const isEditorRoute = location.pathname.startsWith('/app/editor/');
   const isWorkshopRoute = location.pathname.startsWith('/app/workshop');
@@ -80,11 +84,12 @@ export function Layout() {
               isGuestSession={isGuestSession}
               onLogout={logout}
               onOpenReview={() => setIsReviewModalOpen(true)}
+              navSections={visibleNavSections}
             />
           )
         }
         footer={shouldShowFooter ? <AppFooter onOpenPartnership={() => setIsPartnershipModalOpen(true)} /> : null}
-        contentClassName={isEditorRoute || isWorkshopRoute ? 'flex min-h-0 flex-col overflow-hidden p-0 pb-0' : undefined}
+        contentClassName={isEditorRoute || isWorkshopRoute ? 'h-full flex min-h-0 flex-col overflow-hidden p-0 pb-0 sm:p-0 sm:pb-0 md:p-0' : undefined}
       >
         <Outlet />
       </AppShell>

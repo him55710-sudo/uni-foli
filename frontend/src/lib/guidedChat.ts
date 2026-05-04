@@ -137,9 +137,15 @@ export function applyTopicSelectionToUiState(
   };
 }
 
-export function ensureThreeSuggestions(response: GuidedTopicSuggestionResponse): GuidedTopicSuggestionResponse {
+export const TOPIC_SUGGESTION_MIN_COUNT = 300;
+export const TOPIC_SUGGESTION_PREVIEW_COUNT = 12;
+
+export function limitTopicSuggestions(
+  response: GuidedTopicSuggestionResponse,
+  limit = TOPIC_SUGGESTION_MIN_COUNT,
+): GuidedTopicSuggestionResponse {
   return {
     ...response,
-    suggestions: response.suggestions.slice(0, 3),
+    suggestions: response.suggestions.slice(0, limit),
   };
 }

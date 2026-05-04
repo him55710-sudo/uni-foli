@@ -2,7 +2,7 @@ import type { GuidedChoiceGroup, GuidedChoiceOption, GuidedTopicSuggestion } fro
 
 export function buildTopicChoiceGroupFromSuggestions(
   suggestions: GuidedTopicSuggestion[],
-  title = '가장 끌리는 주제를 선택해줘! ✨',
+  title = `추천 탐구 주제 ${suggestions.length}개 중 하나를 선택해 주세요.`,
 ): GuidedChoiceGroup {
   return {
     id: 'topic-selection',

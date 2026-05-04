@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { UniFoliLogo } from '../UniFoliLogo';
-import { appNavSections, isNavItemActive } from './nav-config';
+import { appNavSections, type AppNavSection, isNavItemActive } from './nav-config';
 import { Sidebar } from '../primitives';
 import { SidebarAccountBlock } from './SidebarAccountBlock';
 import { cn } from '../../lib/cn';
@@ -16,6 +16,7 @@ interface AppSidebarProps {
   userPhotoUrl?: string | null;
   isGuestSession: boolean;
   onLogout: () => void;
+  navSections?: AppNavSection[];
 }
 
 const SIDEBAR_SECTION_STATE_KEY = 'unifoli_sidebar_sections_v1';
@@ -29,14 +30,15 @@ export function AppSidebar({
   userPhotoUrl,
   isGuestSession,
   onLogout,
+  navSections = appNavSections,
 }: AppSidebarProps) {
   const activeSectionKey = useMemo(() => {
-    const activeSection = appNavSections.find(section => section.items.some(item => isNavItemActive(pathname, item.path)));
-    return activeSection?.key ?? appNavSections[0]?.key ?? '';
-  }, [pathname]);
+    const activeSection = navSections.find(section => section.items.some(item => isNavItemActive(pathname, item.path)));
+    return activeSection?.key ?? navSections[0]?.key ?? '';
+  }, [navSections, pathname]);
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
-    appNavSections.reduce<Record<string, boolean>>((acc, section) => {
+    navSections.reduce<Record<string, boolean>>((acc, section) => {
       acc[section.key] = section.key === activeSectionKey;
       return acc;
     }, {}),
@@ -106,7 +108,7 @@ export function AppSidebar({
         </div>
 
         <nav className="flex-1 space-y-7 overflow-y-auto px-3 py-3">
-          {appNavSections.map(section => {
+          {navSections.map(section => {
             const activeSection = section.items.some(item => isNavItemActive(pathname, item.path));
             const sectionOpen = !isOpen ? true : (openSections[section.key] ?? activeSection);
 

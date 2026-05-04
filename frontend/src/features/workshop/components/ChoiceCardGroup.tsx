@@ -51,6 +51,7 @@ export function ChoiceCardGroup({
   const resolvedTitle = group?.title || title || '선택하세요.';
   const resolvedStyle = group?.style || style || 'cards';
   const resolvedOptions = (group?.options as ChoiceCardOption[]) || options || [];
+  const isLargeTopicSelection = resolvedGroupId === 'topic-selection' && resolvedOptions.length > 24;
 
   if (!resolvedOptions.length) {
     return null;
@@ -63,6 +64,7 @@ export function ChoiceCardGroup({
         className={cn(
           resolvedStyle === 'chips' ? 'flex flex-wrap gap-2' : 'grid gap-3',
           resolvedStyle === 'buttons' && 'sm:grid-cols-2',
+          isLargeTopicSelection && 'max-h-[520px] overflow-y-auto pr-1',
         )}
       >
         {resolvedOptions.map((option) => {
