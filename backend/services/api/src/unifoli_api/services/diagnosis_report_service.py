@@ -49,6 +49,13 @@ from unifoli_api.schemas.diagnosis import (
     DiagnosisResultPayload,
 )
 from unifoli_api.services.document_service import list_documents_for_project
+from unifoli_api.services.diagnosis_report_quality_service import build_report_quality_gates
+from unifoli_api.services.interview_question_strategy import (
+    major_question_templates_for_context,
+    render_question_template,
+    track_label,
+    infer_major_track_from_texts,
+)
 from unifoli_api.services.prompt_registry import (
     PromptAssetNotFoundError,
     PromptRegistryError,
@@ -840,8 +847,9 @@ async def build_consultant_report_payload(
         subject_analyses=subject_specialty_analyses,
         target_context=target_context,
     )
-    quality_gates = _build_report_quality_gates(
+    quality_gates = build_report_quality_gates(
         report_mode=report_mode,
+        mode_spec=mode_spec,
         evidence_bank=evidence_bank,
         subject_analyses=subject_specialty_analyses,
         record_network=record_network,
@@ -1573,25 +1581,103 @@ def _build_interview_questions(
 ) -> list[ConsultantInterviewQuestionFrame]:
     major = _target_major_from_context(target_context)
     target_count = 6 if report_mode == "basic" else 24 if report_mode == "consultant" else 20
-    base_questions = [
-        ("전공 적합성", f"왜 {major}를 지원하려고 하나요?"),
-        ("전공 적합성", f"{major}를 좋아하는 것과 학문적으로 탐구하는 것은 무엇이 다르다고 보나요?"),
-        ("전공 적합성", "학생부에서 전공 적합성을 가장 잘 보여주는 활동 하나를 고른다면 무엇인가요?"),
-        ("전공 적합성", "목표 대학/학과의 교육과정과 본인의 학생부가 만나는 지점은 어디인가요?"),
-        ("탐구 과정 검증", "탐구 과정에서 가장 어려웠던 점과 해결 방식은 무엇인가요?"),
-        ("탐구 과정 검증", "탐구에서 사용한 개념을 왜 선택했나요?"),
-        ("탐구 과정 검증", "변인 통제 또는 비교 기준은 어떻게 세웠나요?"),
-        ("탐구 과정 검증", "결과가 예상과 달랐다면 어떻게 해석하겠습니까?"),
-        ("약점 방어", "학년 간 활동 연속성이 약해 보인다는 지적에 어떻게 답하겠습니까?"),
-        ("약점 방어", "활동은 넓지만 깊이가 부족해 보인다는 평가를 받으면 어떻게 설명하겠습니까?"),
-        ("약점 방어", "전공 관련 활동이 일부 영역에 몰려 있다는 지적을 어떻게 보완하겠습니까?"),
-        ("약점 방어", "교과 탐구가 실제 전공 문제와 어떻게 연결되는지 설명해 보세요."),
-    ]
     evidence_bank = [
         {"quote": analysis.core_record_summary}
         for analysis in subject_analyses
         if analysis.core_record_summary
     ]
+    evidence_texts = [_evidence_quote(item) for item in evidence_bank if _evidence_quote(item)]
+    inferred_track = infer_major_track_from_texts(target_context, *evidence_texts)
+    major_label = track_label(inferred_track) if inferred_track else major
+
+    def seed(
+        category: str,
+        question: str,
+        *,
+        strategy: str,
+        intent: str,
+        answer_frame: str,
+        good_direction: str,
+        avoid: str,
+    ) -> dict[str, str]:
+        return {
+            "category": category,
+            "question": question,
+            "strategy": strategy,
+            "intent": intent,
+            "answer_frame": answer_frame,
+            "good_direction": good_direction,
+            "avoid": avoid,
+        }
+
+    base_questions: list[dict[str, str]] = [
+        seed(
+            "전공 적합성",
+            f"왜 {major}를 지원하려고 하나요? 학생부의 대표 근거 하나와 연결해 설명해 보세요.",
+            strategy="전공 심화",
+            intent="전공 선택 동기가 활동 경험과 논리적으로 이어지는지 확인합니다.",
+            answer_frame="전공 관심 계기 - 대표 학생부 근거 - 배운 핵심 원리 - 다음 탐구 질문 순서로 답변합니다.",
+            good_direction="좋아서 지원했다가 아니라 기록 속 의사결정과 전공 학습 필요성을 연결합니다.",
+            avoid="전공명과 활동명을 나열하고 실제 연결 원리를 말하지 않는 방식",
+        ),
+        seed(
+            "탐구 과정 검증",
+            "탐구에서 사용한 개념이나 방법을 왜 선택했고, 당시 배제한 대안은 무엇이었나요?",
+            strategy="프로세스 디테일",
+            intent="학생 본인의 판단 근거와 대안 검토 능력을 확인합니다.",
+            answer_frame="문제 상황 - 선택한 방법 - 배제한 대안 - 선택 기준 - 결과 한계 순서로 답변합니다.",
+            good_direction="방법의 장점뿐 아니라 한계와 대안까지 함께 설명합니다.",
+            avoid="선생님이 시켜서, 팀에서 정해서처럼 본인 판단이 사라지는 답변",
+        ),
+        seed(
+            "탐구 과정 검증",
+            "결과가 예상과 다르게 나왔을 때 새로 세운 가설과 검증 방법은 무엇이었습니까?",
+            strategy="So-What",
+            intent="탐구가 일회성 결과가 아니라 사고 확장으로 이어졌는지 확인합니다.",
+            answer_frame="예상 - 다른 결과 - 해석 충돌 - 새 가설 - 추가 검증 방법 순서로 답변합니다.",
+            good_direction="실패나 예상 밖 결과를 다음 탐구 설계로 전환합니다.",
+            avoid="예상과 달랐던 점을 숨기거나 외부 조건 탓으로만 돌리는 답변",
+        ),
+        seed(
+            "전공 적합성",
+            f"{major_label} 관점에서 기술적 효율성, 윤리적 가치, 사회적 책임이 충돌한다면 어떤 기준을 세우겠습니까?",
+            strategy="전공 철학",
+            intent="전공 지식을 대하는 태도와 사회적 책임 인식을 확인합니다.",
+            answer_frame="충돌 가치 - 우선 기준 - 학생부 경험 - 부작용을 줄이는 장치 순서로 답변합니다.",
+            good_direction="정답을 단정하기보다 판단 기준과 검증 절차를 설명합니다.",
+            avoid="무조건 효율, 무조건 윤리처럼 한쪽 가치만 앞세우는 답변",
+        ),
+        seed(
+            "약점 방어",
+            "활동은 넓지만 깊이가 부족해 보인다는 평가를 받으면 어떤 원문 근거와 후속 계획으로 방어하겠습니까?",
+            strategy="약점 보완",
+            intent="약점을 숨기지 않고 근거와 보완 행동으로 전환하는지 확인합니다.",
+            answer_frame="인정할 부분 - 남아 있는 근거 - 부족했던 원인 - 보완 행동 순서로 답변합니다.",
+            good_direction="방어보다 구체적 보완 계획과 근거의 신뢰도를 중심에 둡니다.",
+            avoid="약점이 없다고 부정하거나 학생부에 없는 성과를 덧붙이는 방식",
+        ),
+    ]
+    major_templates = [
+        render_question_template(template, major_label=major_label)
+        for template in major_question_templates_for_context(
+            target_context=target_context,
+            evidence_texts=evidence_texts,
+            limit=8,
+        )
+    ]
+    for offset, template in enumerate(major_templates):
+        base_questions.insert(
+            min(4 + offset, len(base_questions)),
+            seed(
+                template.category,
+                template.question,
+                strategy=template.strategy,
+                intent=template.intent,
+                answer_frame=template.answer_frame,
+                good_direction=template.good_direction,
+                avoid=template.avoid,
+            )
+        )
     direction_validation = _build_major_direction_validation(
         target_context=target_context,
         evidence_bank=evidence_bank,
@@ -1604,45 +1690,70 @@ def _build_interview_questions(
         )
         base_questions.insert(
             0,
-            (
+            seed(
                 "약점 방어",
                 f"학생부에는 {dominant} 관련 활동이 더 많은데, 왜 {major}에 지원하려고 하나요?",
+                strategy="약점 보완",
+                intent="학생부의 주된 관심 흐름과 목표 전공 사이의 불일치 위험을 확인합니다.",
+                answer_frame=major_mismatch_answer_direction,
+                good_direction=major_mismatch_answer_direction,
+                avoid="기존 활동을 숨기거나 갑작스러운 전공 변경을 취향 변화로만 설명하는 방식",
             ),
         )
     if _is_architecture_evidence_context(target_context, evidence_bank):
-        base_questions.extend(
-            [
-                ("전공 적합성", "건축학과와 건축공학과 중 본인의 기록은 어느 쪽에 더 가깝다고 보나요?"),
-                ("전공 적합성", "건축을 조형 디자인이 아니라 구조·환경·기술 문제로 바라본 경험은 무엇인가요?"),
-                ("전공 적합성", "도시, 해양건축, 지속가능성 활동을 하나의 전공 서사로 묶으면 어떤 질문이 되나요?"),
-                ("탐구 과정 검증", "영종도 제방도시 프로젝트에서 정적압력과 동적압력을 어떻게 활용했나요?"),
-                ("탐구 과정 검증", "강제환기장치 제작에서 공기질 개선 효과를 어떤 기준으로 확인할 수 있나요?"),
-                ("탐구 과정 검증", "내진 설계 활동에서 제진, 면진, 보강 개념의 차이를 어떻게 설명하겠습니까?"),
-                ("탐구 과정 검증", "CLT와 옥상녹화 탐구를 지속가능한 건축환경 관점에서 어떻게 연결할 수 있나요?"),
-                ("약점 방어", "활동 주제가 해양건축, 제방, 내진, 환기, CLT 등으로 많은데 너무 분산된 것 아닌가요?"),
-                ("약점 방어", "수학·과학 탐구가 건축 문제와 직접 연결되지 않았다는 지적에 어떻게 답하겠습니까?"),
-                ("약점 방어", "계산값이나 실험 결과가 충분히 정리되지 않았다는 질문을 받으면 어떻게 보완하겠습니까?"),
-            ]
-        )
+        for category, question, strategy in (
+            ("전공 적합성", "건축학과와 건축공학과 중 본인의 기록은 어느 쪽에 더 가깝다고 보나요?", "전공 심화"),
+            ("전공 적합성", "건축을 조형 디자인이 아니라 구조·환경·기술 문제로 바라본 경험은 무엇인가요?", "전공 심화"),
+            ("탐구 과정 검증", "영종도 제방도시 프로젝트에서 정적압력과 동적압력을 어떻게 활용했나요?", "Logic Trap"),
+            ("탐구 과정 검증", "강제환기장치 제작에서 공기질 개선 효과를 어떤 기준으로 확인할 수 있나요?", "프로세스 디테일"),
+            ("탐구 과정 검증", "내진 설계 활동에서 제진, 면진, 보강 개념의 차이를 어떻게 설명하겠습니까?", "Logic Trap"),
+            ("탐구 과정 검증", "CLT와 옥상녹화 탐구를 지속가능한 건축환경 관점에서 어떻게 연결할 수 있나요?", "So-What"),
+            ("약점 방어", "활동 주제가 해양건축, 제방, 내진, 환기, CLT 등으로 많은데 너무 분산된 것 아닌가요?", "약점 보완"),
+            ("약점 방어", "계산값이나 실험 결과가 충분히 정리되지 않았다는 질문을 받으면 어떻게 보완하겠습니까?", "약점 보완"),
+        ):
+            base_questions.append(
+                seed(
+                    category,
+                    question,
+                    strategy=strategy,
+                    intent="건축·도시 맥락에서 기록의 진위, 개념 이해, 전공 방향성을 확인합니다.",
+                    answer_frame="활동 맥락 - 사용 개념 - 본인 판단 - 검증 기준 - 한계와 보완 순서로 답변합니다.",
+                    good_direction="구조·환경·사용자·안전 기준 중 하나를 잡아 근거 중심으로 설명합니다.",
+                    avoid="건축을 멋진 공간이나 디자인 취향으로만 설명하는 방식",
+                )
+            )
     for topic in research_topics[:4]:
-        base_questions.append(("탐구 과정 검증", f"{topic.title}를 다음 탐구로 확장한다면 첫 번째 검증 질문은 무엇인가요?"))
+        base_questions.append(
+            seed(
+                "탐구 과정 검증",
+                f"{topic.title}를 다음 탐구로 확장한다면 첫 번째 검증 질문은 무엇인가요?",
+                strategy="So-What",
+                intent="추천 탐구 주제를 면접에서 후속 사고로 연결할 수 있는지 확인합니다.",
+                answer_frame="기존 근거 - 확장 질문 - 검증 방법 - 예상 한계 순서로 답변합니다.",
+                good_direction="새 주제를 선언하지 말고 기존 학생부 근거에서 자연스럽게 확장합니다.",
+                avoid="전혀 새로운 심화 주제를 덧붙여 학생부와 분리되는 방식",
+            )
+        )
     frames: list[ConsultantInterviewQuestionFrame] = []
-    for idx, (category, question) in enumerate(base_questions[:target_count], start=1):
-        analysis = subject_analyses[(idx - 1) % max(1, len(subject_analyses))]
+    for idx, item in enumerate(base_questions[:target_count], start=1):
+        analysis = subject_analyses[(idx - 1) % len(subject_analyses)] if subject_analyses else None
+        question = item["question"]
         is_mismatch_question = bool(major_mismatch_answer_direction and "관련 활동이 더 많은데" in question)
+        answer_frame = item["answer_frame"]
+        good_direction = item["good_direction"]
+        subject_label = analysis.subject if analysis else "학생부"
+        connected_evidence = _clean_line(analysis.core_record_summary, max_len=120) if analysis else ""
         frames.append(
             ConsultantInterviewQuestionFrame(
-                category=category,  # type: ignore[arg-type]
+                category=item["category"],  # type: ignore[arg-type]
                 question=question,
-                intent="기록의 진정성, 전공 이해도, 학생 본인의 판단 과정을 확인하려는 질문입니다.",
-                answer_frame=major_mismatch_answer_direction
-                if is_mismatch_question
-                else "활동 배경 - 선택한 개념/방법 - 본인 역할 - 결과 해석 - 다음 질문 순서로 답변합니다.",
-                connected_evidence=_clean_line(analysis.core_record_summary, max_len=120),
+                intent=f"{item['strategy']} 전략으로 {item['intent']}",
+                answer_frame=major_mismatch_answer_direction if is_mismatch_question else answer_frame,
+                connected_evidence=connected_evidence,
                 good_direction=major_mismatch_answer_direction
                 if is_mismatch_question
-                else f"{analysis.subject} 기록을 근거로 말하되, 결과보다 선택 이유와 배운 점을 먼저 설명합니다.",
-                avoid="좋아서 했다, 열심히 했다처럼 감상 중심으로 답하거나 학생부에 없는 성과를 과장하는 방식",
+                else f"{subject_label} 기록을 근거로 말하되, {good_direction}",
+                avoid=item["avoid"],
             )
         )
     return frames
@@ -1846,90 +1957,6 @@ def _build_grade_story_analyses(
             )
         )
     return stories
-
-
-def _has_repeated_sentences(sections: list[ConsultantDiagnosisSection], topics: list[ConsultantResearchTopicRecommendation]) -> bool:
-    counts: dict[str, int] = {}
-    texts = [section.body_markdown for section in sections] + [topic.title for topic in topics]
-    for text in texts:
-        for sentence in re.split(r"[.!?\n。]+", str(text or "")):
-            normalized = re.sub(r"\s+", " ", sentence).strip()
-            if len(normalized) < 18:
-                continue
-            counts[normalized] = counts.get(normalized, 0) + 1
-            if counts[normalized] >= 3:
-                return True
-    return False
-
-
-def _build_report_quality_gates(
-    *,
-    report_mode: str,
-    evidence_bank: list[dict[str, Any]],
-    subject_analyses: list[ConsultantSubjectSpecialtyAnalysis],
-    record_network: ConsultantRecordNetwork,
-    research_topics: list[ConsultantResearchTopicRecommendation],
-    interview_questions: list[ConsultantInterviewQuestionFrame],
-    sections: list[ConsultantDiagnosisSection],
-    reanalysis_required: bool,
-) -> list[ConsultantReportQualityGate]:
-    spec = _mode_spec(report_mode)
-    unique_anchor_ids = {
-        str(item.get("anchor_id") or "").strip()
-        for item in evidence_bank
-        if str(item.get("anchor_id") or "").strip()
-    }
-    unique_pages = _unique_evidence_pages(evidence_bank)
-    min_topics = 8 if report_mode in {"premium", "consultant"} else 3
-    min_questions = 12 if report_mode in {"premium", "consultant"} else 5
-    return [
-        ConsultantReportQualityGate(
-            key="page_count",
-            label="페이지 구성",
-            passed=True,
-            message=f"{spec['label']} 기준 {spec['min_pages']}~{spec['max_pages']}쪽 범위로 렌더링합니다.",
-        ),
-        ConsultantReportQualityGate(
-            key="evidence",
-            label="근거 밀도",
-            passed=not reanalysis_required and (len(unique_anchor_ids) >= 8 or len(unique_pages) >= 5),
-            message=(
-                f"확인 가능한 근거가 {len(unique_anchor_ids)}개, 페이지 분산이 {len(unique_pages)}쪽입니다."
-                if evidence_bank
-                else "원문 근거가 부족해 일부 해석은 보수적으로 표시합니다."
-            ),
-        ),
-        ConsultantReportQualityGate(
-            key="topics",
-            label="추천 탐구 수",
-            passed=len(research_topics) >= min_topics,
-            message=f"추천 탐구 {len(research_topics)}개를 생성했습니다.",
-        ),
-        ConsultantReportQualityGate(
-            key="interview",
-            label="면접 질문 수",
-            passed=len(interview_questions) >= min_questions,
-            message=f"면접 질문 {len(interview_questions)}개를 전공 적합성/탐구 검증/약점 방어로 나눴습니다.",
-        ),
-        ConsultantReportQualityGate(
-            key="subjects",
-            label="과목별 세특",
-            passed=len(subject_analyses) >= 5 and all(item.score >= 0 for item in subject_analyses),
-            message=f"과목/영역 {len(subject_analyses)}개를 점수와 해석으로 분석했습니다.",
-        ),
-        ConsultantReportQualityGate(
-            key="network",
-            label="연결망 분석",
-            passed=len(record_network.nodes) >= 8 and len(record_network.edges) >= 10,
-            message=f"노드 {len(record_network.nodes)}개, 연결 {len(record_network.edges)}개를 추출했습니다.",
-        ),
-        ConsultantReportQualityGate(
-            key="repetition",
-            label="반복 문장",
-            passed=not _has_repeated_sentences(sections, research_topics),
-            message="동일 문장이 3회 이상 반복되지 않도록 카드형 문장을 분산했습니다.",
-        ),
-    ]
 
 
 def _build_premium_analysis_json(

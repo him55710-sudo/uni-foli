@@ -116,6 +116,13 @@ def get_diagnosis_report_design_contract(
             "line_inferred": "#E5E7EB",
             "surface_action": "#EFF6FF",
             "line_action": "#2563EB",
+            "grade_s": "#7C3AED",
+            "grade_a": "#2563EB",
+            "grade_b": "#059669",
+            "grade_c": "#D97706",
+            "highlight_academic": "#FEF9C3",
+            "highlight_fit": "#DBEAFE",
+            "highlight_personality": "#DCFCE7",
         },
         "section_hierarchy": {
             "required_order": list(section_order),

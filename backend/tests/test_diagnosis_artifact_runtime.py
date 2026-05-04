@@ -39,6 +39,98 @@ def test_combine_project_text_returns_structured_error_when_documents_are_missin
         raise AssertionError("combine_project_text should raise when no documents are available")
 
 
+def test_combine_project_text_rejects_generic_pdf_before_scoring(monkeypatch) -> None:
+    document = SimpleNamespace(
+        parser_name="pymupdf",
+        source_extension=".pdf",
+        content_text="일반 입시 설명 자료입니다. 학과 소개와 모집 요강만 포함합니다.",
+        content_markdown="",
+        parse_metadata={
+            "source_document_kind": "generic_pdf",
+            "document_type": "generic_pdf",
+            "pdf_analysis": {
+                "source_document_kind": "generic_pdf",
+                "document_type": "generic_pdf",
+                "likely_student_record": False,
+                "document_type_confidence": 0.42,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "unifoli_api.services.diagnosis_runtime_service.list_documents_for_project",
+        lambda db, project_id: [document],
+    )
+
+    try:
+        combine_project_text("project-generic", db=SimpleNamespace())
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail["code"] == "INVALID_STUDENT_RECORD"
+        assert exc.detail["stage"] == "combine_project_text"
+    else:  # pragma: no cover - defensive branch
+        raise AssertionError("generic PDF should not be eligible for diagnosis")
+
+
+def test_combine_project_text_rejects_generated_diagnosis_report(monkeypatch) -> None:
+    document = SimpleNamespace(
+        parser_name="pymupdf",
+        source_extension=".pdf",
+        content_text="생기부 진단지 분석 리포트 내용입니다.",
+        content_markdown="",
+        parse_metadata={
+            "student_record_canonical": {
+                "record_type": "student_record_diagnosis_report_pdf",
+                "source_document_kind": "diagnosis_report",
+                "is_primary_student_record": False,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "unifoli_api.services.diagnosis_runtime_service.list_documents_for_project",
+        lambda db, project_id: [document],
+    )
+
+    try:
+        combine_project_text("project-report", db=SimpleNamespace())
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail["code"] == "INVALID_STUDENT_RECORD"
+    else:  # pragma: no cover - defensive branch
+        raise AssertionError("generated diagnosis report should not be diagnosed as a record")
+
+
+def test_combine_project_text_uses_only_primary_student_record_documents(monkeypatch) -> None:
+    student_record = SimpleNamespace(
+        parser_name="pymupdf",
+        source_extension=".pdf",
+        content_text="학교생활기록부 교과학습발달상황 세부능력 및 특기사항",
+        content_markdown="",
+        parse_metadata={
+            "student_record_canonical": {
+                "record_type": "korean_student_record_pdf",
+                "document_confidence": 0.82,
+            }
+        },
+    )
+    generic_pdf = SimpleNamespace(
+        parser_name="pymupdf",
+        source_extension=".pdf",
+        content_text="일반 PDF 내용이 섞여 있습니다.",
+        content_markdown="",
+        parse_metadata={"source_document_kind": "generic_pdf", "document_type": "generic_pdf"},
+    )
+    monkeypatch.setattr(
+        "unifoli_api.services.diagnosis_runtime_service.list_documents_for_project",
+        lambda db, project_id: [generic_pdf, student_record],
+    )
+
+    documents, full_text = combine_project_text("project-mixed", db=SimpleNamespace())
+
+    assert documents == [student_record]
+    assert "학교생활기록부" in full_text
+    assert "일반 PDF" not in full_text
+
+
 def test_runtime_persists_artifacts_and_survives_trace_persistence_failure(monkeypatch) -> None:
     settings = Settings(llm_provider="ollama", ollama_model="gemma4-test", gemini_api_key=None)
     run = SimpleNamespace(
@@ -341,6 +433,93 @@ def test_artifact_summary_exposes_score_fields_without_leaking_formula_and_exclu
 
     assert "score_snapshot" in chatbot_context
     assert chatbot_context["score_snapshot"]["total_score"] == summary["total_score"]
+
+
+def test_artifact_summary_caps_scores_when_student_record_evidence_is_weak() -> None:
+    result = DiagnosisResult.model_validate(
+        {
+            "headline": "High raw score should be capped",
+            "overview": "Raw axis scores are strong, but evidence gates are weak.",
+            "strengths": ["strong-looking narrative"],
+            "gaps": ["weak evidence coverage"],
+            "recommended_focus": "verify original record evidence",
+            "risk_level": "safe",
+            "record_completion_state": "ongoing",
+            "admission_axes": [
+                {
+                    "key": "universal_rigor",
+                    "label": "학업 엄밀성",
+                    "score": 96,
+                    "band": "strong",
+                    "severity": "low",
+                    "rationale": "raw high",
+                    "evidence_hints": [],
+                },
+                {
+                    "key": "universal_specificity",
+                    "label": "근거 구체성",
+                    "score": 94,
+                    "band": "strong",
+                    "severity": "low",
+                    "rationale": "raw high",
+                    "evidence_hints": [],
+                },
+                {
+                    "key": "cluster_depth",
+                    "label": "전공 탐구 깊이",
+                    "score": 93,
+                    "band": "strong",
+                    "severity": "low",
+                    "rationale": "raw high",
+                    "evidence_hints": [],
+                },
+            ],
+            "section_analysis": [
+                {
+                    "key": "교과학습발달상황",
+                    "label": "교과학습발달상황",
+                    "present": True,
+                    "record_count": 8,
+                    "note": "raw section count high",
+                }
+            ],
+        }
+    )
+    document = SimpleNamespace(
+        parse_metadata={
+            "student_record_canonical": {
+                "record_type": "korean_student_record_pdf",
+                "document_confidence": 0.51,
+                "quality_gates": {
+                    "coverage_score": 0.2,
+                    "evidence_anchor_count": 1,
+                    "evidence_page_count": 1,
+                    "missing_required_sections": [
+                        "student_info",
+                        "attendance",
+                        "creative_activities",
+                        "behavior_general_comments",
+                    ],
+                    "reanalysis_required": True,
+                },
+            }
+        }
+    )
+
+    bundle = build_diagnosis_artifact_bundle(
+        run_id="run-capped-score",
+        project_id="project-capped-score",
+        result=result,
+        documents=[document],
+    )
+
+    summary = bundle["diagnosis_summary_json"]
+
+    assert summary["total_score"] <= 55
+    assert all(score <= 55 for score in summary["category_scores"].values())
+    assert summary["scoring_policy"]["evidence_quality_score_cap"] == 55
+    assert summary["scoring_policy"]["score_validity"] == "reference_only"
+    assert summary["scoring_policy"]["raw_category_scores_before_quality_cap"]["교과/세특"] > 55
 
 
 def test_artifact_summary_schema_is_backward_compatible_with_existing_narrative_fields() -> None:

@@ -54,6 +54,11 @@ DEFAULT_MAX_COMBINED_TEXT_CHARS = 120_000
 DEFAULT_MAX_METADATA_SUMMARY_CHARS = 1_600
 SEMANTIC_EXTRACTION_TIMEOUT_SECONDS = 60.0
 DIAGNOSIS_GENERATION_TIMEOUT_SECONDS = 45.0
+INVALID_STUDENT_RECORD_MESSAGE = (
+    "학교생활기록부 원본 PDF만 진단할 수 있습니다. "
+    "진단서, 입시 자료, 논문, 일반 PDF가 아니라 나이스/정부24에서 내려받은 "
+    "학교생활기록부 PDF를 업로드해 주세요."
+)
 
 DIAGNOSIS_FALLBACK_REASON_TIMEOUT = "diagnosis_generation_timeout"
 DIAGNOSIS_FALLBACK_REASON_PROVIDER_TIMEOUT = "diagnosis_generation_provider_timeout"
@@ -143,6 +148,100 @@ def _smart_truncate_student_record(text: str, prefix: str, limit: int) -> str:
 
 def _is_sqlite_disk_full_error(exc: Exception) -> bool:
     return "database or disk is full" in str(exc).lower()
+
+
+def _metadata_dict(document: Any) -> dict[str, Any]:
+    metadata = getattr(document, "parse_metadata", None)
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _student_record_document_kind(document: Any) -> str:
+    metadata = _metadata_dict(document)
+    canonical = metadata.get("student_record_canonical")
+    if isinstance(canonical, dict):
+        source_kind = str(canonical.get("source_document_kind") or "").strip()
+        if source_kind:
+            return source_kind
+        if canonical.get("is_primary_student_record") is False:
+            return "diagnosis_report"
+        record_type = str(canonical.get("record_type") or "").strip()
+        if record_type == "student_record_diagnosis_report_pdf":
+            return "diagnosis_report"
+        if record_type == "korean_student_record_pdf":
+            return "original_student_record"
+        if canonical:
+            return "original_student_record"
+
+    for key in ("source_document_kind", "document_type"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            return value
+
+    pdf_analysis = metadata.get("pdf_analysis")
+    if isinstance(pdf_analysis, dict):
+        for key in ("source_document_kind", "document_type"):
+            value = str(pdf_analysis.get(key) or "").strip()
+            if value:
+                return value
+
+    return "unknown"
+
+
+def _is_primary_student_record_document(document: Any) -> bool:
+    metadata = _metadata_dict(document)
+    canonical = metadata.get("student_record_canonical")
+    if isinstance(canonical, dict):
+        if canonical.get("is_primary_student_record") is False:
+            return False
+        record_type = str(canonical.get("record_type") or "").strip()
+        source_kind = str(canonical.get("source_document_kind") or metadata.get("source_document_kind") or "").strip()
+        if record_type == "student_record_diagnosis_report_pdf" or source_kind == "diagnosis_report":
+            return False
+        # Older parsed records may not have a record_type, but a non-report canonical
+        # schema still means the document passed student-record extraction.
+        return bool(canonical)
+
+    source_kind = str(metadata.get("source_document_kind") or "").strip()
+    document_type = str(metadata.get("document_type") or "").strip()
+    if source_kind == "diagnosis_report" or document_type == "student_record_diagnosis_report_pdf":
+        return False
+
+    pdf_analysis = metadata.get("pdf_analysis")
+    if isinstance(pdf_analysis, dict):
+        analysis_kind = str(pdf_analysis.get("source_document_kind") or "").strip()
+        analysis_type = str(pdf_analysis.get("document_type") or "").strip()
+        if analysis_kind == "diagnosis_report" or analysis_type == "student_record_diagnosis_report_pdf":
+            return False
+        if pdf_analysis.get("likely_student_record") is True and analysis_type == "korean_student_record_pdf":
+            confidence = pdf_analysis.get("document_type_confidence")
+            try:
+                return float(confidence) >= 0.62
+            except (TypeError, ValueError):
+                return True
+
+    parser_name = str(getattr(document, "parser_name", "") or "").strip().lower()
+    return parser_name == "neis"
+
+
+def _filter_primary_student_record_documents(documents: list[Any]) -> list[Any]:
+    return [document for document in documents if _is_primary_student_record_document(document)]
+
+
+def _raise_invalid_student_record(project_id: str, documents: list[Any]) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=build_error_detail(
+            UniFoliErrorCode.INVALID_STUDENT_RECORD,
+            INVALID_STUDENT_RECORD_MESSAGE,
+            stage="combine_project_text",
+            extra={
+                "project_id": project_id,
+                "reason": "no_primary_student_record",
+                "document_count": len(documents),
+                "document_kinds": [_student_record_document_kind(document) for document in documents[:5]],
+            },
+        ),
+    )
 
 
 def _extract_document_text(document: Any) -> str:
@@ -280,7 +379,7 @@ def _extract_document_text(document: Any) -> str:
     fallback_parts: list[str] = []
     summary = str(pdf_analysis.get("summary") or "").strip()
     if summary:
-        fallback_parts.append(summary[:MAX_METADATA_SUMMARY_CHARS])
+        fallback_parts.append(summary[:DEFAULT_MAX_METADATA_SUMMARY_CHARS])
 
     key_points = pdf_analysis.get("key_points")
     if isinstance(key_points, list):
@@ -310,10 +409,14 @@ def combine_project_text(project_id: str, db: Session) -> tuple[list[Any], str]:
             detail="진단 실행 전에 파싱이 완료된 문서를 먼저 업로드해 주세요.",
         )
 
+    documents_for_diagnosis = _filter_primary_student_record_documents(documents)
+    if not documents_for_diagnosis:
+        _raise_invalid_student_record(project_id, documents)
+
     merged_parts: list[str] = []
     settings = get_settings()
     remaining_budget = settings.diagnosis_llm_max_input_chars
-    for document in documents:
+    for document in documents_for_diagnosis:
         text = _extract_document_text(document)
         if not text:
             continue
@@ -341,7 +444,7 @@ def combine_project_text(project_id: str, db: Session) -> tuple[list[Any], str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="파싱된 문서 내용이 비어 있습니다. 더 선명한 원본으로 다시 파싱해 주세요.",
         )
-    return documents, full_text
+    return documents_for_diagnosis, full_text
 
 
 def build_policy_scan_text(documents: list) -> str:

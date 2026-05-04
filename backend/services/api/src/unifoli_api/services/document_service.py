@@ -50,6 +50,12 @@ STUDENT_RECORD_KEYWORDS = (
     "학생부",
     "생기부",
 )
+ADVANCED_PIPELINE_DEGRADED_SECTIONS = [
+    "student_record_structure",
+    "subject_specialty_analysis",
+    "network_analysis",
+    "high_confidence_score_claims",
+]
 _DOCUMENT_FAILURE_CODE_MAP = {
     "pdf_malformed": "MALFORMED_PDF",
     "pdf_encrypted": "ENCRYPTED_PDF",
@@ -157,6 +163,104 @@ def _normalize_document_failure_code(raw_code: str | None, message: str) -> str:
 def _is_student_record_candidate(*, parser_name: str, content_text: str | None) -> bool:
     text = content_text or ""
     return parser_name == "neis" or any(keyword in text for keyword in STUDENT_RECORD_KEYWORDS)
+
+
+def _append_metadata_warning(metadata: dict, message: str) -> None:
+    public_message = sanitize_public_error(message, fallback=DOCUMENT_FAILURE_FALLBACK)
+    warnings = [
+        sanitize_public_error(str(item), fallback=DOCUMENT_FAILURE_FALLBACK)
+        for item in metadata.get("warnings", [])
+        if str(item).strip()
+    ]
+    if public_message not in warnings:
+        warnings.append(public_message)
+    metadata["warnings"] = warnings
+
+
+def _mark_advanced_pipeline_degraded(metadata: dict, reason: str) -> None:
+    public_reason = sanitize_public_error(reason, fallback=DOCUMENT_FAILURE_FALLBACK)
+    metadata["pipeline_status"] = "failed"
+    metadata["pipeline_error"] = public_reason
+    metadata["needs_review"] = True
+    metadata["provisional_reason"] = (
+        "심층 학생부 구조 분석이 실패해 일부 리포트 섹션은 보수적으로 제한됩니다."
+    )
+    metadata["diagnosis_disabled_sections"] = ADVANCED_PIPELINE_DEGRADED_SECTIONS
+    _append_metadata_warning(metadata, metadata["provisional_reason"])
+    existing_quality = metadata.get("parse_quality")
+    parse_quality = existing_quality if isinstance(existing_quality, dict) else {}
+    quality_warnings = [
+        str(item)
+        for item in parse_quality.get("warnings", [])
+        if str(item).strip()
+    ]
+    if metadata["provisional_reason"] not in quality_warnings:
+        quality_warnings.append(metadata["provisional_reason"])
+    metadata["parse_quality"] = {
+        **parse_quality,
+        "overall_score": min(float(parse_quality.get("overall_score") or 0.45), 0.45),
+        "section_coverage_score": min(float(parse_quality.get("section_coverage_score") or 0.35), 0.35),
+        "missing_critical_sections": parse_quality.get("missing_critical_sections") or ADVANCED_PIPELINE_DEGRADED_SECTIONS[:3],
+        "warnings": quality_warnings,
+        "is_provisional": True,
+    }
+
+
+def _apply_advanced_quality_report(metadata: dict, quality_report: dict) -> None:
+    if not quality_report:
+        return
+    overall_score = float(quality_report.get("overall_score", 0) or 0)
+    missing_sections = quality_report.get("missing_critical_sections", [])
+    metadata["pipeline_status"] = "success"
+    metadata["pipeline_quality_score"] = overall_score
+    metadata["pipeline_quality_missing_sections"] = missing_sections
+    metadata["parse_quality"] = {
+        **(metadata.get("parse_quality") if isinstance(metadata.get("parse_quality"), dict) else {}),
+        "overall_score": overall_score,
+        "section_coverage_score": overall_score,
+        "missing_critical_sections": missing_sections if isinstance(missing_sections, list) else [],
+        "warnings": [],
+        "is_provisional": bool(missing_sections),
+    }
+    if missing_sections:
+        metadata["needs_review"] = True
+        _append_metadata_warning(metadata, "심층 분석에서 일부 필수 학생부 섹션이 부족하게 추출되었습니다.")
+
+
+def _apply_degraded_flags_to_student_record_metadata(metadata: dict) -> None:
+    if metadata.get("pipeline_status") != "failed":
+        return
+    canonical = metadata.get("student_record_canonical")
+    if isinstance(canonical, dict) and canonical.get("is_primary_student_record") is not False:
+        quality_gates = canonical.get("quality_gates")
+        if not isinstance(quality_gates, dict):
+            quality_gates = {}
+        notes = [
+            str(item)
+            for item in quality_gates.get("notes", [])
+            if str(item).strip()
+        ]
+        note = "심층 구조 분석 실패로 고신뢰 진단/리포트 섹션은 재분석 전까지 제한됩니다."
+        if note not in notes:
+            notes.append(note)
+        quality_gates.update(
+            {
+                "reanalysis_required": True,
+                "advanced_pipeline_degraded": True,
+                "notes": notes,
+            }
+        )
+        canonical["quality_gates"] = quality_gates
+        uncertainties = canonical.get("uncertainties")
+        if not isinstance(uncertainties, list):
+            uncertainties = []
+        uncertainty_message = "심층 구조 분석이 실패해 섹션별 판단은 참고용으로 제한됩니다."
+        if not any(isinstance(item, dict) and item.get("message") == uncertainty_message for item in uncertainties):
+            uncertainties.append({"message": uncertainty_message})
+        canonical["uncertainties"] = uncertainties
+        metadata["student_record_canonical"] = canonical
+    if "student_record_structure" in metadata:
+        metadata["student_record_structure_disabled"] = True
 
 
 def mark_document_processing(
@@ -387,15 +491,13 @@ def ingest_upload_asset(
 
                     quality_report = advanced_artifact.get("quality_report", {})
                     if quality_report:
-                        document.parse_metadata["pipeline_quality_score"] = float(quality_report.get("overall_score", 0))
-                        document.parse_metadata["pipeline_quality_missing_sections"] = quality_report.get("missing_critical_sections", [])
-                        if quality_report.get("missing_critical_sections"):
-                            document.parse_metadata["needs_review"] = True
+                        _apply_advanced_quality_report(document.parse_metadata, quality_report)
+                    else:
+                        document.parse_metadata["pipeline_status"] = "success"
                 logger.info("Advanced semantic parsing complete.")
             except Exception as e:
                 logger.warning(f"Advanced pipeline failed, falling back: {str(e)}")
-                document.parse_metadata["pipeline_status"] = "failed"
-                document.parse_metadata["pipeline_error"] = sanitize_public_error(str(e))
+                _mark_advanced_pipeline_degraded(document.parse_metadata, str(e))
                 document.status = DocumentProcessingStatus.PARTIAL.value
 
         # --- STAGE 3: PDF Analysis LLM (Optional) ---
@@ -426,6 +528,7 @@ def ingest_upload_asset(
             )
             if student_record_structure:
                 document.parse_metadata["student_record_structure"] = student_record_structure
+            _apply_degraded_flags_to_student_record_metadata(document.parse_metadata)
         except Exception as e:
             logger.warning(f"Metadata composition failed: {e}")
 

@@ -32,7 +32,7 @@ def split_markdown_sections(content: str) -> list[tuple[str, list[str]]]:
     return normalized
 
 
-def markdown_lines_to_bullets(lines: list[str], *, max_items: int = 6) -> list[str]:
+def markdown_lines_to_bullets(lines: list[str], *, max_items: int = 100) -> list[str]:
     bullets: list[str] = []
     for line in lines:
         cleaned = line.strip()

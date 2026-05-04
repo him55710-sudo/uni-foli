@@ -46,6 +46,8 @@ type TimingPhaseKey = 'upload' | 'parse' | 'diagnosis';
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const INVALID_PROJECT_MESSAGE = '기존 프로젝트 연결이 유효하지 않아 다시 업로드가 필요합니다.';
+const INVALID_STUDENT_RECORD_MESSAGE =
+  '학교생활기록부 원본 PDF만 진단할 수 있습니다. 진단서, 입시 자료, 논문, 일반 PDF가 아니라 나이스/정부24에서 내려받은 학생부 PDF를 업로드해 주세요.';
 
 interface DiagnosisDocumentStatus extends DiagnosisProjectDocumentSummary {
   content_text: string;
@@ -71,6 +73,49 @@ interface FlowDebugState {
   code?: string | null;
   detail?: string | null;
   status?: number | null;
+}
+
+function normalizeDocumentKind(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function resolveStudentRecordInputIssue(document: DiagnosisDocumentStatus): string | null {
+  const metadata = document.parse_metadata ?? {};
+  const canonical = metadata.student_record_canonical;
+  if (canonical && typeof canonical === 'object' && !Array.isArray(canonical)) {
+    const record = canonical as Record<string, unknown>;
+    const sourceKind = normalizeDocumentKind(record.source_document_kind || metadata.source_document_kind);
+    const recordType = normalizeDocumentKind(record.record_type);
+    if (record.is_primary_student_record === false || sourceKind === 'diagnosis_report' || recordType === 'student_record_diagnosis_report_pdf') {
+      return INVALID_STUDENT_RECORD_MESSAGE;
+    }
+    return null;
+  }
+
+  const sourceKind = normalizeDocumentKind(metadata.source_document_kind);
+  const documentType = normalizeDocumentKind(metadata.document_type);
+  if (sourceKind === 'diagnosis_report' || documentType === 'student_record_diagnosis_report_pdf') {
+    return INVALID_STUDENT_RECORD_MESSAGE;
+  }
+
+  const pdfAnalysis = metadata.pdf_analysis;
+  if (pdfAnalysis && typeof pdfAnalysis === 'object' && !Array.isArray(pdfAnalysis)) {
+    const record = pdfAnalysis as Record<string, unknown>;
+    const analysisKind = normalizeDocumentKind(record.source_document_kind);
+    const analysisType = normalizeDocumentKind(record.document_type);
+    if (analysisKind === 'diagnosis_report' || analysisType === 'student_record_diagnosis_report_pdf') {
+      return INVALID_STUDENT_RECORD_MESSAGE;
+    }
+    if (record.likely_student_record === false && (analysisKind === 'generic_pdf' || analysisType === 'generic_pdf')) {
+      return INVALID_STUDENT_RECORD_MESSAGE;
+    }
+  }
+
+  if (sourceKind === 'generic_pdf' || documentType === 'generic_pdf') {
+    return INVALID_STUDENT_RECORD_MESSAGE;
+  }
+
+  return null;
 }
 
 function createInitialTimingPhases(): TimingPhaseMap {
@@ -622,6 +667,16 @@ export function Diagnosis() {
         message: '진단에 사용할 수 있는 텍스트를 찾지 못했습니다.',
         phase: 'parse',
         debug: null,
+      });
+      return;
+    }
+
+    const studentRecordIssue = resolveStudentRecordInputIssue(polledDoc);
+    if (studentRecordIssue) {
+      applyFailureState({
+        message: studentRecordIssue,
+        phase: 'parse',
+        debug: { code: 'INVALID_STUDENT_RECORD', detail: studentRecordIssue, status: 400 },
       });
       return;
     }

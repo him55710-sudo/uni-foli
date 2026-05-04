@@ -803,6 +803,9 @@ def test_combine_project_text_uses_pdf_analysis_fallback(monkeypatch) -> None:
         content_text="",
         content_markdown="",
         parse_metadata={
+            "student_record_canonical": {
+                "record_type": "korean_student_record_pdf",
+            },
             "pdf_analysis": {
                 "summary": "summary based fallback text",
                 "key_points": ["???뼎 ?????A", "???뼎 ?????B"],

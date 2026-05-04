@@ -36,23 +36,43 @@ import { useOnboardingStore } from '../store/onboardingStore';
 
 interface InterviewQuestion {
   id: string;
+  category?: string;
+  strategy?: string;
   question: string;
   rationale: string;
+  answer_frame?: string;
+  avoid?: string;
+  expected_evidence_ids?: string[];
 }
 
 interface InterviewEvaluation {
   score: number;
+  grade?: 'S' | 'A' | 'B' | 'C';
+  grade_label?: string;
   axes_scores: Record<string, number>;
   feedback: string;
   coaching_advice: string;
+  follow_up_questions?: string[];
 }
 
 type CachedDiagnosis = StoredDiagnosis & {
   diagnosisRunId?: string | null;
 };
 
-const AXIS_LABELS = ['구체성', '진정성', '생기부 근거', '전공 연결'];
-const AXIS_ICONS = [Target, UserCheck, BookOpen, Award];
+const AXIS_LABELS: Record<string, string> = {
+  구체성: '구체성',
+  진정성: '진정성',
+  '학생부 근거 활용': '생기부 근거',
+  '전공 연결성': '전공 연결',
+  '논리적 인과관계': '논리 인과',
+};
+const AXIS_ICONS = [Target, UserCheck, BookOpen, Award, ClipboardList];
+const GRADE_STYLES: Record<string, string> = {
+  S: 'bg-violet-100 text-violet-700 ring-violet-200',
+  A: 'bg-blue-100 text-blue-700 ring-blue-200',
+  B: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
+  C: 'bg-amber-100 text-amber-800 ring-amber-200',
+};
 
 function readStoredDiagnosis(): CachedDiagnosis | null {
   if (typeof window === 'undefined') return null;
@@ -361,12 +381,46 @@ export const Interview: React.FC = () => {
                 <Mic size={20} className="animate-pulse" />
                 <span className="text-xs font-black uppercase tracking-widest text-blue-300">AI Interviewer</span>
               </div>
+              <div className="mb-4 flex flex-wrap gap-2">
+                {currentQuestion.category ? (
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-blue-100 ring-1 ring-white/10">
+                    {currentQuestion.category}
+                  </span>
+                ) : null}
+                {currentQuestion.strategy ? (
+                  <span className="rounded-full bg-amber-300/15 px-3 py-1 text-xs font-black text-amber-100 ring-1 ring-amber-200/20">
+                    {currentQuestion.strategy}
+                  </span>
+                ) : null}
+              </div>
               <h2 className="text-xl font-black leading-relaxed sm:text-2xl">
                 {currentQuestion.question}
               </h2>
               <p className="mt-6 text-sm font-bold leading-6 text-slate-400">
                 질문 의도: {currentQuestion.rationale}
               </p>
+              {(currentQuestion.answer_frame || currentQuestion.avoid || currentQuestion.expected_evidence_ids?.length) ? (
+                <div className="mt-6 grid gap-4 text-sm font-bold leading-6 text-slate-300 lg:grid-cols-2">
+                  {currentQuestion.answer_frame ? (
+                    <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+                      <p className="text-xs font-black uppercase tracking-widest text-blue-200">Answer Frame</p>
+                      <p className="mt-2">{currentQuestion.answer_frame}</p>
+                    </div>
+                  ) : null}
+                  {currentQuestion.avoid ? (
+                    <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+                      <p className="text-xs font-black uppercase tracking-widest text-amber-200">Avoid</p>
+                      <p className="mt-2">{currentQuestion.avoid}</p>
+                    </div>
+                  ) : null}
+                  {currentQuestion.expected_evidence_ids?.length ? (
+                    <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10 lg:col-span-2">
+                      <p className="text-xs font-black uppercase tracking-widest text-emerald-200">Evidence</p>
+                      <p className="mt-2">{currentQuestion.expected_evidence_ids.join(' · ')}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <AnimatePresence mode="wait">
@@ -407,7 +461,7 @@ export const Interview: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   className="space-y-8"
                 >
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     {Object.entries(evaluation.axes_scores).map(([axis, score], index) => {
                       const Icon = AXIS_ICONS[index] ?? Target;
                       return (
@@ -415,7 +469,7 @@ export const Interview: React.FC = () => {
                           <div className="mb-2 flex items-center gap-2">
                             <Icon size={14} className="text-blue-500" />
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                              {AXIS_LABELS[index] ?? axis}
+                              {AXIS_LABELS[axis] ?? axis}
                             </span>
                           </div>
                           <p className="text-2xl font-black text-slate-900">
@@ -431,13 +485,25 @@ export const Interview: React.FC = () => {
                       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200">
                         <Award size={20} />
                       </div>
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <h4 className="text-lg font-black text-slate-900">면접관 피드백</h4>
                         <p className="text-xs font-black uppercase tracking-widest text-blue-500/70">Expert Evaluation</p>
                       </div>
+                      {evaluation.grade ? (
+                        <div className={`rounded-2xl px-4 py-3 text-center ring-1 ${GRADE_STYLES[evaluation.grade] ?? GRADE_STYLES.C}`}>
+                          <p className="text-2xl font-black leading-none">{evaluation.grade}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest">Grade</p>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="space-y-6">
+                      {evaluation.grade_label ? (
+                        <p className="rounded-2xl bg-white px-5 py-4 text-sm font-black leading-6 text-slate-700 ring-1 ring-blue-100">
+                          {evaluation.grade_label}
+                        </p>
+                      ) : null}
+
                       <div>
                         <p className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">종합 평가</p>
                         <p className="text-lg font-bold leading-relaxed text-slate-700">{evaluation.feedback}</p>
@@ -452,6 +518,24 @@ export const Interview: React.FC = () => {
                           {evaluation.coaching_advice}
                         </p>
                       </div>
+
+                      {evaluation.follow_up_questions?.length ? (
+                        <div>
+                          <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-400">
+                            꼬리 질문
+                          </p>
+                          <div className="space-y-2">
+                            {evaluation.follow_up_questions.map((item, index) => (
+                              <p
+                                key={`${item}-${index}`}
+                                className="rounded-2xl bg-white px-5 py-4 text-sm font-bold leading-6 text-slate-700 ring-1 ring-blue-100"
+                              >
+                                {item}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </SurfaceCard>
 

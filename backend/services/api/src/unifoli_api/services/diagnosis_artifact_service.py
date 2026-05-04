@@ -159,6 +159,151 @@ def _private_average_score(values: list[int], *, default: int = 55) -> int:
     return _private_to_bounded_score(sum(values) / len(values), default=default)
 
 
+def _private_coerce_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed:
+        return None
+    return parsed
+
+
+def _private_coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _private_list_values(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _private_quality_gate_payload(canonical_metadata: dict[str, Any]) -> dict[str, Any]:
+    value = canonical_metadata.get("quality_gates")
+    return value if isinstance(value, dict) else {}
+
+
+def _private_section_coverage_payload(canonical_metadata: dict[str, Any]) -> dict[str, Any]:
+    value = canonical_metadata.get("section_coverage")
+    return value if isinstance(value, dict) else {}
+
+
+def _private_score_quality_gate(
+    *,
+    canonical_metadata: dict[str, Any],
+    evidence_references: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not canonical_metadata:
+        return {
+            "score_cap": 45,
+            "score_validity": "unverified_source",
+            "quality_gate_notes": [
+                "원본 학교생활기록부 구조를 확인하지 못해 점수는 참고용 상한으로 제한했습니다."
+            ],
+            "document_confidence": None,
+            "coverage_score": None,
+            "evidence_anchor_count": 0,
+            "evidence_page_count": 0,
+            "missing_required_sections": [],
+            "reanalysis_required": True,
+        }
+
+    quality_gates = _private_quality_gate_payload(canonical_metadata)
+    section_coverage = _private_section_coverage_payload(canonical_metadata)
+    evidence_bank = _private_list_values(canonical_metadata.get("evidence_bank"))
+
+    document_confidence = _private_coerce_float(canonical_metadata.get("document_confidence"))
+    coverage_score = _private_coerce_float(quality_gates.get("coverage_score"))
+    if coverage_score is None:
+        coverage_score = _private_coerce_float(section_coverage.get("coverage_score"))
+    evidence_anchor_count = (
+        _private_coerce_int(quality_gates.get("evidence_anchor_count"))
+        if quality_gates.get("evidence_anchor_count") is not None
+        else len(evidence_bank)
+    )
+    evidence_page_count = _private_coerce_int(quality_gates.get("evidence_page_count"))
+    if evidence_page_count is None:
+        pages: set[int] = set()
+        for item in evidence_bank:
+            if not isinstance(item, dict):
+                continue
+            page = _private_coerce_int(item.get("page") or item.get("page_number"))
+            if page is not None and page > 0:
+                pages.add(page)
+        evidence_page_count = len(pages)
+
+    missing_required_sections = _private_list_values(
+        quality_gates.get("missing_required_sections")
+        or section_coverage.get("missing_required_sections")
+        or section_coverage.get("missing_sections")
+    )
+    reanalysis_required = bool(quality_gates.get("reanalysis_required") or section_coverage.get("reanalysis_required"))
+
+    score_cap = 100
+    notes: list[str] = []
+
+    if reanalysis_required:
+        score_cap = min(score_cap, 60)
+        notes.append("재분석이 필요한 학생부 구조로 판별되어 고득점 판정을 제한했습니다.")
+    if document_confidence is not None:
+        if document_confidence < 0.55:
+            score_cap = min(score_cap, 55)
+            notes.append("문서 유형 신뢰도가 낮아 점수 상한을 55점으로 제한했습니다.")
+        elif document_confidence < 0.68:
+            score_cap = min(score_cap, 72)
+            notes.append("문서 유형 신뢰도가 보통 이하라 70점대 이상 판정을 제한했습니다.")
+    if coverage_score is not None:
+        if coverage_score < 0.35:
+            score_cap = min(score_cap, 58)
+            notes.append("학생부 필수 섹션 커버리지가 부족해 점수를 보수적으로 제한했습니다.")
+        elif coverage_score < 0.55:
+            score_cap = min(score_cap, 72)
+            notes.append("필수 섹션 일부가 약해 점수 상한을 적용했습니다.")
+    if evidence_anchor_count < 3:
+        score_cap = min(score_cap, 55)
+        notes.append("직접 근거 앵커가 3개 미만이라 정량 점수를 참고용으로 제한했습니다.")
+    elif evidence_anchor_count < 6:
+        score_cap = min(score_cap, 70)
+        notes.append("직접 근거 앵커가 충분하지 않아 고득점 판정을 제한했습니다.")
+    if evidence_page_count < 2:
+        score_cap = min(score_cap, 60)
+        notes.append("근거가 2페이지 미만에 몰려 있어 페이지 다양성 기준을 통과하지 못했습니다.")
+    elif evidence_page_count < 4:
+        score_cap = min(score_cap, 78)
+        notes.append("근거 페이지 다양성이 제한되어 80점 이상 판정을 막았습니다.")
+    if len(missing_required_sections) >= 4:
+        score_cap = min(score_cap, 60)
+        notes.append("누락된 필수 학생부 섹션이 많아 점수 상한을 적용했습니다.")
+    elif len(missing_required_sections) >= 2:
+        score_cap = min(score_cap, 72)
+        notes.append("일부 필수 학생부 섹션이 누락되어 점수 상한을 적용했습니다.")
+    if not evidence_references and evidence_anchor_count < 3:
+        score_cap = min(score_cap, 55)
+
+    score_cap = _private_to_bounded_score(score_cap)
+    if score_cap >= 85 and not notes:
+        score_validity = "verified_student_record"
+        notes.append("원본 학생부 구조와 근거 앵커 기준을 통과한 점수입니다.")
+    elif score_cap >= 70:
+        score_validity = "limited_evidence"
+    else:
+        score_validity = "reference_only"
+
+    return {
+        "score_cap": score_cap,
+        "score_validity": score_validity,
+        "quality_gate_notes": notes[:6],
+        "document_confidence": round(document_confidence, 3) if document_confidence is not None else None,
+        "coverage_score": round(coverage_score, 3) if coverage_score is not None else None,
+        "evidence_anchor_count": max(0, evidence_anchor_count),
+        "evidence_page_count": max(0, evidence_page_count),
+        "missing_required_sections": [str(item) for item in missing_required_sections[:8]],
+        "reanalysis_required": reanalysis_required,
+    }
+
+
 def _private_merge_scores(primary: int | None, secondary: int | None, *, default: int = 55) -> int:
     scores = [item for item in [primary, secondary] if isinstance(item, int)]
     return _private_average_score(scores, default=default)
@@ -306,9 +451,15 @@ def _private_build_score_ready_summary_fields(
     *,
     result_payload: dict[str, Any],
     canonical_metadata: dict[str, Any],
+    evidence_references: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     axis_index = _private_collect_axis_index(result_payload)
     section_index = _private_collect_section_index(result_payload=result_payload, canonical_metadata=canonical_metadata)
+    quality_gate = _private_score_quality_gate(
+        canonical_metadata=canonical_metadata,
+        evidence_references=evidence_references or [],
+    )
+    score_cap = int(quality_gate["score_cap"])
 
     rigor_score = axis_index.get("universal_rigor", {}).get("score")
     specificity_score = axis_index.get("universal_specificity", {}).get("score")
@@ -318,7 +469,7 @@ def _private_build_score_ready_summary_fields(
     suitability_score = axis_index.get("cluster_suitability", {}).get("score")
     community_score = axis_index.get("community_contribution", {}).get("score")
 
-    category_scores: dict[str, int] = {
+    raw_category_scores: dict[str, int] = {
         "교과/세특": _private_merge_scores(
             _private_average_score(
                 [item for item in [rigor_score, specificity_score] if isinstance(item, int)],
@@ -356,8 +507,10 @@ def _private_build_score_ready_summary_fields(
             default=57,
         ),
     }
+    category_scores = {key: min(value, score_cap) for key, value in raw_category_scores.items()}
 
     total_score = _private_average_score(list(category_scores.values()), default=57)
+    total_score = min(total_score, score_cap)
     score_labels = {"총점": _private_score_label(total_score)}
     score_labels.update({key: _private_score_label(value) for key, value in category_scores.items()})
 
@@ -391,6 +544,18 @@ def _private_build_score_ready_summary_fields(
             "awards_excluded": True,
             "grade_trend_analysis_included": False,
             "recommended_universities_included": False,
+            "basis": "student_record_evidence_quality_gate",
+            "source_validation": "primary_student_record_only",
+            "evidence_quality_score_cap": score_cap,
+            "score_validity": quality_gate["score_validity"],
+            "quality_gate_notes": quality_gate["quality_gate_notes"],
+            "raw_category_scores_before_quality_cap": raw_category_scores,
+            "document_confidence": quality_gate["document_confidence"],
+            "coverage_score": quality_gate["coverage_score"],
+            "evidence_anchor_count": quality_gate["evidence_anchor_count"],
+            "evidence_page_count": quality_gate["evidence_page_count"],
+            "missing_required_sections": quality_gate["missing_required_sections"],
+            "reanalysis_required": quality_gate["reanalysis_required"],
         },
     }
 
@@ -406,6 +571,7 @@ def _build_summary_json(
     score_ready_fields = _private_build_score_ready_summary_fields(
         result_payload=result_payload,
         canonical_metadata=canonical_metadata,
+        evidence_references=evidence_references,
     )
     return {
         "schema_version": DIAGNOSIS_ARTIFACT_SCHEMA_VERSION,
@@ -463,6 +629,7 @@ def _build_chatbot_context_json(
     score_ready_fields = _private_build_score_ready_summary_fields(
         result_payload=result_payload,
         canonical_metadata=canonical_metadata,
+        evidence_references=evidence_references,
     )
 
     return {

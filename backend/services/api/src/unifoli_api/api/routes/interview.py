@@ -25,6 +25,15 @@ class InterviewEvaluateRequest(BaseModel):
     context: str = ""
 
 
+def _project_target_context(project: Project) -> str:
+    parts = []
+    if project.target_university:
+        parts.append(f"목표 대학: {project.target_university}")
+    if project.target_major:
+        parts.append(f"목표 전공: {project.target_major}")
+    return " / ".join(parts)
+
+
 def _get_latest_completed_diagnosis(db: Session, *, project_id: str, user_id: str) -> DiagnosisResult | None:
     run = db.scalar(
         select(DiagnosisRun)
@@ -53,6 +62,12 @@ async def generate_interview_questions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    project = db.scalar(
+        select(Project).where(Project.id == request.project_id, Project.owner_user_id == current_user.id)
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
     diagnosis = _get_latest_completed_diagnosis(
         db,
         project_id=request.project_id,
@@ -68,7 +83,11 @@ async def generate_interview_questions(
         pass
 
     interview_service = InterviewService()
-    questions = await interview_service.generate_questions(diagnosis)
+    questions = await interview_service.generate_questions(
+        diagnosis,
+        target_major=project.target_major,
+        target_context=_project_target_context(project),
+    )
     return questions
 
 @router.post("/evaluate-answer", response_model=InterviewEvaluation)

@@ -63,7 +63,7 @@ def _current_model_name(resolution: LLMRuntimeResolution | None = None) -> str:
     return resolved.actual_model or resolved.attempted_model or "deterministic-render"
 
 
-def _clip(text: str, *, length: int = 160) -> str:
+def _clip(text: str, *, length: int = 2000) -> str:
     normalized = " ".join((text or "").split())
     if len(normalized) <= length:
         return normalized
@@ -87,22 +87,13 @@ def _serialize_turns(turns: list[Any]) -> str:
             getattr(turn, "turn_type", ""),
             getattr(turn, "turn_type", "message"),
         )
-        parts.append(f"[{role}] 학생: {_clip(getattr(turn, 'query', '') or '', length=220)}")
+        parts.append(f"[{role}] 학생: {_clip(getattr(turn, 'query', '') or '', length=2000)}")
     return "\n".join(parts)
 
 
 def _serialize_references(references: list[Any]) -> str:
     if not references:
         return "(참고자료 없음)"
-    return "\n".join(
-        f"- [{normalize_grounding_source_type(getattr(reference, 'source_type', None))}] {_clip(getattr(reference, 'text_content', '') or '', length=260)}"
-        for reference in references
-    )
-
-
-def _grounded_points(turns: list[Any], references: list[Any], *, limit: int = 4) -> list[tuple[str, str]]:
-    points: list[tuple[str, str]] = []
-    seen: set[str] = set()
     for turn in turns:
         text = _turn_display_text(turn)
         key = text.lower()
@@ -174,6 +165,8 @@ def _build_render_prompt(
     ] if advanced_mode else []
 
     rule_lines = [
+        "- 대한민국 대학 입학사정관의 시각에서 학생의 지적 호기심과 전공 탐구 역량이 돋보이도록 작성하세요.",
+        "- teacher_record_summary_500은 학교생활기록부 기재 요령에 맞춰 '...함', '...임'과 같은 명조체/개조식 문체를 사용하세요.",
         "- 학생이 말하지 않은 경험, 수치, 실험 결과, 인터뷰, 논문 사실을 새로 만들지 마세요.",
         "- 근거가 부족한 내용은 단정하지 말고 '추가 확인 필요'처럼 보수적으로 처리하세요.",
         "- 학생 발화와 참고자료 해석을 섞지 말고 출처를 evidence_map에 남기세요.",

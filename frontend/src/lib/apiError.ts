@@ -70,6 +70,8 @@ function mapErrorCodeToUserMessage(code: string): string | null {
       return '구조화된 학생부 항목을 충분히 만들지 못했습니다. 원문 텍스트 기반 분석으로 다시 시도해 주세요.';
     case 'DIAGNOSIS_INPUT_EMPTY':
       return '진단에 사용할 학생부 내용이 아직 없습니다. 업로드와 파싱을 먼저 완료해 주세요.';
+    case 'INVALID_STUDENT_RECORD':
+      return '학교생활기록부 원본 PDF만 진단할 수 있습니다. 진단서, 입시 자료, 논문, 일반 PDF가 아니라 나이스/정부24에서 내려받은 학생부 PDF를 업로드해 주세요.';
     case 'DIAGNOSIS_TRACE_PERSIST_FAILED':
       return '진단은 생성되었지만 근거 추적 데이터 저장이 일부 누락되었습니다. 다시 시도하면 복구될 수 있습니다.';
     case 'REPORT_ARTIFACT_FAILED':

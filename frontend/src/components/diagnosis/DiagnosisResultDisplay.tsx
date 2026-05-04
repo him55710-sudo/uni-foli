@@ -84,7 +84,16 @@ export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ 
   const totalScore = summaryJson ? asNumber(summaryJson.total_score) : null;
   const categoryScoresRaw = summaryJson ? asRecord(summaryJson.category_scores) : null;
   const scoreLabelsRaw = summaryJson ? asRecord(summaryJson.score_labels) : null;
+  const scoringPolicyRaw = summaryJson ? asRecord(summaryJson.scoring_policy) : null;
   const majorDirectionsRaw = summaryJson?.major_direction_candidates_top3;
+  const scoreCap = scoringPolicyRaw ? asNumber(scoringPolicyRaw.evidence_quality_score_cap) : null;
+  const scoreValidity = String(scoringPolicyRaw?.score_validity ?? '').trim();
+  const scoreQualityNotes = Array.isArray(scoringPolicyRaw?.quality_gate_notes)
+    ? scoringPolicyRaw.quality_gate_notes.map((item) => sanitizeKoreanText(item, '')).filter(Boolean)
+    : [];
+  const shouldShowScoreGate = Boolean(
+    scoreValidity && scoreValidity !== 'verified_student_record' || (scoreCap !== null && scoreCap < 100)
+  );
   
   const completionState = completionStateLabel(
     summaryJson?.completion_state || diagnosisResult?.record_completion_state
@@ -191,6 +200,17 @@ export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ 
               <span className="px-4 py-1.5 bg-blue-50 text-blue-800 rounded-lg text-sm font-bold">
                 {normalizeScoreLabel(scoreLabelsRaw?.['총점'])}
               </span>
+              {shouldShowScoreGate && (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs font-bold leading-relaxed text-amber-900">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    <p>
+                      {scoreQualityNotes[0] || '원본 학생부 구조와 근거 수를 기준으로 점수 상한을 적용했습니다.'}
+                      {scoreCap !== null && scoreCap < 100 ? ` (상한 ${Math.round(scoreCap)}점)` : ''}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           
@@ -429,4 +449,3 @@ export const DiagnosisResultDisplay: React.FC<DiagnosisResultDisplayProps> = ({ 
     </motion.div>
   );
 };
-

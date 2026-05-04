@@ -444,13 +444,72 @@ def humanize_provenance_source(
     return normalized
 
 
+_TEMPLATE_BY_ID = {template.id: template for template in _TEMPLATES}
+_DEFAULT_TEMPLATE_BY_FORMAT = {
+    RenderFormat.PDF: "clean_report_basic",
+    RenderFormat.HWPX: "activity_summary_school",
+    RenderFormat.PPTX: "presentation_minimal",
+}
+
+
+def list_templates(*, render_format: RenderFormat | None = None) -> list[RenderTemplate]:
+    if render_format is None:
+        return list(_TEMPLATES)
+    return [
+        template
+        for template in _TEMPLATES
+        if render_format in template.supported_formats
+    ]
+
+
+def get_default_template_id(render_format: RenderFormat) -> str:
+    return _DEFAULT_TEMPLATE_BY_FORMAT[render_format]
+
+
+def get_template(
+    template_id: str | None,
+    *,
+    render_format: RenderFormat,
+) -> RenderTemplate:
+    resolved_id = template_id or get_default_template_id(render_format)
+    template = _TEMPLATE_BY_ID.get(resolved_id)
+    if template is None:
+        raise ValueError(f"Unknown render template: {resolved_id}")
+    if render_format not in template.supported_formats:
+        raise ValueError(
+            f"Template '{resolved_id}' does not support {render_format.value.upper()} exports."
+        )
+    return template
+
+
+def humanize_provenance_source(
+    source: str | None,
+    *,
+    hide_internal: bool,
+) -> str:
+    normalized = (source or "").strip()
+    if not normalized:
+        return "Student record evidence"
+    if not hide_internal:
+        return normalized
+    if normalized.startswith("turn:"):
+        return "Workshop conversation"
+    if normalized.startswith("reference:"):
+        return "Pinned reference"
+    if normalized.startswith("document:"):
+        return "Parsed student record"
+    if normalized.startswith(("session:", "trace:", "job:", "draft:", "chunk:")):
+        return "Internal workflow record"
+    return normalized
+
+
 def build_provenance_appendix_lines(
     *,
     evidence_map: dict[str, dict] | None,
     authenticity_log_lines: list[str] | None,
     hide_internal: bool,
-    max_evidence_items: int = 5,
-    max_authenticity_notes: int = 3,
+    max_evidence_items: int = 10,
+    max_authenticity_notes: int = 5,
 ) -> list[str]:
     lines: list[str] = []
 

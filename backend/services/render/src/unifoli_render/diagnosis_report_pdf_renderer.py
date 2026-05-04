@@ -654,14 +654,20 @@ def _record_structure_flowables(report_payload: dict[str, Any], doc: SimpleDocTe
 
 def _subject_table_flowables(report_payload: dict[str, Any], doc: SimpleDocTemplate, style_tokens: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> list[Any]:
     subjects = [item for item in report_payload.get("subject_specialty_analyses", []) if isinstance(item, dict)]
-    rows = [["과목명", "핵심 기록 요약", "강점", "약점", "점수", "개선 방향", "전공 연결"]]
+    rows = [["과목명", "핵심 기록 요약", "강점", "약점", "등급", "개선 방향", "전공 연결"]]
     for item in subjects[:8]:
+        grade = str(item.get("level") or item.get("grade") or "B").upper()[:1]
+        grade_color = _sabc_color(grade, color_tokens)
+        
+        # We use a colored circle or bold text for the grade
+        grade_markup = f'<font color="{grade_color}"><b>{grade}</b></font>'
+        
         rows.append([
             str(item.get("subject") or "-"),
             _truncate_plain(str(item.get("core_record_summary") or "-"), 58),
             _truncate_plain(" / ".join(str(v) for v in item.get("strengths", [])[:1]), 42),
             _truncate_plain(" / ".join(str(v) for v in item.get("weaknesses", [])[:1]), 42),
-            str(item.get("score") or "-"),
+            Paragraph(grade_markup, style_tokens["meta_strong"]),
             _truncate_plain(str(item.get("recommended_follow_up") or "-"), 52),
             _truncate_plain(str(item.get("major_connection") or "-"), 54),
         ])
@@ -674,14 +680,25 @@ def _subject_card_flowables(report_payload: dict[str, Any], doc: SimpleDocTempla
     selected = subjects[start:end] or subjects[:4]
     cards = []
     for item in selected:
-        cards.append(
-            (
-                f"{item.get('subject')} | {item.get('score')}점 | {item.get('level')}",
-                f"요약: {_truncate_plain(str(item.get('core_record_summary') or '-'), 95)}\n"
-                f"입시적 의미: {_truncate_plain(str(item.get('admissions_meaning') or '-'), 95)}\n"
-                f"후속 탐구: {_truncate_plain(str(item.get('recommended_follow_up') or '-'), 95)}",
-            )
+        grade = str(item.get("level") or item.get("grade") or "B").upper()[:1]
+        grade_color = _sabc_color(grade, color_tokens)
+        
+        # Header with Grade Marker
+        header = f"{item.get('subject')} | <font color='{grade_color}'>{grade} Grade</font>"
+        
+        # Original excerpt with automated highlights
+        # Set safety limit to 2000 characters as requested
+        excerpt = item.get("original_excerpt") or item.get("core_record_summary") or "상세 근거 데이터가 부족합니다."
+        safe_excerpt = _truncate_plain(excerpt, 2000)
+        highlighted_excerpt = _auto_apply_highlights(safe_excerpt, color_tokens)
+        
+        body = (
+            f"<b>[생기부 원문 기반 Evidence]</b>\n{highlighted_excerpt}\n\n"
+            f"<b>[입시 전문가 분석]</b>\n"
+            f"• 역량: {item.get('admissions_meaning') or '-'}\n"
+            f"• 후속: {item.get('recommended_follow_up') or '-'}"
         )
+        cards.append((header, body))
     return [_card_grid(cards, doc, style_tokens, color_tokens)]
 
 
@@ -1155,6 +1172,44 @@ def _slice_tuple(value: Any, default_start: int, default_end: int) -> tuple[int,
     if isinstance(value, list) and len(value) == 2:
         return int(value[0]), int(value[1])
     return default_start, default_end
+
+
+def _sabc_color(grade: str, color_tokens: dict[str, Any]) -> str:
+    mapping = {
+        "S": color_tokens.get("grade_s", "#7C3AED"),
+        "A": color_tokens.get("grade_a", "#2563EB"),
+        "B": color_tokens.get("grade_b", "#059669"),
+        "C": color_tokens.get("grade_c", "#D97706"),
+    }
+    return mapping.get(grade.upper(), color_tokens.get("text_secondary", "#374151"))
+
+
+def _auto_apply_highlights(text: str, color_tokens: dict[str, Any]) -> str:
+    academic_color = color_tokens.get("highlight_academic", "#FEF9C3")
+    fit_color = color_tokens.get("highlight_fit", "#DBEAFE")
+    personality_color = color_tokens.get("highlight_personality", "#DCFCE7")
+    
+    keywords = {
+        "탐구": academic_color,
+        "분석": academic_color,
+        "실험": academic_color,
+        "설계": academic_color,
+        "심화": academic_color,
+        "전공": fit_color,
+        "역량": fit_color,
+        "연결": fit_color,
+        "협업": personality_color,
+        "리더십": personality_color,
+        "배려": personality_color,
+    }
+    
+    # Simple replacement while escaping HTML-like characters
+    # Note: We use <span backColor="..."> which reportlab understands in Paragraphs
+    from html import escape as html_escape
+    result = html_escape(text)
+    for word, color in keywords.items():
+        result = result.replace(word, f'<span backColor="{color}">{word}</span>')
+    return result
 
 
 def _build_style_tokens(*, design_contract: dict[str, Any], font_name: str, font_bold: str, color_tokens: dict[str, Any]) -> dict[str, Any]:
