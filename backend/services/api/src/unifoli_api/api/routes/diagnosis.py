@@ -619,6 +619,7 @@ async def download_consultant_report_pdf_route(
 @router.get("/runs/{diagnosis_id}", response_model=DiagnosisRunResponse)
 async def get_diagnosis_status(
     diagnosis_id: str,
+    process_report_inline: bool = Query(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DiagnosisRunResponse:
@@ -630,7 +631,8 @@ async def get_diagnosis_status(
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
     _ensure_default_report_bootstrap(db, run)
-    _maybe_process_report_job_inline(db, run)
+    if process_report_inline:
+        _maybe_process_report_job_inline(db, run)
     run = _get_run_for_user(db, diagnosis_id, current_user.id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagnosis run not found.")
@@ -638,6 +640,7 @@ async def get_diagnosis_status(
 @router.get("/project/{project_id}/latest", response_model=DiagnosisRunResponse)
 async def get_latest_diagnosis_for_project(
     project_id: str,
+    process_report_inline: bool = Query(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DiagnosisRunResponse:
@@ -671,7 +674,8 @@ async def get_latest_diagnosis_for_project(
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No diagnosis run found for this project.")
     _ensure_default_report_bootstrap(db, run)
-    _maybe_process_report_job_inline(db, run)
+    if process_report_inline:
+        _maybe_process_report_job_inline(db, run)
     run = db.scalar(
         select(DiagnosisRun)
         .join(Project, DiagnosisRun.project_id == Project.id)

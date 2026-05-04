@@ -211,12 +211,12 @@ export function resolveDiagnosisDeliveryState(
 
   if (reportFailed) {
     return {
-      state: 'failed',
+      state: 'diagnosis_ready',
       diagnosisFailed: false,
       reportFailed: true,
       diagnosisStatus,
       reportStatus,
-      message: run.report_error_message || '진단서 생성에 실패했습니다. 생성을 다시 요청해 주세요.',
+      message: run.report_error_message || '진단 결과는 준비됐지만 보고서 생성은 실패했습니다. 보고서만 다시 생성해 주세요.',
     };
   }
 
